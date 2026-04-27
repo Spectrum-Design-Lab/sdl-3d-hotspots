@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+model Shop {
+  id                 String          @id @default(cuid())
+  shopDomain         String          @unique
+  planName           String?
+  logoUrl            String?
+  onboardingComplete Boolean         @default(false)
+  darkMode           Boolean         @default(false)
+  installedAt        DateTime        @default(now())
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  productCaches  ProductCache[]
+  productConfigs ProductConfig[]
+  assets         Asset[]
+  folders        Folder[]
+  presets        Preset[]
+  syncRuns       SyncRun[]
+}
+
+model ProductCache {
+  id                String   @id @default(cuid())
+  shopId            String
+  shopifyProductGid String
+  title             String
+  handle            String?
+  status            String?
+  updatedAt         DateTime @default(now())
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, shopifyProductGid])
+  @@index([shopId])
+}
+
+model ProductConfig {
+  id                   String   @id @default(cuid())
+  shopId               String
+  shopifyProductGid    String
+  sourceMode           String   @default("APP")
+  enabled              Boolean  @default(false)
+  status               String   @default("DRAFT")
+  viewerType           String   @default("MODEL_3D")
+
+  modelFileUrl         String?
+  modelFileShopifyGid  String?
+  posterFileUrl        String?
+  posterFileShopifyGid String?
+
+  imageSequenceJson    String?
+  imageSequencePrefix  String?
+  frameCount           Int      @default(0)
+
+  viewerSettingsJson   String
+  hotspotsJson360      String?
+  storefrontVersion    Int      @default(1)
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  shop     Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  hotspots Hotspot[]
+
+  @@unique([shopId, shopifyProductGid])
+  @@index([shopId])
+  @@index([shopifyProductGid])
+}
+
+model Hotspot {
+  id              String   @id @default(cuid())
+  productConfigId String
+  sortOrder       Int
+  visible         Boolean  @default(true)
+
+  title           String
+  body            String
+  icon            String?
+  style           String   @default("card")
+  color           String?
+
+  positionX       Float
+  positionY       Float
+  positionZ       Float
+
+  normalX         Float?
+  normalY         Float?
+  normalZ         Float?
+
+  focusTargetX    Float?
+  focusTargetY    Float?
+  focusTargetZ    Float?
+
+  focusOrbit      String?
+  ctaLabel        String?
+  ctaUrl          String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  productConfig ProductConfig @relation(fields: [productConfigId], references: [id], onDelete: Cascade)
+
+  @@index([productConfigId])
+  @@unique([productConfigId, sortOrder])
+}
+
+model Folder {
+  id        String   @id @default(cuid())
+  shopId    String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shop   Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  assets Asset[]
+
+  @@unique([shopId, name])
+  @@index([shopId])
+}
+
+model Asset {
+  id               String   @id @default(cuid())
+  shopId           String
+  kind             String
+  storageMode      String   @default("SHOPIFY_FILE")
+  originalFilename String
+  shopifyFileGid   String?
+  url              String
+  sizeBytes        BigInt?
+  mimeType         String?
+  folderId         String?
+  createdAt        DateTime @default(now())
+
+  shop   Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  folder Folder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@index([shopId])
+  @@index([shopifyFileGid])
+  @@index([folderId])
+}
+
+model Preset {
+  id                 String   @id @default(cuid())
+  shopId             String
+  name               String
+  viewerType         String   @default("MODEL_3D")
+  viewerSettingsJson String   @default("{}")
+  hotspotsJson       String
+  hotspotsJson360    String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@unique([shopId, name])
+}
+
+model SyncRun {
+  id                String   @id @default(cuid())
+  shopId            String
+  shopifyProductGid String
+  direction         String
+  status            String
+  message           String?
+  createdAt         DateTime @default(now())
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([shopifyProductGid])
+}

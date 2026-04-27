@@ -1,0 +1,221 @@
+{% liquid
+  assign enabled_value = product.metafields.sdl_3d.enabled.value
+  assign mode_value = product.metafields.sdl_3d.mode.value
+  assign viewer_type_value = product.metafields.sdl_3d.viewer_type.value
+  assign model_media = product.metafields.sdl_3d.model_file.value
+  assign poster_media = product.metafields.sdl_3d.poster_file.value
+
+  assign viewer_enabled = false
+  if enabled_value == true
+    assign viewer_enabled = true
+  endif
+
+  assign source_mode = 'metafield'
+  if mode_value != blank
+    assign source_mode = mode_value
+  endif
+
+  assign viewer_type = 'model_3d'
+  if viewer_type_value != blank
+    assign viewer_type = viewer_type_value
+  endif
+
+  assign model_source_url = blank
+  if model_media and model_media.media_type == 'model'
+    for source in model_media.sources
+      assign source_format = source.format | downcase
+      if source_format == 'glb'
+        assign model_source_url = source.url
+        break
+      endif
+    endfor
+
+    if model_source_url == blank and model_media.sources.size > 0
+      assign model_source_url = model_media.sources.first.url
+    endif
+  endif
+
+  assign poster_url = blank
+  if poster_media
+    assign poster_url = poster_media | image_url: width: 1800
+  endif
+
+  assign fallback_image_url = blank
+  if product.featured_image
+    assign fallback_image_url = product.featured_image | image_url: width: 1200
+  endif
+
+  if poster_url == blank and fallback_image_url != blank
+    assign poster_url = fallback_image_url
+  endif
+%}
+
+<span hidden data-sdl3d-mv-src="{{ 'model-viewer.min.js' | asset_url }}"></span>
+<span hidden data-sdl3d-3d-src="{{ 'viewer-3d.js' | asset_url }}"></span>
+<span hidden data-sdl3d-360-src="{{ 'viewer-360.js' | asset_url }}"></span>
+<div
+  class="sdl3d-block"
+  {{ block.shopify_attributes }}
+  style="--sdl3d-height: {{ block.settings.viewer_height }}px;"
+>
+  {% if product == blank %}
+    <div class="sdl3d-block__message">This block is only available on product templates.</div>
+  {% elsif viewer_enabled != true %}
+    <div class="sdl3d-block__message">3D viewer is not enabled for this product.</div>
+  {% elsif source_mode == 'app' %}
+    {%- comment -%} App-managed mode: JS fetches config from app proxy {%- endcomment -%}
+    <div
+      class="sdl3d-app-viewer"
+      data-sdl3d-app-root
+      data-sdl3d-proxy-url="/apps/sdl3d?product_id=gid://shopify/Product/{{ product.id }}&product_handle={{ product.handle }}"
+      data-force-horizontal-lock="{{ block.settings.force_horizontal_lock }}"
+      data-show-fullscreen="{{ block.settings.show_fullscreen }}"
+      {% if fallback_image_url != blank %}data-fallback-image="{{ fallback_image_url }}"{% endif %}
+      style="min-height: 200px;"
+    >
+      <div class="sdl3d-block__message sdl3d-block__loading">Loading 3D viewer&hellip;</div>
+    </div>
+  {% elsif viewer_type == 'image_360' %}
+    {%- comment -%} 360° Image Sequence Viewer {%- endcomment -%}
+    <div
+      class="sdl3d-360-viewer"
+      data-sdl3d-360-root
+      data-show-fullscreen="{{ block.settings.show_fullscreen }}"
+      {% if fallback_image_url != blank %}data-fallback-image="{{ fallback_image_url }}"{% endif %}
+    >
+      <div class="sdl3d-360-viewport" data-sdl3d-360-viewport>
+        {% # theme-check-disable RemoteAsset %}
+        <img
+          class="sdl3d-360-image"
+          data-sdl3d-360-image
+          src="{{ poster_url }}"
+          alt="360° product view"
+          width="1200"
+          height="900"
+          draggable="false"
+        />
+        {% # theme-check-enable RemoteAsset %}
+      </div>
+
+      <button
+        type="button"
+        class="sdl3d-fullscreen-button"
+        data-sdl3d-fullscreen
+        hidden
+        aria-label="Open fullscreen viewer"
+      >
+        Fullscreen
+      </button>
+
+      <script type="application/json" data-sdl3d-viewer-settings>
+        {% if product.metafields.sdl_3d.viewer_settings and product.metafields.sdl_3d.viewer_settings.value %}
+          {{ product.metafields.sdl_3d.viewer_settings.value | json }}
+        {% else %}
+          {}
+        {% endif %}
+      </script>
+
+      <script type="application/json" data-sdl3d-image-sequence>
+        {% if product.metafields.sdl_3d.image_sequence and product.metafields.sdl_3d.image_sequence.value %}
+          {{ product.metafields.sdl_3d.image_sequence.value | json }}
+        {% else %}
+          []
+        {% endif %}
+      </script>
+
+      <script type="application/json" data-sdl3d-hotspots-360>
+        {% if product.metafields.sdl_3d.hotspots_360 and product.metafields.sdl_3d.hotspots_360.value %}
+          {{ product.metafields.sdl_3d.hotspots_360.value | json }}
+        {% else %}
+          []
+        {% endif %}
+      </script>
+    </div>
+  {% elsif model_media == blank %}
+    <div class="sdl3d-block__message">No model file metafield is assigned to this product.</div>
+  {% elsif model_source_url == blank %}
+    <div class="sdl3d-block__message">Model file found, but no usable source URL was resolved.</div>
+  {% else %}
+    {%- comment -%} 3D Model Viewer {%- endcomment -%}
+    <div
+      class="sdl3d-viewer"
+      data-sdl3d-root
+      data-force-horizontal-lock="{{ block.settings.force_horizontal_lock }}"
+      data-show-fullscreen="{{ block.settings.show_fullscreen }}"
+      {% if fallback_image_url != blank %}data-fallback-image="{{ fallback_image_url }}"{% endif %}
+    >
+      <model-viewer
+        class="sdl3d-viewer__model"
+        data-sdl3d-model
+        src="{{ model_source_url }}"
+        alt="{{ model_media.alt | escape }}"
+        {% if poster_url != blank %}
+          poster="{{ poster_url }}"
+        {% endif %}
+        camera-controls
+        auto-rotate
+        loading="eager"
+        reveal="auto"
+        interaction-prompt="auto"
+      >
+        <button
+          type="button"
+          class="sdl3d-fullscreen-button"
+          data-sdl3d-fullscreen
+          hidden
+          aria-label="Open fullscreen viewer"
+        >
+          Fullscreen
+        </button>
+      </model-viewer>
+
+      <script type="application/json" data-sdl3d-viewer-settings>
+        {% if product.metafields.sdl_3d.viewer_settings and product.metafields.sdl_3d.viewer_settings.value %}
+          {{ product.metafields.sdl_3d.viewer_settings.value | json }}
+        {% else %}
+          {}
+        {% endif %}
+      </script>
+
+      <script type="application/json" data-sdl3d-hotspots>
+        {% if product.metafields.sdl_3d.hotspots and product.metafields.sdl_3d.hotspots.value %}
+          {{ product.metafields.sdl_3d.hotspots.value | json }}
+        {% else %}
+          []
+        {% endif %}
+      </script>
+    </div>
+  {% endif %}
+</div>
+
+{% schema %}
+{
+  "name": "SDL 3D viewer",
+  "target": "section",
+  "stylesheet": "viewer.css",
+  "javascript": "viewer.js",
+  "settings": [
+    {
+      "type": "range",
+      "id": "viewer_height",
+      "label": "Viewer height",
+      "min": 360,
+      "max": 1100,
+      "step": 20,
+      "default": 720
+    },
+    {
+      "type": "checkbox",
+      "id": "force_horizontal_lock",
+      "label": "Force horizontal-only rotation",
+      "default": false
+    },
+    {
+      "type": "checkbox",
+      "id": "show_fullscreen",
+      "label": "Show fullscreen button",
+      "default": true
+    }
+  ]
+}
+{% endschema %}
