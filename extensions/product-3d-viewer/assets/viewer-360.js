@@ -26,6 +26,11 @@
     return null;
   }
 
+  // Responsive sizing: Shopify CDN supports ?width= as a query-string transform,
+  // so we right-size frames to the viewport. Other origins (DigitalOcean Spaces,
+  // localhost dev server, etc.) don't support this and download full-resolution.
+  // Acceptable for the pilot — frames are pre-sized via the platform pipeline's
+  // sharp conversion. Revisit if perf becomes a problem on a non-Shopify origin.
   function cdnSize(url, w) {
     if (!url || url.indexOf("cdn.shopify.com") === -1) return url;
     var cw = w <= 600 ? 800 : w <= 1200 ? 1200 : 1800;
