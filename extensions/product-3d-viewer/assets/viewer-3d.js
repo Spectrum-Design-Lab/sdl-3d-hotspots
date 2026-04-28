@@ -11,7 +11,8 @@
 
   function applyS(mv, R, s) {
     var fhl = R.dataset.forceHorizontalLock === "true";
-    var fb = R.querySelector("[data-sdl3d-fullscreen]");
+    var fbScope = R.closest(".sdl3d-block") || R;
+    var fb = fbScope.querySelector("[data-sdl3d-fullscreen]");
 
     sa(mv, "camera-controls", s?.cameraControls !== false);
     sa(mv, "auto-rotate", s?.autoRotate === true);
@@ -43,6 +44,17 @@
       } else {
         fb.hidden = true;
       }
+    }
+
+    var rb = fbScope.querySelector("[data-sdl3d-reset]");
+    if (rb && !rb.dataset.sdl3dResetBound) {
+      rb.dataset.sdl3dResetBound = "1";
+      rb.addEventListener("click", function () {
+        if (s?.cameraOrbit) mv.setAttribute("camera-orbit", s.cameraOrbit);
+        if (s?.cameraTarget) mv.setAttribute("camera-target", s.cameraTarget);
+        mv.querySelectorAll(".sdl3d-hotspot.is-active").forEach(function (n) { n.classList.remove("is-active"); });
+        if (R._sidebar && R._sidebar._clearSelection) R._sidebar._clearSelection();
+      });
     }
   }
 
@@ -120,9 +132,10 @@
       var dots = mv.querySelectorAll(".sdl3d-hotspot");
       if (dots[i]) dots[i].classList.add("is-active");
     });
-    var old = R.parentNode.querySelector(".sdl3d-sidebar");
+    var sbHost = R.closest(".sdl3d-block__body") || R.parentNode;
+    var old = sbHost.querySelector(":scope > .sdl3d-sidebar");
     if (old) old.remove();
-    R.parentNode.appendChild(sb);
+    sbHost.appendChild(sb);
     R._sidebar = sb;
 
     R.dataset.sdl3dInitialized = "true";
@@ -141,7 +154,10 @@
     if (c.posterUrl) mv.setAttribute("poster", c.posterUrl);
     if (c.fallbackImageUrl) R.dataset.fallbackImage = c.fallbackImageUrl;
     mv.addEventListener("error", function () { sFb(R); });
-    mv.appendChild(mkFs());
+    var blk = R.closest(".sdl3d-block");
+    if (!blk || !blk.querySelector("[data-sdl3d-fullscreen]")) {
+      mv.appendChild(mkFs());
+    }
     R.className = "sdl3d-viewer";
     R.appendChild(mv);
     S.loadMV().then(function () {
@@ -158,9 +174,10 @@
         var dots = mv.querySelectorAll(".sdl3d-hotspot");
         if (dots[i]) dots[i].classList.add("is-active");
       });
-      var old = R.parentNode.querySelector(".sdl3d-sidebar");
+      var sbHost = R.closest(".sdl3d-block__body") || R.parentNode;
+      var old = sbHost.querySelector(":scope > .sdl3d-sidebar");
       if (old) old.remove();
-      R.parentNode.appendChild(sb);
+      sbHost.appendChild(sb);
       R._sidebar = sb;
     });
   }

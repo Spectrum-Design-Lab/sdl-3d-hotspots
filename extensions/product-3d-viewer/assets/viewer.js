@@ -75,7 +75,7 @@
     // Header with hamburger
     var hdr = ce("div", "sdl3d-sidebar__header");
     var hdrTitle = ce("span", "sdl3d-sidebar__header-title");
-    hdrTitle.textContent = "Features";
+    hdrTitle.textContent = "Product features";
     hdr.appendChild(hdrTitle);
 
     var burger = ce("button", "sdl3d-sidebar__burger");
@@ -93,12 +93,12 @@
     var promptIcon = ce("div", "sdl3d-sidebar__prompt-icon");
     promptIcon.innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
     var promptText = ce("div", "sdl3d-sidebar__prompt-text");
-    promptText.textContent = "Click a hotspot to explore features";
+    promptText.textContent = "Select a hotspot for feature details";
     prompt.appendChild(promptIcon);
     prompt.appendChild(promptText);
     content.appendChild(prompt);
 
-    // Detail view (title + body + CTA)
+    // Detail view (title + body + CTA + clear)
     var detail = ce("div", "sdl3d-sidebar__detail");
     var dtitle = ce("div", "sdl3d-sidebar__detail-title");
     var dbody = ce("div", "sdl3d-sidebar__detail-body");
@@ -106,9 +106,13 @@
     dcta.target = "_blank";
     dcta.rel = "noopener";
     dcta.style.display = "none";
+    var dclear = ce("button", "sdl3d-sidebar__clear");
+    dclear.type = "button";
+    dclear.textContent = "Clear selection";
     detail.appendChild(dtitle);
     detail.appendChild(dbody);
     detail.appendChild(dcta);
+    detail.appendChild(dclear);
     content.appendChild(detail);
 
     // List view (toggled by hamburger)
@@ -185,6 +189,16 @@
         .forEach(function (n) { n.classList.remove("is-active"); });
       showView("prompt");
     };
+
+    dclear.addEventListener("click", function () {
+      sb._clearSelection();
+      var blk = sb.closest(".sdl3d-block");
+      if (blk) {
+        blk.querySelectorAll(".sdl3d-hotspot.is-active, .sdl3d-360-hotspot.is-active")
+          .forEach(function (n) { n.classList.remove("is-active"); });
+      }
+    });
+
     return sb;
   }
 

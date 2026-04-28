@@ -191,6 +191,7 @@
       .sort(function (a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); });
 
     var mkSidebar = S.mkSidebar;
+    var sbHost = R.closest(".sdl3d-block__body") || R.parentNode;
     if (mkSidebar) {
       var sb = mkSidebar(filteredForSidebar, function (h, i) {
         var mid = Math.round(((h.visibleFrameStart || 0) + (h.visibleFrameEnd || 0)) / 2);
@@ -198,9 +199,9 @@
         R.querySelectorAll(".sdl3d-360-hotspot.is-active").forEach(function (n) { n.classList.remove("is-active"); });
         if (hotspotEls[i]) hotspotEls[i].el.classList.add("is-active");
       });
-      var old = R.parentNode.querySelector(".sdl3d-sidebar");
+      var old = sbHost.querySelector(":scope > .sdl3d-sidebar");
       if (old) old.remove();
-      R.parentNode.appendChild(sb);
+      sbHost.appendChild(sb);
       R._sidebar = sb;
     }
 
@@ -235,10 +236,20 @@
       autoRotateTimer = setInterval(function () { setFrame(cf + 1); }, 80);
     }
 
-    var fb = R.querySelector("[data-sdl3d-fullscreen]");
+    var fbScope = R.closest(".sdl3d-block") || R;
+    var fb = fbScope.querySelector("[data-sdl3d-fullscreen]");
     if (fb && R.dataset.showFullscreen === "true") {
       fb.hidden = false;
       fb.addEventListener("click", function () { R.requestFullscreen && R.requestFullscreen(); });
+    }
+
+    var rb = fbScope.querySelector("[data-sdl3d-reset]");
+    if (rb) {
+      rb.addEventListener("click", function () {
+        setFrame(0);
+        R.querySelectorAll(".sdl3d-360-hotspot.is-active").forEach(function (n) { n.classList.remove("is-active"); });
+        if (R._sidebar && R._sidebar._clearSelection) R._sidebar._clearSelection();
+      });
     }
 
     setFrame(0);
@@ -269,7 +280,10 @@
     vp.appendChild(img);
     R.className = "sdl3d-360-viewer";
     R.appendChild(vp);
-    R.appendChild(mkFs());
+    var blk = R.closest(".sdl3d-block");
+    if (!blk || !blk.querySelector("[data-sdl3d-fullscreen]")) {
+      R.appendChild(mkFs());
+    }
     s360(R, vp, img, c.imageSequence || [], c.hotspots360 || [], c.viewerSettings || {});
   }
 

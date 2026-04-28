@@ -48,16 +48,57 @@
   if poster_url == blank and fallback_image_url != blank
     assign poster_url = fallback_image_url
   endif
+
+  assign theme_value = block.settings.theme | default: 'themed'
+  assign use_themed = false
+  if theme_value == 'themed'
+    assign use_themed = true
+  endif
+
+  assign use_controls = false
+  if use_themed and block.settings.show_controls
+    assign use_controls = true
+  endif
+
+  assign suppress_floating_fs = false
+  if use_controls and block.settings.show_fullscreen
+    assign suppress_floating_fs = true
+  endif
+
+  assign block_class = 'sdl3d-block'
+  if use_themed
+    assign block_class = 'sdl3d-block sdl3d-block--themed'
+  endif
+
+  assign render_themed_shell = false
+  if use_themed and product != blank and viewer_enabled
+    assign render_themed_shell = true
+  endif
 %}
 
 <span hidden data-sdl3d-mv-src="{{ 'model-viewer.min.js' | asset_url }}"></span>
 <span hidden data-sdl3d-3d-src="{{ 'viewer-3d.js' | asset_url }}"></span>
 <span hidden data-sdl3d-360-src="{{ 'viewer-360.js' | asset_url }}"></span>
 <div
-  class="sdl3d-block"
+  class="{{ block_class }}"
+  {% if use_controls %}data-has-controls="true"{% endif %}
   {{ block.shopify_attributes }}
-  style="--sdl3d-height: {{ block.settings.viewer_height }}px;"
+  style="--sdl3d-height: {{ block.settings.viewer_height }}px; --sdl3d-sidebar-width: {{ block.settings.sidebar_width }}px; --sdl3d-block-max-width: {{ block.settings.block_max_width }}px;"
 >
+  {% if render_themed_shell %}
+    {% if block.settings.section_title != blank or block.settings.section_helper != blank %}
+      <div class="sdl3d-block__header">
+        {% if block.settings.section_title != blank %}
+          <h3 class="sdl3d-block__title">{{ block.settings.section_title | escape }}</h3>
+        {% endif %}
+        {% if block.settings.section_helper != blank %}
+          <p class="sdl3d-block__helper">{{ block.settings.section_helper | escape }}</p>
+        {% endif %}
+      </div>
+    {% endif %}
+    <div class="sdl3d-block__body">
+  {% endif %}
+
   {% if product == blank %}
     <div class="sdl3d-block__message">This block is only available on product templates.</div>
   {% elsif viewer_enabled != true %}
@@ -97,15 +138,17 @@
         {% # theme-check-enable RemoteAsset %}
       </div>
 
-      <button
-        type="button"
-        class="sdl3d-fullscreen-button"
-        data-sdl3d-fullscreen
-        hidden
-        aria-label="Open fullscreen viewer"
-      >
-        Fullscreen
-      </button>
+      {% unless suppress_floating_fs %}
+        <button
+          type="button"
+          class="sdl3d-fullscreen-button"
+          data-sdl3d-fullscreen
+          hidden
+          aria-label="Open fullscreen viewer"
+        >
+          Fullscreen
+        </button>
+      {% endunless %}
 
       <script type="application/json" data-sdl3d-viewer-settings>
         {% if product.metafields.sdl_3d.viewer_settings and product.metafields.sdl_3d.viewer_settings.value %}
@@ -158,15 +201,17 @@
         reveal="auto"
         interaction-prompt="auto"
       >
-        <button
-          type="button"
-          class="sdl3d-fullscreen-button"
-          data-sdl3d-fullscreen
-          hidden
-          aria-label="Open fullscreen viewer"
-        >
-          Fullscreen
-        </button>
+        {% unless suppress_floating_fs %}
+          <button
+            type="button"
+            class="sdl3d-fullscreen-button"
+            data-sdl3d-fullscreen
+            hidden
+            aria-label="Open fullscreen viewer"
+          >
+            Fullscreen
+          </button>
+        {% endunless %}
       </model-viewer>
 
       <script type="application/json" data-sdl3d-viewer-settings>
@@ -186,6 +231,21 @@
       </script>
     </div>
   {% endif %}
+
+  {% if render_themed_shell %}
+    </div>
+    {% if use_controls %}
+      <div class="sdl3d-block__controls" data-sdl3d-controls>
+        <span class="sdl3d-block__hint">Drag to rotate</span>
+        <div class="sdl3d-block__controls-actions">
+          <button type="button" class="sdl3d-btn sdl3d-btn--secondary" data-sdl3d-reset>Reset view</button>
+          {% if block.settings.show_fullscreen %}
+            <button type="button" class="sdl3d-btn sdl3d-btn--primary" data-sdl3d-fullscreen aria-label="Open fullscreen viewer">Fullscreen</button>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+  {% endif %}
 </div>
 
 {% schema %}
@@ -196,6 +256,34 @@
   "javascript": "viewer.js",
   "settings": [
     {
+      "type": "select",
+      "id": "theme",
+      "label": "Visual theme",
+      "default": "themed",
+      "options": [
+        { "value": "themed", "label": "Light card (B2B / ecommerce)" },
+        { "value": "dark",   "label": "Dark cinematic (legacy)" }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "section_title",
+      "label": "Section heading (themed only)",
+      "default": "360° Product View"
+    },
+    {
+      "type": "textarea",
+      "id": "section_helper",
+      "label": "Helper text (themed only)",
+      "default": "Drag to rotate the product and inspect details. Click hotspots for feature explanations."
+    },
+    {
+      "type": "checkbox",
+      "id": "show_controls",
+      "label": "Show controls bar (Reset / Fullscreen, themed only)",
+      "default": true
+    },
+    {
       "type": "range",
       "id": "viewer_height",
       "label": "Viewer height",
@@ -203,6 +291,27 @@
       "max": 1100,
       "step": 20,
       "default": 720
+    },
+    {
+      "type": "range",
+      "id": "sidebar_width",
+      "label": "Hotspot panel width (themed only)",
+      "min": 260,
+      "max": 480,
+      "step": 10,
+      "default": 340,
+      "unit": "px"
+    },
+    {
+      "type": "range",
+      "id": "block_max_width",
+      "label": "Card max width (themed only)",
+      "info": "Caps the overall card. Theme container may still constrain it further.",
+      "min": 600,
+      "max": 1600,
+      "step": 20,
+      "default": 1200,
+      "unit": "px"
     },
     {
       "type": "checkbox",
