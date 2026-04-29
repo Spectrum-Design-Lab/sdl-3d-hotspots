@@ -14,6 +14,7 @@ import {
 } from "../lib/sdl3d-files.server";
 import { resolveImageSequenceUrls } from "../lib/sdl3d-image-sequence.server";
 import { hasSyncableSdl3dMetafields, pullMetafieldsToDraft } from "../lib/sdl3d-sync.server";
+import { notify } from "../lib/notify.server";
 
 import {
   parseInitialHotspots,
@@ -145,6 +146,11 @@ export async function loader({ request }: { request: Request }) {
       }
     } catch (err) {
       console.error("Auto-pull from metafields failed", err);
+      void notify({
+        title: `Auto-pull from metafields failed for ${session.shop}`,
+        body: `${productGid}: ${String(err)}`,
+        level: "error",
+      });
     }
   }
 

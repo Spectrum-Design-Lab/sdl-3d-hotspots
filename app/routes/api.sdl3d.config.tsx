@@ -13,6 +13,7 @@ import prisma from "../db.server";
 import { ensureShop, adminGraphql, type AdminGraphqlClient } from "../lib/sdl3d-graphql.server";
 import { publishConfigToMetafields, pullMetafieldsToDraft } from "../lib/sdl3d-sync.server";
 import { defaultViewerSettings, detectViewerTypeFromFilename, type ImageSequenceFrame } from "../lib/sdl3d-shared";
+import { notify } from "../lib/notify.server";
 
 /* ───── helpers ───── */
 
@@ -84,7 +85,13 @@ async function handlePull(admin: AdminGraphqlClient, shopDomain: string, product
     await pullMetafieldsToDraft({ admin, shopDomain, shopifyProductGid: productGid });
     return ok("Pulled metafields into draft.");
   } catch (err) {
-    return error(err instanceof Error ? err.message : "Pull failed.", 500);
+    const message = err instanceof Error ? err.message : "Pull failed.";
+    void notify({
+      title: `Metafield pull failed for ${shopDomain}`,
+      body: `${productGid}: ${message}`,
+      level: "error",
+    });
+    return error(message, 500);
   }
 }
 
