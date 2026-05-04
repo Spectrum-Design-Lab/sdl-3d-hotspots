@@ -50,13 +50,19 @@ Shopify themes use either a single product template or per-product templates. Th
 
 ## Step 3 — Verify it renders on the storefront
 
-1. From the customizer, click **Preview** (eye icon top-right) and navigate to a product page that SDL has published 360° data for.
-2. You should see the SDL viewer instead of (or alongside, depending on theme) the standard product image.
-3. **For 360° image sequences**: drag left/right to rotate. The first frame should appear within 1–2 seconds; remaining frames load progressively in the background.
-4. **For 3D models**: orbit with mouse drag, scroll/pinch to zoom, click hotspots if any are configured.
-5. Click the **fullscreen** icon (if enabled) to confirm fullscreen mode works.
+You have two ways to preview, depending on whether you saved to the live theme or a draft:
 
-If everything looks right, **publish the theme** (or your theme draft) to ship it to customers.
+- **Live theme**: open `https://{your-store}.myshopify.com/products/{product-handle}` in a new browser tab — replace `{product-handle}` with a product SDL has published 360° data for. The viewer should appear on the PDP.
+- **Draft theme**: from **Online Store → Themes**, find your draft, click the **…** (more actions) menu on its card, and choose **Preview**. Shopify opens a shareable preview URL — append `/products/{product-handle}` to land on a configured product.
+
+Then check:
+
+1. The SDL viewer appears instead of (or alongside, depending on theme) the standard product image.
+2. **For 360° image sequences**: drag left/right to rotate. The first frame should appear within 1–2 seconds; remaining frames load progressively in the background.
+3. **For 3D models**: orbit with mouse drag, scroll/pinch to zoom, click hotspots if any are configured.
+4. Click the **fullscreen** icon (if enabled) to confirm fullscreen mode works.
+
+If everything looks right and you've been working on a draft, **publish the theme** to ship it to customers.
 
 ---
 
