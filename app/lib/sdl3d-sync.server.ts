@@ -17,6 +17,7 @@ import {
   safeJsonParse,
   type PublishedHotspot,
 } from "./sdl3d-serialization.server";
+import { normalizeViewerTypeToDb } from "./sdl3d-shared";
 import { adminGraphql, ensureShop, type AdminGraphqlClient } from "./sdl3d-graphql.server";
 import { resolveImageSequenceUrls } from "./sdl3d-image-sequence.server";
 
@@ -66,7 +67,7 @@ export async function publishConfigToMetafields(args: {
   );
   const hotspots = config.hotspots.map(dbHotspotToPublished);
 
-  const viewerType = config.viewerType || "MODEL_3D";
+  const viewerType = normalizeViewerTypeToDb(config.viewerType);
 
   const metafields: Array<Record<string, unknown>> = [
     {

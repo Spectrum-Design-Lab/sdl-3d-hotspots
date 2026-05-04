@@ -152,6 +152,6 @@ export async function resolveImageSequenceUrls(args: {
 
   return frames.map((f) => ({
     ...f,
-    imageUrl: urlMap.get(f.imageGid) || f.imageUrl,
+    imageUrl: (f.imageGid && urlMap.get(f.imageGid)) || f.imageUrl,
   }));
 }

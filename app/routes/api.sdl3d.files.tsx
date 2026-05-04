@@ -183,12 +183,14 @@ async function handleUploadImageSequence(admin: AdminGraphqlClient, shop: { id: 
     await addFilesToFolder(
       shop.id,
       folder.id,
-      result.uploadedFiles.map((f) => ({
-        shopifyFileGid: f.shopifyFileGid,
-        originalFilename: f.filename,
-        url: "",
-        kind: "IMAGE",
-      })),
+      result.uploadedFiles
+        .filter((f): f is typeof f & { shopifyFileGid: string } => Boolean(f.shopifyFileGid))
+        .map((f) => ({
+          shopifyFileGid: f.shopifyFileGid,
+          originalFilename: f.filename,
+          url: "",
+          kind: "IMAGE",
+        })),
     );
   }
 
