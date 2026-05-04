@@ -95,9 +95,6 @@ export function Sdl3dViewerSettingsEditor({
       <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
         <div>
           <div style={{ fontWeight: 700, marginBottom: 2 }}>Advanced settings</div>
-          <div style={{ fontSize: 12, opacity: 0.7 }}>
-            Camera parameters and environment overrides.
-          </div>
         </div>
 
         <div style={sectionStyle}>
@@ -223,9 +220,6 @@ export function Sdl3dViewerSettingsEditor({
     <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
       <div>
         <div style={{ fontWeight: 700, marginBottom: 2 }}>Viewer settings</div>
-        <div style={{ fontSize: 12, opacity: 0.7 }}>
-          Storefront viewer behavior and appearance.
-        </div>
       </div>
 
       <div style={sectionStyle}>

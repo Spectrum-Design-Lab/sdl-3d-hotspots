@@ -1,19 +1,17 @@
 /**
  * API route for product config operations:
- *   saveDraft, publish, pull, copyConfig, setViewerType
+ *   saveDraft, publish, setViewerType
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { redirect } from "react-router";
 
-export function loader({ request }: LoaderFunctionArgs) {
+export function loader(_args: LoaderFunctionArgs) {
   return new Response("Method not allowed", { status: 405 });
 }
 import shopify from "../shopify.server";
 import prisma from "../db.server";
-import { ensureShop, adminGraphql, type AdminGraphqlClient } from "../lib/sdl3d-graphql.server";
-import { publishConfigToMetafields, pullMetafieldsToDraft } from "../lib/sdl3d-sync.server";
-import { defaultViewerSettings, detectViewerTypeFromFilename, type ImageSequenceFrame } from "../lib/sdl3d-shared";
-import { notify } from "../lib/notify.server";
+import { ensureShop, type AdminGraphqlClient } from "../lib/sdl3d-graphql.server";
+import { publishConfigToMetafields } from "../lib/sdl3d-sync.server";
+import { defaultViewerSettings } from "../lib/sdl3d-shared";
 
 /* ───── helpers ───── */
 
@@ -63,14 +61,10 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   switch (intent) {
-    case "pull":
-      return handlePull(admin, session.shop, productGid);
     case "publish":
       return handlePublish(admin, session.shop, formData);
     case "saveDraft":
       return handleSaveDraft(shop, productGid, formData);
-    case "copyConfig":
-      return handleCopyConfig(shop, productGid, formData);
     case "setViewerType":
       return handleSetViewerType(shop, productGid, formData);
     default:
@@ -79,21 +73,6 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 /* ───── handlers ───── */
-
-async function handlePull(admin: AdminGraphqlClient, shopDomain: string, productGid: string) {
-  try {
-    await pullMetafieldsToDraft({ admin, shopDomain, shopifyProductGid: productGid });
-    return ok("Pulled metafields into draft.");
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Pull failed.";
-    void notify({
-      title: `Metafield pull failed for ${shopDomain}`,
-      body: `${productGid}: ${message}`,
-      level: "error",
-    });
-    return error(message, 500);
-  }
-}
 
 async function handlePublish(admin: AdminGraphqlClient, shopDomain: string, formData: FormData) {
   const productConfigId = String(formData.get("productConfigId") || "");
@@ -215,58 +194,3 @@ async function handleSaveDraft(shop: { id: string }, productGid: string, formDat
   return ok("Draft saved.");
 }
 
-async function handleCopyConfig(shop: { id: string }, productGid: string, formData: FormData) {
-  const sourceProductGid = String(formData.get("sourceProductGid") || "");
-  if (!sourceProductGid) return error("No source product selected.");
-  if (sourceProductGid === productGid) return error("Cannot copy from the same product.");
-
-  const source = await prisma.productConfig.findUnique({
-    where: {
-      shopId_shopifyProductGid: { shopId: shop.id, shopifyProductGid: sourceProductGid },
-    },
-    include: { hotspots: true },
-  });
-
-  if (!source) return error("Source product has no saved configuration.");
-
-  const target = await prisma.productConfig.upsert({
-    where: {
-      shopId_shopifyProductGid: { shopId: shop.id, shopifyProductGid: productGid },
-    },
-    update: {
-      enabled: source.enabled, sourceMode: source.sourceMode, viewerType: source.viewerType,
-      status: "DRAFT",
-      modelFileShopifyGid: source.modelFileShopifyGid, posterFileShopifyGid: source.posterFileShopifyGid,
-      viewerSettingsJson: source.viewerSettingsJson,
-      imageSequenceJson: source.imageSequenceJson, frameCount: source.frameCount,
-      hotspotsJson360: source.hotspotsJson360,
-    },
-    create: {
-      shopId: shop.id, shopifyProductGid: productGid,
-      enabled: source.enabled, sourceMode: source.sourceMode, viewerType: source.viewerType,
-      status: "DRAFT",
-      modelFileShopifyGid: source.modelFileShopifyGid, posterFileShopifyGid: source.posterFileShopifyGid,
-      viewerSettingsJson: source.viewerSettingsJson,
-      imageSequenceJson: source.imageSequenceJson, frameCount: source.frameCount,
-      hotspotsJson360: source.hotspotsJson360,
-    },
-  });
-
-  await prisma.hotspot.deleteMany({ where: { productConfigId: target.id } });
-
-  for (const h of source.hotspots) {
-    await prisma.hotspot.create({
-      data: {
-        productConfigId: target.id,
-        sortOrder: h.sortOrder, visible: h.visible,
-        title: h.title, body: h.body, icon: h.icon, style: h.style, color: h.color,
-        positionX: h.positionX, positionY: h.positionY, positionZ: h.positionZ,
-        normalX: h.normalX, normalY: h.normalY, normalZ: h.normalZ,
-        focusTargetX: h.focusTargetX, focusTargetY: h.focusTargetY, focusTargetZ: h.focusTargetZ,
-        focusOrbit: h.focusOrbit, ctaLabel: h.ctaLabel, ctaUrl: h.ctaUrl,
-      },
-    });
-  }
-
-  return ok(`Copied configuration from source product (${source.hotspots.length} hotspots).`);
-}

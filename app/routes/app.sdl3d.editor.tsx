@@ -1,4 +1,4 @@
-import { Link, useBlocker, useFetcher, useLoaderData, useRevalidator, useRouteError, isRouteErrorResponse } from "react-router";
+import { useBlocker, useFetcher, useLoaderData, useRevalidator, useRouteError, isRouteErrorResponse } from "react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "../styles/editor.css";
 
@@ -27,7 +27,7 @@ import {
 } from "../components/Sdl3dHotspotEditor";
 import { Sdl3dEditorPreview } from "../components/Sdl3dEditorPreview";
 import { Sdl3dViewerSettingsEditor } from "../components/Sdl3dViewerSettingsEditor";
-import { Sdl3dEditorSidebar } from "../components/Sdl3dEditorSidebar";
+import { Sdl3dEditorSidebar, type Step, type StepId } from "../components/Sdl3dEditorSidebar";
 import { StorefrontPreview } from "../components/StorefrontPreview";
 import { Sdl3dImageSequencePreview } from "../components/Sdl3dImageSequencePreview";
 import {
@@ -64,7 +64,6 @@ export async function loader({ request }: { request: Request }) {
     searchResult,
     selectedProduct,
     initialConfig,
-    configuredProducts,
     modelFileResult,
     posterFileResult,
   ] = await Promise.all([
@@ -105,14 +104,6 @@ export async function loader({ request }: { request: Request }) {
           include: { hotspots: { orderBy: { sortOrder: "asc" } } },
         })
       : Promise.resolve(null),
-
-    // Configured products for "copy from" (DB)
-    prisma.productConfig.findMany({
-      where: { shopId: shop.id },
-      select: { shopifyProductGid: true, viewerType: true, status: true },
-      orderBy: { updatedAt: "desc" },
-      take: 50,
-    }),
 
     // File lists (GraphQL)
     listShopifyFiles(admin, "MODEL3D"),
@@ -157,16 +148,7 @@ export async function loader({ request }: { request: Request }) {
   // ── Phase 2: queries that depend on Phase 1 results ──
   const viewerType = (config?.viewerType || "MODEL_3D") as "MODEL_3D" | "IMAGE_360";
 
-  const [cachedTitles, resolvedAssets, imageSequenceFrames] = await Promise.all([
-    // Resolve product titles for copy-from list (DB — needs configuredProducts)
-    prisma.productCache.findMany({
-      where: {
-        shopId: shop.id,
-        shopifyProductGid: { in: configuredProducts.map((c) => c.shopifyProductGid) },
-      },
-      select: { shopifyProductGid: true, title: true },
-    }),
-
+  const [resolvedAssets, imageSequenceFrames] = await Promise.all([
     // Resolve model/poster URLs (GraphQL — needs config)
     resolveSelectedAssetUrls({
       admin,
@@ -212,16 +194,6 @@ export async function loader({ request }: { request: Request }) {
     }))
     : [];
 
-  const titleMap = new Map(cachedTitles.map((c) => [c.shopifyProductGid, c.title]));
-  const copyableProducts = configuredProducts
-    .filter((c) => c.shopifyProductGid !== productGid)
-    .map((c) => ({
-      gid: c.shopifyProductGid,
-      title: titleMap.get(c.shopifyProductGid) || c.shopifyProductGid.replace("gid://shopify/Product/", "Product #"),
-      viewerType: c.viewerType || "MODEL_3D",
-      status: c.status,
-    }));
-
   const productFeaturedImageUrl = selectedProduct?.featuredMedia?.preview?.image?.url ?? null;
 
   return {
@@ -242,7 +214,6 @@ export async function loader({ request }: { request: Request }) {
     posterFilesCursor: posterFileResult.endCursor,
     resolvedAssets,
     imageSequenceFrames,
-    copyableProducts,
     config: config
       ? {
         id: config.id,
@@ -288,7 +259,6 @@ export default function Sdl3dEditorRoute() {
   const [mainTab, setMainTab] = useState<"edit" | "preview">("edit");
   const [previewBg, setPreviewBg] = useState<string | null>(null);
   const isDarkMode = loaderData.darkMode;
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [toastMessage, setToastMessage] = useState(loaderData.flash || "");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [saveStatusNow, setSaveStatusNow] = useState(Date.now());
@@ -502,9 +472,15 @@ export default function Sdl3dEditorRoute() {
     return () => window.clearInterval(interval);
   }, [lastSavedAt, isDirty]);
 
-  // Handle actionFetcher (publish/pull) responses
+  // Handle actionFetcher (publish/pull) responses.
+  // Guard with a ref: useRevalidator() returns a new object identity on every
+  // idle→loading→idle cycle, so without this the effect would re-fire after
+  // its own revalidate() call and infinite-loop the toast + revalidate.
+  const handledActionDataRef = useRef<unknown>(null);
   useEffect(() => {
     if (actionFetcher.state !== "idle" || !actionFetcher.data) return;
+    if (handledActionDataRef.current === actionFetcher.data) return;
+    handledActionDataRef.current = actionFetcher.data;
     if (actionFetcher.data.message) {
       setToastMessage(actionFetcher.data.message);
     }
@@ -521,33 +497,6 @@ export default function Sdl3dEditorRoute() {
     fd.set("productGid", loaderData.productGid);
     fd.set("productConfigId", loaderData.config.id);
     fd.set("q", loaderData.q);
-    actionFetcher.submit(fd, { method: "post", action: "/api/sdl3d/config" });
-  }, [loaderData, actionFetcher]);
-
-  const submitPull = useCallback(() => {
-    if (!loaderData.selectedProduct) return;
-    if (isDirty) {
-      const proceed = window.confirm(
-        "Pulling from Shopify will overwrite your unsaved changes. Continue?",
-      );
-      if (!proceed) return;
-    }
-    const fd = new FormData();
-    fd.set("intent", "pull");
-    fd.set("fetcherMode", "1");
-    fd.set("productGid", loaderData.productGid);
-    fd.set("q", loaderData.q);
-    actionFetcher.submit(fd, { method: "post", action: "/api/sdl3d/config" });
-  }, [loaderData, actionFetcher, isDirty]);
-
-  const submitCopyConfig = useCallback((sourceGid: string) => {
-    if (!loaderData.selectedProduct) return;
-    const fd = new FormData();
-    fd.set("intent", "copyConfig");
-    fd.set("fetcherMode", "1");
-    fd.set("productGid", loaderData.productGid);
-    fd.set("q", loaderData.q);
-    fd.set("sourceProductGid", sourceGid);
     actionFetcher.submit(fd, { method: "post", action: "/api/sdl3d/config" });
   }, [loaderData, actionFetcher]);
 
@@ -1138,6 +1087,82 @@ export default function Sdl3dEditorRoute() {
     return window.confirm("You have unsaved changes. Leave without saving?");
   }
 
+  const saveStateLabel = saveFetcher.state !== "idle"
+    ? "Saving…"
+    : isDirty
+      ? "Unsaved"
+      : lastSavedAt
+        ? formatSavedAgo(lastSavedAt, saveStatusNow)
+        : "Saved";
+  const saveStateTone: "info" | "warning" | "success" =
+    saveFetcher.state !== "idle" ? "info" : isDirty ? "warning" : "success";
+
+  // Workflow step state for the sidebar step navigator.
+  const hasMedia = viewerType === "IMAGE_360"
+    ? loaderData.imageSequenceFrames.length > 0
+    : Boolean(loaderData.config.modelFileShopifyGid);
+
+  const steps: Step[] = [
+    {
+      id: "product",
+      label: "Product",
+      status: loaderData.selectedProduct ? "done" : "todo",
+    },
+    {
+      id: "media",
+      label: "Media",
+      status: hasMedia ? "done" : "todo",
+    },
+    {
+      id: "viewer",
+      label: "Viewer",
+      status: "done",
+    },
+    {
+      id: "hotspots",
+      label: "Hotspots",
+      status: hotspots.length > 0 || hotspots360.length > 0 ? "done" : "todo",
+    },
+    {
+      id: "publish",
+      label: "Publish",
+      status: validation.isPublishReady
+        ? "done"
+        : validation.errors.length > 0
+          ? "warn"
+          : "todo",
+    },
+  ];
+
+  const tabToStep: Record<typeof rightTab, StepId> = {
+    upload: "media",
+    viewer: "viewer",
+    hotspots: "hotspots",
+    advanced: "publish",
+  };
+  const currentStep: StepId = tabToStep[rightTab];
+
+  const handleStepClick = (id: StepId) => {
+    switch (id) {
+      case "product":
+        setShowProductBrowser(true);
+        break;
+      case "media":
+        setRightTab("upload");
+        break;
+      case "viewer":
+        setRightTab("viewer");
+        break;
+      case "hotspots":
+        setRightTab("hotspots");
+        break;
+      case "publish":
+        setRightTab("advanced");
+        break;
+    }
+  };
+
+
   return (
     <div className="sdl-editor" data-theme={isDarkMode ? "dark" : "light"}>
       <div className="sdl-editor__inner">
@@ -1160,102 +1185,146 @@ export default function Sdl3dEditorRoute() {
           </div>
         ) : null}
 
-        <nav className="sdl-breadcrumb">
-          <Link to="/app">Dashboard</Link>
-          <span className="sdl-breadcrumb__sep">/</span>
-          {loaderData.selectedProduct ? (
-            <>
-              <span className="sdl-breadcrumb__current">{loaderData.selectedProduct.title}</span>
-              <span className="sdl-breadcrumb__sep">/</span>
-              <span className="sdl-breadcrumb__current">Editor</span>
-            </>
-          ) : (
-            <span className="sdl-breadcrumb__current">Editor</span>
-          )}
-        </nav>
-
-        <div className={`sdl-editor__grid ${sidebarCollapsed ? "sdl-editor__grid--collapsed" : ""}`}>
-          <aside className={`sdl-editor__sidebar ${sidebarCollapsed ? "sdl-editor__sidebar--collapsed" : ""}`}>
+        <div className="sdl-editor__topbar">
+          <div className="sdl-editor__topbar__left">
             <button
               type="button"
-              className="sdl-sidebar-toggle"
-              onClick={() => setSidebarCollapsed((c) => !c)}
-              title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+              className="sdl-btn sdl-btn--sm"
+              onClick={() => setShowProductBrowser(true)}
             >
-              {sidebarCollapsed ? "▶" : "◀"}
+              Browse product
             </button>
-            {!sidebarCollapsed && (
-              <Sdl3dEditorSidebar
-                loaderData={loaderData}
-                validation={validation}
-                readyTone={readyTone}
-                enabled={enabled}
-                viewerType={viewerType}
-                hotspotsJson={hotspotsJson}
-                hotspotsJson360={hotspotsJson360Memo}
-                viewerSettingsJson={viewerSettingsJson}
-                copyableProducts={loaderData.copyableProducts}
-                onEnabledChange={setEnabled}
-                onCopyConfig={submitCopyConfig}
-                confirmDiscardChanges={confirmDiscardChanges}
-                onOpenProductBrowser={() => setShowProductBrowser(true)}
-              />
-            )}
+            <span className="sdl-topbar-field">
+              <span className="sdl-topbar-field__label">Product</span>
+              <span className="sdl-topbar-field__value">
+                {loaderData.selectedProduct?.title ?? "—"}
+              </span>
+            </span>
+            {loaderData.selectedProduct ? (
+              <>
+                <span className={`sdl-badge sdl-badge--${readyTone}`}>
+                  {validation.isPublishReady ? "ready" : "blocked"}
+                </span>
+                <span className="sdl-topbar-field">
+                  <span className="sdl-topbar-field__label">Mode</span>
+                  <span className="sdl-topbar-field__value">
+                    {viewerType === "IMAGE_360" ? "360° Spin" : "3D Model"}
+                  </span>
+                </span>
+                <span className={`sdl-badge sdl-badge--${saveStateTone}`}>
+                  {saveStateLabel}
+                </span>
+              </>
+            ) : null}
+          </div>
+          <div className="sdl-editor__topbar__right">
+            {loaderData.selectedProduct ? (
+              <>
+                <button
+                  type="button"
+                  onClick={forceSave}
+                  className="sdl-btn sdl-btn--primary sdl-btn--sm"
+                  disabled={!isDirty || saveFetcher.state !== "idle"}
+                >
+                  {saveFetcher.state !== "idle" ? "Saving…" : "Save draft"}
+                </button>
+                <button
+                  type="button"
+                  onClick={submitPublish}
+                  className="sdl-btn sdl-btn--success sdl-btn--sm"
+                  disabled={publishDisabled || isActionBusy}
+                  title={
+                    publishDisabled
+                      ? isDirty
+                        ? "Save changes before publishing."
+                        : "Fix validation errors before publishing."
+                      : undefined
+                  }
+                >
+                  {isActionBusy && actionFetcher.formData?.get("intent") === "publish" ? "Publishing…" : "Publish"}
+                </button>
+              </>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="sdl-editor__grid">
+          <aside className="sdl-editor__sidebar">
+            <Sdl3dEditorSidebar
+              loaderData={loaderData}
+              validation={validation}
+              readyTone={readyTone}
+              steps={steps}
+              currentStep={currentStep}
+              onStepClick={handleStepClick}
+            />
           </aside>
 
           <main className="sdl-main-panel">
             {loaderData.selectedProduct ? (
               <>
-                <div className="sdl-main-tabs">
-                  <button
-                    type="button"
-                    className={`sdl-main-tab ${mainTab === "edit" ? "sdl-main-tab--active" : ""}`}
-                    onClick={() => setMainTab("edit")}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className={`sdl-main-tab ${mainTab === "preview" ? "sdl-main-tab--active" : ""}`}
-                    onClick={() => setMainTab("preview")}
-                  >
-                    Preview
-                  </button>
-                </div>
-
-                {mainTab === "edit" ? (
-                  <>
-                    <section className="sdl-card">
-                      <div className="sdl-card__header">
-                        <div>
-                          <div className="sdl-card__title">
-                            {viewerType === "IMAGE_360" ? "360° Image Viewer" : "3D Model Viewer"}
-                          </div>
-                          <div className="sdl-card__subtitle">
-                            {viewerType === "IMAGE_360"
-                              ? "Drag to rotate through frames. Click to place hotspots."
-                              : "Place hotspots, capture camera values, and review the live result."}
-                          </div>
-                        </div>
-                        <div className="sdl-viewer-type-toggle">
-                          <button
-                            type="button"
-                            className={`sdl-viewer-type-btn ${viewerType === "MODEL_3D" ? "sdl-viewer-type-btn--active" : ""}`}
-                            onClick={() => setViewerType("MODEL_3D")}
-                          >
-                            3D Model
-                          </button>
-                          <button
-                            type="button"
-                            className={`sdl-viewer-type-btn ${viewerType === "IMAGE_360" ? "sdl-viewer-type-btn--active" : ""}`}
-                            onClick={() => setViewerType("IMAGE_360")}
-                          >
-                            360° Images
-                          </button>
-                        </div>
+                <section className="sdl-card">
+                  <div className="sdl-card__header">
+                    <div className="sdl-main-tabs">
+                      <button
+                        type="button"
+                        className={`sdl-main-tab ${mainTab === "edit" ? "sdl-main-tab--active" : ""}`}
+                        onClick={() => setMainTab("edit")}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className={`sdl-main-tab ${mainTab === "preview" ? "sdl-main-tab--active" : ""}`}
+                        onClick={() => setMainTab("preview")}
+                      >
+                        Preview
+                      </button>
+                    </div>
+                    {mainTab === "edit" ? (
+                      <div className="sdl-viewer-type-toggle">
+                        <button
+                          type="button"
+                          className={`sdl-viewer-type-btn ${viewerType === "MODEL_3D" ? "sdl-viewer-type-btn--active" : ""}`}
+                          onClick={() => setViewerType("MODEL_3D")}
+                        >
+                          3D Model
+                        </button>
+                        <button
+                          type="button"
+                          className={`sdl-viewer-type-btn ${viewerType === "IMAGE_360" ? "sdl-viewer-type-btn--active" : ""}`}
+                          onClick={() => setViewerType("IMAGE_360")}
+                        >
+                          360° Images
+                        </button>
                       </div>
+                    ) : (
+                      <div className="sdl-preview-controls">
+                        <label className="sdl-preview-controls__bg">
+                          <span className="sdl-text-muted" style={{ fontSize: 11, fontWeight: 700 }}>BG</span>
+                          <input
+                            type="color"
+                            value={previewBg || "#ffffff"}
+                            onChange={(e) => setPreviewBg(e.target.value)}
+                            className="sdl-preview-controls__color-input"
+                          />
+                          {previewBg ? (
+                            <button
+                              type="button"
+                              className="sdl-btn sdl-btn--ghost sdl-btn--sm"
+                              onClick={() => setPreviewBg(null)}
+                              style={{ padding: "2px 6px", fontSize: 11 }}
+                            >
+                              Reset
+                            </button>
+                          ) : null}
+                        </label>
+                      </div>
+                    )}
+                  </div>
 
-                      {viewerType === "IMAGE_360" ? (
+                  {mainTab === "edit" ? (
+                    viewerType === "IMAGE_360" ? (
                         <Sdl3dImageSequencePreview
                           frames={loaderData.imageSequenceFrames}
                           hotspots={hotspots360}
@@ -1305,72 +1374,23 @@ export default function Sdl3dEditorRoute() {
                           onSelectHotspot={handlePreviewHotspotSelect}
                           onReplaceViewerSettingsJson={setViewerSettingsJson}
                         />
-                      )}
-                    </section>
-
-                    <section className="sdl-card">
-                      <div className="sdl-card__header">
-                        <div>
-                          <div className="sdl-card__title">Advanced JSON</div>
-                          <div className="sdl-card__subtitle">Developer fallback for direct JSON editing.</div>
-                        </div>
-                      </div>
-                      <details>
-                        <summary className="sdl-summary">Open JSON editor</summary>
-                        <div className="sdl-json-grid">
-                          <div>
-                            <label className="sdl-label">Viewer settings JSON</label>
-                            <textarea
-                              className="sdl-textarea"
-                              value={viewerSettingsJson}
-                              onChange={(e) => setViewerSettingsJson(e.target.value)}
-                              rows={16}
-                            />
-                          </div>
-                          <div>
-                            <label className="sdl-label">
-                              {viewerType === "IMAGE_360" ? "360° Hotspots JSON" : "Hotspots JSON"}
-                            </label>
-                            <textarea
-                              className="sdl-textarea sdl-textarea--readonly"
-                              value={viewerType === "IMAGE_360" ? hotspotsJson360Memo : hotspotsJson}
-                              readOnly
-                              rows={16}
-                            />
-                          </div>
-                        </div>
-                      </details>
-                    </section>
-                  </>
-                ) : (
-                  <section className="sdl-card">
-                    <div className="sdl-card__header">
-                      <div>
-                        <div className="sdl-card__title">Storefront preview</div>
-                        <div className="sdl-card__subtitle">See exactly what your customers will see. Updates live as you edit.</div>
-                      </div>
-                      <div className="sdl-preview-controls">
-                        <label className="sdl-preview-controls__bg">
-                          <span className="sdl-text-muted" style={{ fontSize: 11, fontWeight: 700 }}>BG</span>
-                          <input
-                            type="color"
-                            value={previewBg || "#ffffff"}
-                            onChange={(e) => setPreviewBg(e.target.value)}
-                            className="sdl-preview-controls__color-input"
-                          />
-                          {previewBg ? (
-                            <button
-                              type="button"
-                              className="sdl-btn sdl-btn--ghost sdl-btn--sm"
-                              onClick={() => setPreviewBg(null)}
-                              style={{ padding: "2px 6px", fontSize: 11 }}
-                            >
-                              Reset
-                            </button>
-                          ) : null}
-                        </label>
-                      </div>
-                    </div>
+                      )
+                  ) : !enabled ? (
+                    <div
+                      style={{ background: "#ffffff", minHeight: 48, padding: 12, borderRadius: 6 }}
+                    />
+                  ) : viewerType === "IMAGE_360" ? (
+                    <Sdl3dImageSequencePreview
+                      frames={loaderData.imageSequenceFrames}
+                      hotspots={hotspots360}
+                      selectedHotspotId={null}
+                      viewerSettingsJson={viewerSettingsJson}
+                      onSelectHotspot={() => {}}
+                      onPlaceHotspot={() => {}}
+                      onDragHotspot={() => {}}
+                      captureMode="none"
+                    />
+                  ) : (
                     <StorefrontPreview
                       modelSourceUrl={loaderData.resolvedAssets.modelSourceUrl}
                       posterUrl={loaderData.resolvedAssets.posterUrl}
@@ -1379,8 +1399,8 @@ export default function Sdl3dEditorRoute() {
                       enabled={enabled}
                       backgroundOverride={previewBg}
                     />
-                  </section>
-                )}
+                  )}
+                </section>
               </>
             ) : (
               <section className="sdl-card">
@@ -1404,41 +1424,16 @@ export default function Sdl3dEditorRoute() {
                 <div className="sdl-card__header">
                   <div>
                     <div className="sdl-card__title">Inspector</div>
-                    <div className="sdl-card__subtitle">Assets, viewer controls, and hotspot editing.</div>
                   </div>
                 </div>
-                <div className="sdl-inspector-tabs">
-                  <button
-                    type="button"
-                    className={`sdl-tab ${rightTab === "upload" ? "sdl-tab--active" : ""}`}
-                    onClick={() => setRightTab("upload")}
-                  >
-                    Assets
-                  </button>
-                  <button
-                    type="button"
-                    className={`sdl-tab ${rightTab === "viewer" ? "sdl-tab--active" : ""}`}
-                    onClick={() => setRightTab("viewer")}
-                  >
-                    Viewer
-                  </button>
-                  <button
-                    type="button"
-                    className={`sdl-tab ${rightTab === "hotspots" ? "sdl-tab--active" : ""}`}
-                    onClick={() => setRightTab("hotspots")}
-                  >
-                    Hotspots
-                  </button>
-                  <button
-                    type="button"
-                    className={`sdl-tab ${rightTab === "advanced" ? "sdl-tab--active" : ""}`}
-                    onClick={() => setRightTab("advanced")}
-                  >
-                    Advanced
-                  </button>
-                </div>
-
-                {rightTab === "upload" ? (
+                <details
+                  className="sdl-acc"
+                  open={rightTab === "upload"}
+                  onToggle={(e) => {
+                    if (e.currentTarget.open && rightTab !== "upload") setRightTab("upload");
+                  }}
+                >
+                  <summary className="sdl-acc__summary">Media</summary>
                   <div className="sdl-inspector-content">
                     {viewerType === "MODEL_3D" ? (
                       <>
@@ -1565,38 +1560,30 @@ export default function Sdl3dEditorRoute() {
                       </>
                     )}
                   </div>
-                ) : null}
+                </details>
 
-                {rightTab === "viewer" ? (
+                <details
+                  className="sdl-acc"
+                  open={rightTab === "viewer"}
+                  onToggle={(e) => {
+                    if (e.currentTarget.open && rightTab !== "viewer") setRightTab("viewer");
+                  }}
+                >
+                  <summary className="sdl-acc__summary">Viewer</summary>
                   <Sdl3dViewerSettingsEditor
                     valueJson={viewerSettingsJson}
                     onChangeJson={setViewerSettingsJson}
                   />
-                ) : null}
+                </details>
 
-                {rightTab === "advanced" ? (
-                  <>
-                  <Sdl3dViewerSettingsEditor
-                    valueJson={viewerSettingsJson}
-                    onChangeJson={setViewerSettingsJson}
-                    advanced
-                  />
-                  <details className="sdl-collapsible" style={{ marginTop: 12 }}>
-                    <summary>Import / Export JSON</summary>
-                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <button type="button" onClick={handleImportConfig} className="sdl-btn sdl-btn--sm" style={{ flex: 1 }}>
-                        Import JSON
-                      </button>
-                      <button type="button" onClick={handleExportConfig} className="sdl-btn sdl-btn--sm" style={{ flex: 1 }}>
-                        Export JSON
-                      </button>
-                    </div>
-                  </details>
-                  </>
-                ) : null}
-
-                {rightTab === "hotspots" ? (
-                  <>
+                <details
+                  className="sdl-acc"
+                  open={rightTab === "hotspots"}
+                  onToggle={(e) => {
+                    if (e.currentTarget.open && rightTab !== "hotspots") setRightTab("hotspots");
+                  }}
+                >
+                  <summary className="sdl-acc__summary">Hotspots</summary>
                   <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
                     <button
                       type="button"
@@ -1638,8 +1625,65 @@ export default function Sdl3dEditorRoute() {
                       onApplyPreset={() => setShowPresetBrowser(true)}
                     />
                   )}
-                  </>
-                ) : null}
+                </details>
+
+                <details
+                  className="sdl-acc"
+                  open={rightTab === "advanced"}
+                  onToggle={(e) => {
+                    if (e.currentTarget.open && rightTab !== "advanced") setRightTab("advanced");
+                  }}
+                >
+                  <summary className="sdl-acc__summary">Publish</summary>
+                  <div className="sdl-subtle-card" style={{ marginBottom: 12 }}>
+                    <label className="sdl-label--inline">
+                      <input
+                        type="checkbox"
+                        checked={enabled}
+                        onChange={(e) => setEnabled(e.target.checked)}
+                      />
+                      Enabled on storefront
+                    </label>
+                  </div>
+                  <Sdl3dViewerSettingsEditor
+                    valueJson={viewerSettingsJson}
+                    onChangeJson={setViewerSettingsJson}
+                    advanced
+                  />
+                  <details className="sdl-collapsible" style={{ marginTop: 12 }}>
+                    <summary>JSON download / edit / re-upload</summary>
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <button type="button" onClick={handleExportConfig} className="sdl-btn sdl-btn--sm" style={{ flex: 1 }}>
+                        Download JSON
+                      </button>
+                      <button type="button" onClick={handleImportConfig} className="sdl-btn sdl-btn--sm" style={{ flex: 1 }}>
+                        Re-upload JSON
+                      </button>
+                    </div>
+                    <div className="sdl-json-grid" style={{ marginTop: 12 }}>
+                      <div>
+                        <label className="sdl-label">Viewer settings JSON</label>
+                        <textarea
+                          className="sdl-textarea"
+                          value={viewerSettingsJson}
+                          onChange={(e) => setViewerSettingsJson(e.target.value)}
+                          rows={16}
+                        />
+                      </div>
+                      <div>
+                        <label className="sdl-label">
+                          {viewerType === "IMAGE_360" ? "360° Hotspots JSON" : "Hotspots JSON"}
+                        </label>
+                        <textarea
+                          className="sdl-textarea sdl-textarea--readonly"
+                          value={viewerType === "IMAGE_360" ? hotspotsJson360Memo : hotspotsJson}
+                          readOnly
+                          rows={16}
+                        />
+                      </div>
+                    </div>
+                  </details>
+                </details>
               </section>
             ) : (
               <section className="sdl-card">
@@ -1658,53 +1702,22 @@ export default function Sdl3dEditorRoute() {
         </div>
 
         {loaderData.selectedProduct ? (
-          <>
-          <div className="sdl-action-bar">
-            <div className="sdl-action-bar__left">
-              <span className={`sdl-badge sdl-badge--${saveFetcher.state !== "idle" ? "info" : isDirty ? "warning" : "success"}`}>
-                {saveFetcher.state !== "idle"
-                  ? "Saving…"
-                  : isDirty
-                    ? "Unsaved changes"
-                    : "Saved"}
-              </span>
-              {!isDirty && lastSavedAt ? (
-                <span className="sdl-text-muted" style={{ fontSize: 12 }}>
-                  {formatSavedAgo(lastSavedAt, saveStatusNow)}
-                </span>
-              ) : null}
-              {publishDisabled ? (
-                <span className="sdl-text-muted" style={{ fontSize: 12 }}>
-                  {isDirty
-                    ? "Save changes before publishing."
-                    : "Fix validation errors before publishing."}
-                </span>
-              ) : null}
-            </div>
-            <div className="sdl-action-bar__right">
-              <button
-                type="button"
-                onClick={submitPull}
-                className="sdl-btn sdl-btn--ghost sdl-btn--sm"
-                disabled={isActionBusy}
-                title="Overwrite this draft with the latest values from Shopify metafields."
-              >
-                {isActionBusy && actionFetcher.formData?.get("intent") === "pull" ? "Pulling…" : "Pull from Shopify"}
-              </button>
-              <button type="button" onClick={forceSave} className="sdl-btn sdl-btn--primary sdl-btn--sm" disabled={!isDirty || saveFetcher.state !== "idle"}>
-                {saveFetcher.state !== "idle" ? "Saving\u2026" : "Save draft"}
-              </button>
-              <button
-                type="button"
-                onClick={submitPublish}
-                className="sdl-btn sdl-btn--success sdl-btn--sm"
-                disabled={publishDisabled || isActionBusy}
-              >
-                {isActionBusy && actionFetcher.formData?.get("intent") === "publish" ? "Publishing…" : "Publish"}
-              </button>
-            </div>
+          <div className="sdl-editor__bottombar">
+            <span className="sdl-text-muted">
+              {validation.errors.length === 0
+                ? validation.warnings.length === 0
+                  ? "No issues."
+                  : `${validation.warnings.length} warning${validation.warnings.length === 1 ? "" : "s"}.`
+                : `${validation.errors.length} error${validation.errors.length === 1 ? "" : "s"}${validation.warnings.length ? `, ${validation.warnings.length} warning${validation.warnings.length === 1 ? "" : "s"}` : ""}.`}
+            </span>
+            <span className="sdl-text-muted">
+              {publishDisabled
+                ? isDirty
+                  ? "Save changes before publishing."
+                  : "Fix validation errors before publishing."
+                : "Ready to publish."}
+            </span>
           </div>
-          </>
         ) : null}
       </div>
 

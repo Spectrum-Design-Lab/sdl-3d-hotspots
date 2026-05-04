@@ -183,25 +183,16 @@ export function StorefrontPreview({
 
   if (!enabled) {
     return (
-      <div className="sdl-storefront-preview">
-        <div className="sdl-storefront-preview__toolbar">
-          <span className="sdl-storefront-preview__label">Storefront Preview</span>
-        </div>
-        <div className="sdl-storefront-preview__frame">
-          <div className="sdl3d-block">
-            <div className="sdl3d-block__message">3D viewer is not enabled for this product.</div>
-          </div>
-        </div>
-      </div>
+      <div
+        className="sdl-storefront-preview sdl-storefront-preview--collapsed"
+        style={{ background: "#ffffff", minHeight: 48, padding: 12, borderRadius: 6 }}
+      />
     );
   }
 
   if (!modelSourceUrl) {
     return (
       <div className="sdl-storefront-preview">
-        <div className="sdl-storefront-preview__toolbar">
-          <span className="sdl-storefront-preview__label">Storefront Preview</span>
-        </div>
         <div className="sdl-storefront-preview__frame">
           <div className="sdl3d-block">
             <div className="sdl3d-block__message">No model file is assigned to this product.</div>
@@ -214,7 +205,6 @@ export function StorefrontPreview({
   return (
     <div className="sdl-storefront-preview">
       <div className="sdl-storefront-preview__toolbar">
-        <span className="sdl-storefront-preview__label">Storefront Preview</span>
         <div className="sdl-storefront-preview__devices">
           {(["desktop", "tablet", "mobile"] as DeviceFrame[]).map((d) => (
             <button
