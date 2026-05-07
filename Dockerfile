@@ -7,12 +7,16 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-COPY package.json package-lock.json* ./
+ARG NPM_TOKEN
 
-RUN npm ci --omit=dev && npm cache clean --force
+COPY package.json package-lock.json* .npmrc ./
+
+RUN if [ -n "$NPM_TOKEN" ]; then echo "//npm.pkg.github.com/:_authToken=${NPM_TOKEN}" >> .npmrc; fi \
+    && npm ci \
+    && rm -f .npmrc
 
 COPY . .
 
-RUN npm run build
+RUN npm run build && npm prune --omit=dev && npm cache clean --force
 
 CMD ["npm", "run", "docker-start"]
