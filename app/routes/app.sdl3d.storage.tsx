@@ -6,6 +6,31 @@ import { ensureShop } from "../lib/sdl3d-graphql.server";
 import { STORAGE_PROVIDERS, type StorageProvider } from "../lib/storage-shared";
 import "../styles/editor.css";
 
+function parseSpaceUrl(input: string): { bucket?: string; endpoint?: string; region?: string } {
+  const trimmed = input.trim();
+  if (!trimmed) return {};
+  try {
+    const u = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`);
+    const parts = u.hostname.split(".");
+    if (parts.length < 2) return {};
+    const [bucket, ...rest] = parts;
+    return {
+      bucket,
+      endpoint: rest.join("."),
+      // First label of the endpoint is the region on DO Spaces / S3 path-style hosts.
+      region: rest[0],
+    };
+  } catch {
+    return {};
+  }
+}
+
+function deriveSpaceUrl(bucket: string, endpoint: string): string {
+  if (!bucket || !endpoint) return "";
+  const host = endpoint.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  return `https://${bucket}.${host}`;
+}
+
 type StorageActionData = { ok?: boolean; message?: string };
 
 type LoaderData = {
@@ -58,9 +83,31 @@ export default function Sdl3dStorageRoute() {
   const [endpoint, setEndpoint] = useState(data.storage.endpoint);
   const [region, setRegion] = useState(data.storage.region);
   const [bucket, setBucket] = useState(data.storage.bucket);
+  const [spaceUrl, setSpaceUrl] = useState(() =>
+    deriveSpaceUrl(data.storage.bucket, data.storage.endpoint),
+  );
   const [publicBaseUrl, setPublicBaseUrl] = useState(data.storage.publicBaseUrl);
   const [accessKey, setAccessKey] = useState("");
   const [secretKey, setSecretKey] = useState("");
+
+  // URL field → fills bucket / endpoint / region as it parses.
+  const onSpaceUrlChange = (next: string) => {
+    setSpaceUrl(next);
+    const parsed = parseSpaceUrl(next);
+    if (parsed.bucket !== undefined) setBucket(parsed.bucket);
+    if (parsed.endpoint !== undefined) setEndpoint(parsed.endpoint);
+    if (parsed.region !== undefined) setRegion(parsed.region);
+  };
+
+  // Editing any individual field rebuilds the URL so the two views stay in sync.
+  const onBucketChange = (next: string) => {
+    setBucket(next);
+    setSpaceUrl(deriveSpaceUrl(next, endpoint));
+  };
+  const onEndpointChange = (next: string) => {
+    setEndpoint(next);
+    setSpaceUrl(deriveSpaceUrl(bucket, next));
+  };
 
   const isSaving = saveFetcher.state !== "idle";
   const isTesting = testFetcher.state !== "idle";
@@ -132,6 +179,22 @@ export default function Sdl3dStorageRoute() {
                 </select>
               </div>
 
+              <div>
+                <label className="sdl-label" htmlFor="storage-space-url">Space URL</label>
+                <input
+                  id="storage-space-url"
+                  className="sdl-input"
+                  type="url"
+                  autoComplete="off"
+                  placeholder="https://my-bucket.fra1.digitaloceanspaces.com"
+                  value={spaceUrl}
+                  onChange={(e) => onSpaceUrlChange(e.target.value)}
+                />
+                <div className="sdl-text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  Paste the full URL DigitalOcean shows for your Space. The endpoint, region, and bucket below will fill in automatically. Edit any field below to fine-tune.
+                </div>
+              </div>
+
               <div style={{ display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr" }}>
                 <div>
                   <label className="sdl-label" htmlFor="storage-endpoint">Endpoint</label>
@@ -141,7 +204,7 @@ export default function Sdl3dStorageRoute() {
                     name="endpoint"
                     placeholder="fra1.digitaloceanspaces.com"
                     value={endpoint}
-                    onChange={(e) => setEndpoint(e.target.value)}
+                    onChange={(e) => onEndpointChange(e.target.value)}
                     required
                   />
                 </div>
@@ -166,7 +229,7 @@ export default function Sdl3dStorageRoute() {
                   name="bucket"
                   placeholder="my-merchant-assets"
                   value={bucket}
-                  onChange={(e) => setBucket(e.target.value)}
+                  onChange={(e) => onBucketChange(e.target.value)}
                   required
                 />
               </div>
