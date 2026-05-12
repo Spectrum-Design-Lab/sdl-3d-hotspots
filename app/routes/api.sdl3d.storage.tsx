@@ -54,45 +54,58 @@ export async function action({ request }: ActionFunctionArgs) {
         400,
       );
     }
-    if (!endpoint || !bucket || !accessKey || !secretKey) {
-      return json({ ok: false, message: "Endpoint, bucket, access key, and secret key are required." }, 400);
+    if (!endpoint || !bucket) {
+      return json({ ok: false, message: "Endpoint and bucket are required." }, 400);
     }
 
     const shop = await ensureShop(session.shop);
+    const existing = await prisma.shopStorage.findUnique({ where: { shopId: shop.id } });
 
-    let accessKeyEncrypted: Uint8Array<ArrayBuffer>;
-    let secretKeyEncrypted: Uint8Array<ArrayBuffer>;
+    if (!existing && (!accessKey || !secretKey)) {
+      return json(
+        { ok: false, message: "Access key and secret key are required when saving for the first time." },
+        400,
+      );
+    }
+
+    let accessKeyEncrypted: Uint8Array<ArrayBuffer> | undefined;
+    let secretKeyEncrypted: Uint8Array<ArrayBuffer> | undefined;
     try {
-      accessKeyEncrypted = encrypt(accessKey);
-      secretKeyEncrypted = encrypt(secretKey);
+      if (accessKey) accessKeyEncrypted = encrypt(accessKey);
+      if (secretKey) secretKeyEncrypted = encrypt(secretKey);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown encryption error.";
       return json({ ok: false, message: `Cannot encrypt credentials: ${message}` }, 500);
     }
 
-    await prisma.shopStorage.upsert({
-      where: { shopId: shop.id },
-      create: {
-        shopId: shop.id,
-        provider,
-        endpoint,
-        region,
-        bucket,
-        accessKeyEncrypted,
-        secretKeyEncrypted,
-        publicBaseUrl,
-      },
-      update: {
-        provider,
-        endpoint,
-        region,
-        bucket,
-        accessKeyEncrypted,
-        secretKeyEncrypted,
-        publicBaseUrl,
-        testedAt: null,
-      },
-    });
+    if (existing) {
+      await prisma.shopStorage.update({
+        where: { shopId: shop.id },
+        data: {
+          provider,
+          endpoint,
+          region,
+          bucket,
+          publicBaseUrl,
+          testedAt: null,
+          ...(accessKeyEncrypted ? { accessKeyEncrypted } : {}),
+          ...(secretKeyEncrypted ? { secretKeyEncrypted } : {}),
+        },
+      });
+    } else {
+      await prisma.shopStorage.create({
+        data: {
+          shopId: shop.id,
+          provider,
+          endpoint,
+          region,
+          bucket,
+          publicBaseUrl,
+          accessKeyEncrypted: accessKeyEncrypted!,
+          secretKeyEncrypted: secretKeyEncrypted!,
+        },
+      });
+    }
 
     return json({ ok: true });
   }

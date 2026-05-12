@@ -67,7 +67,9 @@ export default function Sdl3dStorageRoute() {
 
   const hasSavedCreds = Boolean(data.storage.accessKeyMasked);
   const canTest = hasSavedCreds || Boolean(provider && endpoint && bucket && accessKey && secretKey);
-  const canSubmit = Boolean(provider && endpoint && bucket && accessKey && secretKey);
+  const canSubmit = hasSavedCreds
+    ? Boolean(provider && endpoint && bucket)
+    : Boolean(provider && endpoint && bucket && accessKey && secretKey);
 
   const testedAtLabel = data.storage.testedAt
     ? new Date(data.storage.testedAt).toLocaleString()
@@ -180,7 +182,7 @@ export default function Sdl3dStorageRoute() {
                     placeholder={data.storage.accessKeyMasked || "AKIA…"}
                     value={accessKey}
                     onChange={(e) => setAccessKey(e.target.value)}
-                    required
+                    required={!hasSavedCreds}
                   />
                 </div>
                 <div>
@@ -194,10 +196,15 @@ export default function Sdl3dStorageRoute() {
                     placeholder={data.storage.secretKeyMasked || "•••••"}
                     value={secretKey}
                     onChange={(e) => setSecretKey(e.target.value)}
-                    required
+                    required={!hasSavedCreds}
                   />
                 </div>
               </div>
+              {hasSavedCreds ? (
+                <div className="sdl-text-muted" style={{ fontSize: 12, marginTop: -8 }}>
+                  Leave the key fields blank to keep the existing credentials and only update the other fields.
+                </div>
+              ) : null}
 
               <div>
                 <label className="sdl-label" htmlFor="storage-public-url">Public base URL (optional)</label>
