@@ -1,74 +1,295 @@
+/**
+ * Real `processCapture` job body — runs inside the worker process.
+ *
+ * Pipeline:
+ *   1. Idempotently claim the job (QUEUED → PROCESSING). Bail if someone else
+ *      already grabbed it, or if the capture is already terminal. Protects
+ *      against pg-boss double-delivery (e.g. a timed-out worker resurrecting).
+ *   2. Load Capture + ProductConfig + ShopStorage + Shopify admin client.
+ *   3. Download raw.zip from the merchant's bucket (signed GET via the
+ *      configured StorageBackend).
+ *   4. Extract into a temp dir, scan frames, evenly-sample to the target count,
+ *      run sharp conversion, upload converted frames back to the bucket under
+ *      `<shopId>/captures/<id>/frames/`.
+ *   5. Write the resulting frame array into `ProductConfig.imageSequenceJson`
+ *      (with `viewerType = IMAGE_360`).
+ *   6. Mark Capture COMPLETED + frameCountActual. On throw, FAILED +
+ *      errorMessage.
+ */
+import path from "node:path";
+import os from "node:os";
+import { mkdir, mkdtemp, rm, writeFile, stat } from "node:fs/promises";
+import type { PrismaClient } from "@prisma/client";
+import { DEFAULT_PIPELINE, SUPPORTED_EXTENSIONS } from "@spectrum-design-lab/shared";
 import prisma from "../../db.server";
-import { loadStorageForShop } from "../storage.server";
+import { loadStorageForShop, type StorageBackend } from "../storage.server";
+import shopify from "../../shopify.server";
 import type { AdminGraphqlClient } from "../sdl3d-graphql.server";
+import {
+  processedFramesKeyPrefix,
+  type CaptureStatus,
+} from "../captures-shared";
+import type { ImageSequenceFrame } from "../sdl3d-shared";
 import type { ProcessingContext } from "./types";
+import { scanDirectory } from "./scanner";
+import { sampleFrames } from "./sampler";
+import { convertFrames } from "./converter";
+import { uploadFrames } from "./uploader";
 
-/** Job payload pushed onto pg-boss by API actions (Slice 3) or smoke tests. */
+/** Job payload pushed onto pg-boss by API actions or smoke tests. */
 export type ProcessCaptureJobData = {
   shopId: string;
   captureId: string;
 };
 
+/** Streamed `getObject` body → Buffer. */
+async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream as AsyncIterable<Buffer | string>) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+/** Extract zip contents into `destDir`, returning the list of relative files written. */
+async function extractZip(zipBuffer: Buffer, destDir: string): Promise<string[]> {
+  const JSZip = (await import("jszip")).default;
+  const zip = await JSZip.loadAsync(zipBuffer);
+  const written: string[] = [];
+
+  await Promise.all(
+    Object.entries(zip.files).map(async ([relPath, entry]) => {
+      if (entry.dir) return;
+      // Drop common macOS metadata noise that scanner would skip anyway.
+      if (relPath.includes("__MACOSX") || path.basename(relPath).startsWith("._")) return;
+      const ext = path.extname(relPath).toLowerCase();
+      if (!SUPPORTED_EXTENSIONS.has(ext)) return;
+      const out = path.join(destDir, path.basename(relPath));
+      const buf = await entry.async("nodebuffer");
+      await writeFile(out, buf);
+      written.push(out);
+    }),
+  );
+
+  return written;
+}
+
+/** Atomic claim — only transitions QUEUED → PROCESSING. Returns true if we won the race. */
+async function claimCapture(
+  ctx: PrismaClient,
+  captureId: string,
+): Promise<boolean> {
+  const result = await ctx.capture.updateMany({
+    where: { id: captureId, status: { in: ["QUEUED", "PENDING", "UPLOADING"] } },
+    data: { status: "PROCESSING", startedAt: new Date(), errorMessage: null },
+  });
+  return result.count > 0;
+}
+
+async function markFailed(
+  ctx: PrismaClient,
+  captureId: string,
+  errorMessage: string,
+): Promise<void> {
+  await ctx.capture.update({
+    where: { id: captureId },
+    data: {
+      status: "FAILED",
+      errorMessage,
+      completedAt: new Date(),
+    },
+  });
+}
+
 /**
- * Slice 3 will replace this stub with:
- *   1. Read Capture row + ShopStorage + a Shopify admin client for `shopId`.
- *   2. Idempotency check (bail if status is COMPLETED/FAILED).
- *   3. Download raw.zip via signed GET from `<shopId>/captures/<captureId>/raw.zip`.
- *   4. Unpack → scanner → sampler → converter (sharp) → uploader.
- *   5. Write resulting frame array into `ProductConfig.imageSequenceJson`.
- *   6. Mark Capture COMPLETED, or FAILED with errorMessage on throw.
+ * Run the capture-processing pipeline. Caller is responsible for setting up
+ * the `ProcessingContext` (storage, shopify, prisma) bound to the right shop.
  *
- * Slice 2 keeps the signature so the worker can be wired up and a stub job
- * round-trip is verifiable from the queue. The Capture Prisma model lands in
- * Slice 3.
+ * Top-level errors are caught and surfaced as `Capture.status = FAILED` with
+ * `errorMessage` set — the worker handler should NOT re-throw, since pg-boss
+ * would otherwise re-deliver the same broken job indefinitely.
  */
 export async function processCapture(
   ctx: ProcessingContext,
   captureId: string,
 ): Promise<void> {
-  console.log(
-    `[capture-pipeline] processCapture stub — shopId=${ctx.shopId} captureId=${captureId}`,
-  );
-  // Intentional no-op until Slice 3. Throwing here would re-fail the job and
-  // pg-boss would re-deliver indefinitely; just succeed silently for now.
-}
+  const claimed = await claimCapture(ctx.prisma, captureId);
+  const current = await ctx.prisma.capture.findUnique({ where: { id: captureId } });
+  if (!current) {
+    console.warn(`[capture-pipeline] capture ${captureId} not found; nothing to do.`);
+    return;
+  }
+  if (!claimed) {
+    const status = current.status as CaptureStatus;
+    console.log(
+      `[capture-pipeline] capture ${captureId} not claimable (status=${status}); skipping.`,
+    );
+    return;
+  }
 
-/**
- * Stub admin client. Slice 3 replaces this with a real session-backed client
- * constructed via Shopify.unauthenticated.admin(shopDomain) on the worker.
- */
-function stubShopifyClient(shopId: string): AdminGraphqlClient {
-  return {
-    graphql: async () => {
+  const capture = current;
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), `sdl3d-capture-${captureId}-`));
+  const rawDir = path.join(tempDir, "raw");
+  const convertedDir = path.join(tempDir, "converted");
+  await mkdir(rawDir, { recursive: true });
+  await mkdir(convertedDir, { recursive: true });
+
+  try {
+    const config = await ctx.prisma.productConfig.findUnique({
+      where: { id: capture.productConfigId },
+    });
+    if (!config) {
+      throw new Error(`ProductConfig ${capture.productConfigId} not found.`);
+    }
+
+    // 1. Download raw.zip from merchant bucket.
+    const stream = await ctx.storage.getObject(capture.rawKey);
+    const zipBuffer = await streamToBuffer(stream as NodeJS.ReadableStream);
+
+    // 2. Extract into temp dir.
+    const extracted = await extractZip(zipBuffer, rawDir);
+    if (extracted.length === 0) {
       throw new Error(
-        `[capture-pipeline] Shopify admin client not wired for shopId=${shopId} (Slice 3).`,
+        "Raw zip contained no supported image files. Expected .jpg/.jpeg/.png/.webp (single folder of turntable frames).",
       );
-    },
-  };
+    }
+
+    // 3. Scan → group by product key. For captures we always take the largest
+    //    group (a single product per zip — merchant uploads one product at a
+    //    time via the editor UI).
+    const scans = await scanDirectory(ctx, rawDir);
+    if (scans.length === 0) {
+      throw new Error("Scanner found no parseable frames in the raw zip.");
+    }
+    const primary = scans.reduce((a, b) => (a.frames.length >= b.frames.length ? a : b));
+
+    // 4. Sample evenly to the target frame count.
+    const sampled = sampleFrames(ctx, primary.frames, {
+      totalFrames: DEFAULT_PIPELINE.totalFrames,
+      selectedCount: capture.frameCountTarget || DEFAULT_PIPELINE.selectedFrames,
+    });
+    if (sampled.length === 0) {
+      throw new Error("Sampler returned 0 frames — raw set was empty or unparseable.");
+    }
+
+    // 5. Convert with sharp.
+    const converted = await convertFrames(ctx, sampled, {
+      format: DEFAULT_PIPELINE.outputFormat,
+      quality: DEFAULT_PIPELINE.quality,
+      outputDir: convertedDir,
+      productFolder: captureId,
+      concurrency: 4,
+    });
+
+    // 6. Upload converted frames back to the merchant's bucket.
+    const keyPrefix = processedFramesKeyPrefix(ctx.shopId, captureId);
+    const uploaded = await uploadFrames(ctx, converted, { keyPrefix });
+
+    // 7. Write imageSequenceJson into the ProductConfig.
+    const frames: ImageSequenceFrame[] = uploaded.frames.map((f, i) => ({
+      index: i,
+      imageUrl: f.outputPath ?? "",
+    }));
+    if (frames.some((f) => !f.imageUrl)) {
+      throw new Error("uploader returned a frame with no public URL.");
+    }
+    await ctx.prisma.productConfig.update({
+      where: { id: config.id },
+      data: {
+        viewerType: "IMAGE_360",
+        imageSequenceJson: JSON.stringify(frames),
+        frameCount: frames.length,
+      },
+    });
+
+    // 8. Persist raw size now that we have it (signRawUpload may have stored 0/null).
+    let observedRawSize: number | null = null;
+    try {
+      const info = await stat(path.join(tempDir, "..", "raw.zip")).catch(() => null);
+      observedRawSize = info?.size ?? zipBuffer.byteLength;
+    } catch {
+      observedRawSize = zipBuffer.byteLength;
+    }
+
+    await ctx.prisma.capture.update({
+      where: { id: captureId },
+      data: {
+        status: "COMPLETED",
+        frameCountActual: frames.length,
+        processedManifestKey: `${keyPrefix}/manifest.json`,
+        completedAt: new Date(),
+        ...(observedRawSize != null && (capture.rawSizeBytes ?? 0) === 0
+          ? { rawSizeBytes: observedRawSize }
+          : {}),
+      },
+    });
+
+    console.log(
+      `[capture-pipeline] capture ${captureId} completed: ${frames.length} frames at ${uploaded.cdnBaseUrl}`,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[capture-pipeline] capture ${captureId} FAILED:`, message);
+    await markFailed(ctx.prisma, captureId, message);
+    // Intentionally not re-thrown — see jsdoc on this function.
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 /**
- * Worker job entrypoint. Builds the `ProcessingContext` from the job payload
- * and delegates to `processCapture`. Separated so a future API action that
- * runs the pipeline inline (e.g. for tests) can call `processCapture` directly
- * with a pre-built context.
+ * Worker job entrypoint. Builds the `ProcessingContext` for the target shop
+ * and delegates to `processCapture`. Separated so an API action that runs the
+ * pipeline inline (e.g. for tests) can call `processCapture` directly with a
+ * pre-built context.
  */
 export async function runProcessCaptureJob(
   data: ProcessCaptureJobData,
 ): Promise<void> {
   const storage = await loadStorageForShop(data.shopId);
   if (!storage) {
-    throw new Error(
-      `[capture-pipeline] No ShopStorage row for shopId=${data.shopId}; merchant has not configured a bucket.`,
+    await markFailed(
+      prisma,
+      data.captureId,
+      `No ShopStorage row for shopId=${data.shopId}; merchant has not configured a bucket. Open Settings → Storage to connect one.`,
     );
+    return;
   }
+
+  const shopRow = await prisma.shop.findUnique({ where: { id: data.shopId } });
+  if (!shopRow) {
+    await markFailed(prisma, data.captureId, `Shop row ${data.shopId} not found.`);
+    return;
+  }
+
+  const adminClient = await buildAdminClientForShop(shopRow.shopDomain, data.captureId, storage);
+  if (!adminClient) return; // markFailed already called
 
   const ctx: ProcessingContext = {
     shopId: data.shopId,
     storage,
-    shopify: stubShopifyClient(data.shopId),
+    shopify: adminClient,
     prisma,
   };
 
   await processCapture(ctx, data.captureId);
+}
+
+async function buildAdminClientForShop(
+  shopDomain: string,
+  captureId: string,
+  _storage: StorageBackend,
+): Promise<AdminGraphqlClient | null> {
+  try {
+    const { admin } = await shopify.unauthenticated.admin(shopDomain);
+    return admin;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await markFailed(
+      prisma,
+      captureId,
+      `Could not build Shopify admin client for ${shopDomain}: ${message}. The merchant may need to re-install the app.`,
+    );
+    return null;
+  }
 }

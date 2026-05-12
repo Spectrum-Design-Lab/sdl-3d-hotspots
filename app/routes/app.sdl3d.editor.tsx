@@ -39,6 +39,7 @@ import { useUndoRedo } from "../components/useUndoRedo";
 import { FileBrowserModal } from "../components/FileBrowserModal";
 import { ProductBrowserModal } from "../components/ProductBrowserModal";
 import { PresetBrowserModal, type PresetSummary } from "../components/PresetBrowserModal";
+import { Sdl3dRawCaptureUploader } from "../components/Sdl3dRawCaptureUploader";
 import type { Tone, RightTab } from "../components/Sdl3dEditorUI";
 
 
@@ -101,7 +102,10 @@ export async function loader({ request }: { request: Request }) {
               shopifyProductGid: productGid,
             },
           },
-          include: { hotspots: { orderBy: { sortOrder: "asc" } } },
+          include: {
+            hotspots: { orderBy: { sortOrder: "asc" } },
+            captures: { orderBy: { createdAt: "desc" }, take: 1 },
+          },
         })
       : Promise.resolve(null),
 
@@ -132,7 +136,10 @@ export async function loader({ request }: { request: Request }) {
               shopifyProductGid: productGid,
             },
           },
-          include: { hotspots: { orderBy: { sortOrder: "asc" } } },
+          include: {
+            hotspots: { orderBy: { sortOrder: "asc" } },
+            captures: { orderBy: { createdAt: "desc" }, take: 1 },
+          },
         });
       }
     } catch (err) {
@@ -243,6 +250,16 @@ export async function loader({ request }: { request: Request }) {
         frameCount: 0,
         imageSequencePrefix: "",
       },
+    latestCapture: config?.captures?.[0]
+      ? {
+        id: config.captures[0].id,
+        status: config.captures[0].status as
+          | "PENDING" | "UPLOADING" | "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED",
+        errorMessage: config.captures[0].errorMessage,
+        frameCountActual: config.captures[0].frameCountActual,
+        frameCountTarget: config.captures[0].frameCountTarget,
+      }
+      : null,
   };
 }
 
@@ -1524,6 +1541,15 @@ export default function Sdl3dEditorRoute() {
                             <div className="sdl-file-trigger__action">Browse</div>
                           </button>
                         </div>
+
+                        {loaderData.config.id && (
+                          <Sdl3dRawCaptureUploader
+                            productGid={loaderData.productGid}
+                            productConfigId={loaderData.config.id}
+                            initialCapture={loaderData.latestCapture}
+                            onCompleted={() => revalidator.revalidate()}
+                          />
+                        )}
 
                         <div className="sdl-subtle-card">
                           <div className="sdl-file-section__title">Poster file</div>

@@ -1,0 +1,507 @@
+/**
+ * Slice 3 — "Upload raw captures" affordance for the editor.
+ *
+ * Flow:
+ *   1. Pick files (single .zip OR a folder's worth of images we'll zip in the
+ *      browser via JSZip).
+ *   2. POST signRawUpload → server creates a PENDING Capture row + signed PUT
+ *      URL. We hold onto captureId locally.
+ *   3. PUT the zip directly to the bucket via the signed URL (web tier never
+ *      sees raw bytes; this is the merchant's bucket).
+ *   4. POST recordRawUpload → server flips QUEUED + enqueues process_capture.
+ *   5. Poll GET ?captureId=... every 2s until status terminal.
+ *   6. On COMPLETED, call `onCompleted` so the editor revalidates and the new
+ *      frames appear in the inspector.
+ *
+ * No `.server` imports — this file is reachable from the route's JSX.
+ */
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { CaptureStatus } from "../lib/captures-shared";
+
+const POLL_INTERVAL_MS = 2000;
+const POLL_MAX_DURATION_MS = 1000 * 60 * 15; // 15 minutes hard stop
+
+type SignResponse = {
+  ok: boolean;
+  message?: string;
+  captureId?: string;
+  uploadUrl?: string;
+  uploadMethod?: string;
+  uploadContentType?: string;
+  needsStorageSetup?: boolean;
+};
+
+type StatusResponse = {
+  ok: boolean;
+  message?: string;
+  capture?: {
+    id: string;
+    status: CaptureStatus;
+    errorMessage: string | null;
+    frameCountActual: number | null;
+    frameCountTarget: number;
+  } | null;
+};
+
+type LocalState =
+  | { kind: "idle" }
+  | { kind: "zipping"; processed: number; total: number }
+  | { kind: "signing" }
+  | { kind: "uploading"; captureId: string; loaded: number; total: number }
+  | { kind: "recording"; captureId: string }
+  | {
+      kind: "processing";
+      captureId: string;
+      status: CaptureStatus;
+      frameCountTarget: number;
+    }
+  | { kind: "done"; captureId: string; frameCount: number }
+  | {
+      kind: "error";
+      message: string;
+      captureId?: string;
+      needsStorageSetup?: boolean;
+      retryable: boolean;
+    };
+
+type Props = {
+  productGid: string;
+  productConfigId: string;
+  /** Called once a capture lands in COMPLETED so the parent can revalidate. */
+  onCompleted: () => void;
+  /** Optional path/link target for the storage settings page. */
+  storageSettingsHref?: string;
+  /** Optional initial capture state (e.g. an in-flight job from a previous session). */
+  initialCapture?: {
+    id: string;
+    status: CaptureStatus;
+    errorMessage: string | null;
+    frameCountActual: number | null;
+    frameCountTarget: number;
+  } | null;
+};
+
+const ZIP_TYPE_RE = /\.zip$/i;
+const IMAGE_EXT_RE = /\.(jpe?g|png|webp|tiff?|bmp)$/i;
+
+async function buildZip(
+  files: File[],
+  onProgress: (processed: number, total: number) => void,
+): Promise<{ blob: Blob; sizeBytes: number }> {
+  const JSZip = (await import("jszip")).default;
+  const zip = new JSZip();
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    zip.file(f.name, f);
+    onProgress(i + 1, files.length);
+  }
+  const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
+  return { blob, sizeBytes: blob.size };
+}
+
+function uploadWithProgress(
+  url: string,
+  method: string,
+  contentType: string,
+  body: Blob,
+  onProgress: (loaded: number, total: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, url);
+    xhr.setRequestHeader("Content-Type", contentType);
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) onProgress(event.loaded, event.total);
+    });
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new Error(`Bucket upload failed: HTTP ${xhr.status} ${xhr.statusText || xhr.responseText.slice(0, 200)}`));
+      }
+    });
+    xhr.addEventListener("error", () => reject(new Error("Network error during bucket upload.")));
+    xhr.addEventListener("abort", () => reject(new Error("Bucket upload aborted.")));
+    xhr.send(body);
+  });
+}
+
+export function Sdl3dRawCaptureUploader({
+  productGid,
+  productConfigId,
+  onCompleted,
+  storageSettingsHref = "/app/sdl3d/storage",
+  initialCapture = null,
+}: Props) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const completedFiredRef = useRef(false);
+
+  const [state, setState] = useState<LocalState>(() => {
+    if (
+      initialCapture &&
+      initialCapture.status !== "COMPLETED" &&
+      initialCapture.status !== "FAILED"
+    ) {
+      return {
+        kind: "processing",
+        captureId: initialCapture.id,
+        status: initialCapture.status,
+        frameCountTarget: initialCapture.frameCountTarget,
+      };
+    }
+    if (initialCapture && initialCapture.status === "FAILED") {
+      return {
+        kind: "error",
+        message: initialCapture.errorMessage ?? "Last capture failed.",
+        captureId: initialCapture.id,
+        retryable: true,
+      };
+    }
+    return { kind: "idle" };
+  });
+
+  // Polling loop while we're in the "processing" state.
+  useEffect(() => {
+    if (state.kind !== "processing") return;
+    let cancelled = false;
+    const startedAt = Date.now();
+    const captureId = state.captureId;
+
+    async function poll() {
+      try {
+        const res = await fetch(
+          `/api/sdl3d/captures?captureId=${encodeURIComponent(captureId)}`,
+          { credentials: "include" },
+        );
+        const data = (await res.json()) as StatusResponse;
+        if (cancelled) return;
+        if (!data.ok || !data.capture) {
+          setState({
+            kind: "error",
+            message: data.message ?? "Lost track of capture.",
+            captureId,
+            retryable: true,
+          });
+          return;
+        }
+        const cap = data.capture;
+        if (cap.status === "COMPLETED") {
+          setState({
+            kind: "done",
+            captureId,
+            frameCount: cap.frameCountActual ?? cap.frameCountTarget,
+          });
+          return;
+        }
+        if (cap.status === "FAILED") {
+          setState({
+            kind: "error",
+            message: cap.errorMessage ?? "Capture processing failed.",
+            captureId,
+            needsStorageSetup: /storage|credentials|bucket|head ?bucket/i.test(
+              cap.errorMessage ?? "",
+            ),
+            retryable: true,
+          });
+          return;
+        }
+        setState((prev) =>
+          prev.kind === "processing"
+            ? { ...prev, status: cap.status }
+            : prev,
+        );
+
+        if (Date.now() - startedAt > POLL_MAX_DURATION_MS) {
+          setState({
+            kind: "error",
+            message:
+              "Capture is taking longer than expected (15+ minutes). The worker may be stuck — check container logs or retry.",
+            captureId,
+            retryable: true,
+          });
+          return;
+        }
+        setTimeout(poll, POLL_INTERVAL_MS);
+      } catch (err) {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : "Polling failed.";
+        setState({
+          kind: "error",
+          message,
+          captureId,
+          retryable: true,
+        });
+      }
+    }
+
+    const timer = setTimeout(poll, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [state.kind, state.kind === "processing" ? state.captureId : null]);
+
+  // Fire onCompleted once when we transition to done.
+  useEffect(() => {
+    if (state.kind === "done" && !completedFiredRef.current) {
+      completedFiredRef.current = true;
+      onCompleted();
+    }
+    if (state.kind !== "done") {
+      completedFiredRef.current = false;
+    }
+  }, [state.kind, onCompleted]);
+
+  const handleFileChange = useCallback(
+    async (eventFiles: FileList) => {
+      const files = Array.from(eventFiles);
+      if (!files.length) return;
+
+      try {
+        let zipBlob: Blob;
+        let sizeBytes: number;
+
+        if (files.length === 1 && ZIP_TYPE_RE.test(files[0].name)) {
+          zipBlob = files[0];
+          sizeBytes = files[0].size;
+        } else {
+          const images = files.filter((f) => IMAGE_EXT_RE.test(f.name));
+          if (images.length === 0) {
+            setState({
+              kind: "error",
+              message:
+                "No supported image files in selection. Pick a .zip or a folder of .jpg/.png/.webp images.",
+              retryable: false,
+            });
+            return;
+          }
+          setState({ kind: "zipping", processed: 0, total: images.length });
+          const result = await buildZip(images, (processed, total) =>
+            setState({ kind: "zipping", processed, total }),
+          );
+          zipBlob = result.blob;
+          sizeBytes = result.sizeBytes;
+        }
+
+        setState({ kind: "signing" });
+        const signForm = new FormData();
+        signForm.set("intent", "signRawUpload");
+        signForm.set("productGid", productGid);
+        signForm.set("productConfigId", productConfigId);
+        signForm.set("rawSizeBytes", String(sizeBytes));
+        const signRes = await fetch("/api/sdl3d/captures", {
+          method: "POST",
+          body: signForm,
+          credentials: "include",
+        });
+        const signed = (await signRes.json()) as SignResponse;
+        if (!signed.ok || !signed.captureId || !signed.uploadUrl) {
+          setState({
+            kind: "error",
+            message: signed.message ?? "Could not sign upload URL.",
+            needsStorageSetup: signed.needsStorageSetup,
+            retryable: false,
+          });
+          return;
+        }
+
+        setState({
+          kind: "uploading",
+          captureId: signed.captureId,
+          loaded: 0,
+          total: sizeBytes,
+        });
+        await uploadWithProgress(
+          signed.uploadUrl,
+          signed.uploadMethod ?? "PUT",
+          signed.uploadContentType ?? "application/zip",
+          zipBlob,
+          (loaded, total) =>
+            setState({
+              kind: "uploading",
+              captureId: signed.captureId!,
+              loaded,
+              total,
+            }),
+        );
+
+        setState({ kind: "recording", captureId: signed.captureId });
+        const recordForm = new FormData();
+        recordForm.set("intent", "recordRawUpload");
+        recordForm.set("captureId", signed.captureId);
+        recordForm.set("rawSizeBytes", String(sizeBytes));
+        const recordRes = await fetch("/api/sdl3d/captures", {
+          method: "POST",
+          body: recordForm,
+          credentials: "include",
+        });
+        const recorded = (await recordRes.json()) as StatusResponse;
+        if (!recorded.ok || !recorded.capture) {
+          setState({
+            kind: "error",
+            message: recorded.message ?? "Could not enqueue processing job.",
+            captureId: signed.captureId,
+            retryable: true,
+          });
+          return;
+        }
+
+        setState({
+          kind: "processing",
+          captureId: signed.captureId,
+          status: recorded.capture.status,
+          frameCountTarget: recorded.capture.frameCountTarget,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Upload failed.";
+        setState({ kind: "error", message, retryable: true });
+      } finally {
+        if (inputRef.current) inputRef.current.value = "";
+      }
+    },
+    [productGid, productConfigId],
+  );
+
+  const handleRetry = useCallback(async () => {
+    if (state.kind !== "error" || !state.captureId) {
+      setState({ kind: "idle" });
+      return;
+    }
+    const captureId = state.captureId;
+    setState({ kind: "recording", captureId });
+    try {
+      const fd = new FormData();
+      fd.set("intent", "retry");
+      fd.set("captureId", captureId);
+      const res = await fetch("/api/sdl3d/captures", {
+        method: "POST",
+        body: fd,
+        credentials: "include",
+      });
+      const data = (await res.json()) as StatusResponse;
+      if (!data.ok || !data.capture) {
+        setState({
+          kind: "error",
+          message: data.message ?? "Retry failed.",
+          captureId,
+          retryable: false,
+        });
+        return;
+      }
+      setState({
+        kind: "processing",
+        captureId,
+        status: data.capture.status,
+        frameCountTarget: data.capture.frameCountTarget,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Retry failed.";
+      setState({ kind: "error", message, captureId, retryable: false });
+    }
+  }, [state]);
+
+  const isWorking =
+    state.kind === "zipping" ||
+    state.kind === "signing" ||
+    state.kind === "uploading" ||
+    state.kind === "recording" ||
+    state.kind === "processing";
+
+  return (
+    <div className="sdl-subtle-card">
+      <div className="sdl-file-section__title">Raw captures (auto-process)</div>
+      <p style={{ fontSize: 12, opacity: 0.75, margin: "4px 0 8px" }}>
+        Upload a folder of raw turntable photos (or a .zip). The worker samples
+        them to {72} frames, converts to WebP, and writes the resulting sequence
+        to your bucket. Your bucket — never SDL&apos;s.
+      </p>
+
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept=".zip,image/jpeg,image/png,image/webp,image/tiff,image/bmp"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          if (e.target.files) handleFileChange(e.target.files);
+        }}
+      />
+      <button
+        type="button"
+        className="sdl-btn sdl-btn--primary"
+        disabled={isWorking}
+        onClick={() => inputRef.current?.click()}
+      >
+        {isWorking ? "Working…" : "Upload raw captures"}
+      </button>
+
+      {state.kind === "zipping" && (
+        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
+          Zipping… {state.processed}/{state.total}
+        </div>
+      )}
+      {state.kind === "signing" && (
+        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
+          Requesting signed upload URL…
+        </div>
+      )}
+      {state.kind === "uploading" && (
+        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
+          Uploading to your bucket…{" "}
+          {state.total > 0
+            ? `${Math.round((state.loaded / state.total) * 100)}%`
+            : ""}
+        </div>
+      )}
+      {state.kind === "recording" && (
+        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
+          Enqueueing processing job…
+        </div>
+      )}
+      {state.kind === "processing" && (
+        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
+          Processing on the worker (status: {state.status.toLowerCase()})…
+          target {state.frameCountTarget} frames. Safe to leave this page; the
+          job runs server-side.
+        </div>
+      )}
+      {state.kind === "done" && (
+        <div style={{ fontSize: 12, color: "var(--sdl-success-fg, #10b981)", marginTop: 8 }}>
+          Done — {state.frameCount} frames live. The viewer should refresh below
+          in a moment.
+        </div>
+      )}
+      {state.kind === "error" && (
+        <div style={{ fontSize: 12, color: "var(--sdl-danger-fg, #ef4444)", marginTop: 8 }}>
+          <div>Error: {state.message}</div>
+          <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {state.needsStorageSetup && (
+              <a
+                href={storageSettingsHref}
+                style={{ textDecoration: "underline" }}
+              >
+                Open Storage settings
+              </a>
+            )}
+            {state.retryable && state.captureId && (
+              <button
+                type="button"
+                className="sdl-btn sdl-btn--sm"
+                onClick={handleRetry}
+              >
+                Retry
+              </button>
+            )}
+            <button
+              type="button"
+              className="sdl-btn sdl-btn--sm"
+              onClick={() => setState({ kind: "idle" })}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

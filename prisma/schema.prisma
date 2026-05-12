@@ -105,10 +105,32 @@ model ProductConfig {
 
   shop     Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
   hotspots Hotspot[]
+  captures Capture[]
 
   @@unique([shopId, shopifyProductGid])
   @@index([shopId])
   @@index([shopifyProductGid])
+}
+
+model Capture {
+  id                    String    @id @default(cuid())
+  productConfigId       String
+  status                String    @default("PENDING")
+  rawKey                String
+  rawSizeBytes          Int?
+  frameCountTarget      Int       @default(72)
+  frameCountActual      Int?
+  processedManifestKey  String?
+  errorMessage          String?
+  startedAt             DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  productConfig ProductConfig @relation(fields: [productConfigId], references: [id], onDelete: Cascade)
+
+  @@index([productConfigId])
+  @@index([status])
 }
 
 model Hotspot {
