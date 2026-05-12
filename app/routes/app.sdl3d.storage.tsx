@@ -3,7 +3,7 @@ import { useLoaderData, useFetcher, useRouteError, isRouteErrorResponse } from "
 import shopify from "../shopify.server";
 import prisma from "../db.server";
 import { ensureShop } from "../lib/sdl3d-graphql.server";
-import { STORAGE_PROVIDERS, type StorageProvider } from "../lib/storage.server";
+import { STORAGE_PROVIDERS, type StorageProvider } from "../lib/storage-shared";
 import "../styles/editor.css";
 
 type StorageActionData = { ok?: boolean; message?: string };
