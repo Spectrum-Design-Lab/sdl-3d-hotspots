@@ -21,6 +21,7 @@ export default function App() {
         <s-link href="/app">Home</s-link>
         <s-link href="/app/sdl3d/editor">Editor</s-link>
         <s-link href="/app/sdl3d/presets">Presets</s-link>
+        <s-link href="/app/sdl3d/storage">Storage</s-link>
         <s-link href="/app/sdl3d/settings">Settings</s-link>
       </s-app-nav>
       <Outlet />

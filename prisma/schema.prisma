@@ -43,6 +43,24 @@ model Shop {
   folders        Folder[]
   presets        Preset[]
   syncRuns       SyncRun[]
+  storage        ShopStorage?
+}
+
+model ShopStorage {
+  id                  String    @id @default(cuid())
+  shopId              String    @unique
+  provider            String
+  endpoint            String
+  region              String
+  bucket              String
+  accessKeyEncrypted  Bytes
+  secretKeyEncrypted  Bytes
+  publicBaseUrl       String?
+  testedAt            DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 }
 
 model ProductCache {
