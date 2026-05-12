@@ -71,7 +71,10 @@ export class S3CompatibleBackend implements StorageBackend {
         accessKeyId: creds.accessKey,
         secretAccessKey: creds.secretKey,
       },
-      forcePathStyle: creds.provider !== "S3",
+      // DO Spaces, R2, and S3 default to virtual-host-style addressing
+      // (<bucket>.<endpoint>). Bunny.net's S3-compatible API requires
+      // path-style. HeadBucket on DO Spaces returns 404 under path-style.
+      forcePathStyle: creds.provider === "BUNNY",
     });
   }
 
