@@ -127,8 +127,22 @@ export async function action({ request }: ActionFunctionArgs) {
     try {
       await backend.headBucket();
     } catch (err) {
+      const awsName = (err as { name?: string } | null)?.name;
+      const awsCode = (err as { Code?: string; code?: string } | null)?.Code
+        ?? (err as { Code?: string; code?: string } | null)?.code;
+      const httpStatus = (err as { $metadata?: { httpStatusCode?: number } } | null)?.$metadata?.httpStatusCode;
       const message = err instanceof Error ? err.message : "Connection failed.";
-      return json({ ok: false, message }, 200);
+      console.error("[sdl3d/storage] testConnection failed", {
+        shopId: shop.id,
+        provider: backend.provider,
+        bucket: backend.bucket,
+        awsName,
+        awsCode,
+        httpStatus,
+        message,
+      });
+      const display = awsCode ? `${awsCode}: ${message}` : message;
+      return json({ ok: false, message: display }, 200);
     }
 
     await prisma.shopStorage
