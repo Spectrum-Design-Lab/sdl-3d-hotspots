@@ -152,6 +152,35 @@ export async function loader({ request }: { request: Request }) {
     }
   }
 
+  // Stale-PENDING reaper. signRawUpload mints a Capture row in PENDING
+  // before the browser begins its PUT to the bucket; if the upload never
+  // finishes (tab closed, network drop, CORS rejection pre-fix), the row
+  // sits in PENDING/UPLOADING forever and the loader keeps surfacing it
+  // as the "latest" capture. 1 hour is well past any plausible upload time
+  // even for slow connections + huge captures; anything older is abandoned.
+  const STALE_CAPTURE_MS = 60 * 60 * 1000;
+  const latestCapture = config?.captures?.[0];
+  if (
+    latestCapture &&
+    (latestCapture.status === "PENDING" || latestCapture.status === "UPLOADING") &&
+    Date.now() - latestCapture.createdAt.getTime() > STALE_CAPTURE_MS
+  ) {
+    await prisma.capture.update({
+      where: { id: latestCapture.id },
+      data: {
+        status: "FAILED",
+        errorMessage:
+          "Upload abandoned — no recordRawUpload within 1 hour of signRawUpload. Restart the upload.",
+        completedAt: new Date(),
+      },
+    });
+    // Reflect the new state in-memory so the rest of the loader sees the
+    // fresh status without a second findUnique round-trip.
+    latestCapture.status = "FAILED";
+    latestCapture.errorMessage =
+      "Upload abandoned — no recordRawUpload within 1 hour of signRawUpload. Restart the upload.";
+  }
+
   // ── Phase 2: queries that depend on Phase 1 results ──
   const viewerType = (config?.viewerType || "MODEL_3D") as "MODEL_3D" | "IMAGE_360";
 
