@@ -1542,7 +1542,7 @@ export default function Sdl3dEditorRoute() {
                           </button>
                         </div>
 
-                        {loaderData.config.id && (
+                        {loaderData.productGid && (
                           <Sdl3dRawCaptureUploader
                             productGid={loaderData.productGid}
                             productConfigId={loaderData.config.id}
