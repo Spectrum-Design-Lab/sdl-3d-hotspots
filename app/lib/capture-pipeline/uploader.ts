@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Frame } from "@spectrum-design-lab/shared";
+import { IMMUTABLE_CACHE_CONTROL } from "../storage.server";
 import type { ProcessingContext } from "./types";
 
 export type UploadOptions = {
@@ -76,9 +77,12 @@ async function uploadFrame(
   const key = `${opts.keyPrefix.replace(/\/$/, "")}/${filename}`;
 
   // Frames must be storefront-fetchable; raw merchant uploads stay private.
+  // Cache-Control is forever-immutable because the frame URL is content-
+  // addressed by captureId — a new capture writes a new key, never overwrites.
   await ctx.storage.putObject(key, body, {
     contentType: getContentType(frame.outputPath),
     acl: "public-read",
+    cacheControl: IMMUTABLE_CACHE_CONTROL,
   });
 
   return { ...frame, outputPath: `${publicBase}/${key}` };
@@ -134,6 +138,7 @@ export async function uploadModel(
   await ctx.storage.putObject(key, fileBuffer, {
     contentType: "model/gltf-binary",
     acl: "public-read",
+    cacheControl: IMMUTABLE_CACHE_CONTROL,
   });
 
   return {

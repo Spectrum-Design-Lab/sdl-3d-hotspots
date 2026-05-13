@@ -42,7 +42,19 @@ export type ObjectVisibility = "private" | "public-read";
 export type PutObjectOptions = {
   contentType?: string;
   acl?: ObjectVisibility;
+  /**
+   * `Cache-Control` header to write on the object. Frame URLs are
+   * content-addressed (keyed by captureId, which never gets reused) so the
+   * pipeline passes `"public, max-age=31536000, immutable"` — lets browsers
+   * and any CDN in front of the bucket cache them forever. Defaults to
+   * undefined (no header).
+   */
+  cacheControl?: string;
 };
+
+/** Long-lived cache header for processed frames + manifests. Content-addressed
+ *  by captureId so it's safe to mark immutable. */
+export const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
 export type ListObjectsResult = {
   keys: string[];
@@ -139,6 +151,7 @@ export class S3CompatibleBackend implements StorageBackend {
         Body: body,
         ContentType: opts.contentType,
         ACL: opts.acl,
+        CacheControl: opts.cacheControl,
       }),
     );
   }

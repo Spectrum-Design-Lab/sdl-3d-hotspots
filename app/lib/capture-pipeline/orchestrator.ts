@@ -22,7 +22,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { PrismaClient } from "@prisma/client";
 import { DEFAULT_PIPELINE, SUPPORTED_EXTENSIONS } from "@spectrum-design-lab/shared";
 import prisma from "../../db.server";
-import { loadStorageForShop } from "../storage.server";
+import { loadStorageForShop, IMMUTABLE_CACHE_CONTROL } from "../storage.server";
 import shopify from "../../shopify.server";
 import type { AdminGraphqlClient } from "../sdl3d-graphql.server";
 import {
@@ -219,7 +219,11 @@ export async function processCapture(
     await ctx.storage.putObject(
       manifestKey,
       JSON.stringify(manifest, null, 2),
-      { contentType: "application/json", acl: "public-read" },
+      {
+        contentType: "application/json",
+        acl: "public-read",
+        cacheControl: IMMUTABLE_CACHE_CONTROL,
+      },
     );
 
     await ctx.prisma.capture.update({
