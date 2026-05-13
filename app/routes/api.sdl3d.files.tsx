@@ -4,13 +4,13 @@
  *   uploadImageSequence, selectImageSequence, searchFiles, loadMoreFiles
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import shopify from "../shopify.server";
+import { withAdminAuth } from "../lib/admin-auth.server";
 import prisma from "../db.server";
 
-export function loader({ request }: LoaderFunctionArgs) {
+export function loader(_args: LoaderFunctionArgs) {
   return new Response("Method not allowed", { status: 405 });
 }
-import { ensureShop, type AdminGraphqlClient } from "../lib/sdl3d-graphql.server";
+import type { AdminGraphqlClient } from "../lib/sdl3d-graphql.server";
 import { uploadShopifyAdminFile, listShopifyFiles, listAllShopifyFilesByPrefix, listRelatedFiles } from "../lib/sdl3d-files.server";
 import { uploadImageSequence } from "../lib/sdl3d-image-sequence.server";
 import { defaultViewerSettings, detectViewerTypeFromFilename, type ImageSequenceFrame } from "../lib/sdl3d-shared";
@@ -53,46 +53,46 @@ function ok(message: string, reload = true) {
 /* ───── action ───── */
 
 export async function action({ request }: ActionFunctionArgs) {
-  const { admin, session } = await shopify.authenticate.admin(request);
-  const shop = await ensureShop(session.shop);
-  const formData = await request.formData();
-  const intent = String(formData.get("intent") || "");
-  const productGid = String(formData.get("productGid") || "");
+  return withAdminAuth(request, async ({ admin, shop }) => {
+    const formData = await request.formData();
+    const intent = String(formData.get("intent") || "");
+    const productGid = String(formData.get("productGid") || "");
 
-  // File search/pagination don't require productGid
-  if (intent === "searchFiles") {
-    return handleSearchFiles(admin, formData);
-  }
-  if (intent === "loadMoreFiles") {
-    return handleLoadMoreFiles(admin, formData);
-  }
-  if (intent === "autoSelectByPrefix") {
-    return handleAutoSelectByPrefix(admin, formData);
-  }
-  if (intent === "loadRelatedFiles") {
-    return handleLoadRelatedFiles(admin, formData);
-  }
+    // File search/pagination don't require productGid
+    if (intent === "searchFiles") {
+      return handleSearchFiles(admin, formData);
+    }
+    if (intent === "loadMoreFiles") {
+      return handleLoadMoreFiles(admin, formData);
+    }
+    if (intent === "autoSelectByPrefix") {
+      return handleAutoSelectByPrefix(admin, formData);
+    }
+    if (intent === "loadRelatedFiles") {
+      return handleLoadRelatedFiles(admin, formData);
+    }
 
-  if (!productGid) {
-    return error("Missing product GID.");
-  }
+    if (!productGid) {
+      return error("Missing product GID.");
+    }
 
-  switch (intent) {
-    case "selectModelFile":
-      return handleSelectModelFile(shop, productGid, formData);
-    case "selectPosterFile":
-      return handleSelectPosterFile(shop, productGid, formData);
-    case "uploadModelFile":
-      return handleUploadModelFile(admin, shop, productGid, formData);
-    case "uploadPosterFile":
-      return handleUploadPosterFile(admin, shop, productGid, formData);
-    case "uploadImageSequence":
-      return handleUploadImageSequence(admin, shop, productGid, formData);
-    case "selectImageSequence":
-      return handleSelectImageSequence(shop, productGid, formData);
-    default:
-      return error("Unknown file intent.");
-  }
+    switch (intent) {
+      case "selectModelFile":
+        return handleSelectModelFile(shop, productGid, formData);
+      case "selectPosterFile":
+        return handleSelectPosterFile(shop, productGid, formData);
+      case "uploadModelFile":
+        return handleUploadModelFile(admin, shop, productGid, formData);
+      case "uploadPosterFile":
+        return handleUploadPosterFile(admin, shop, productGid, formData);
+      case "uploadImageSequence":
+        return handleUploadImageSequence(admin, shop, productGid, formData);
+      case "selectImageSequence":
+        return handleSelectImageSequence(shop, productGid, formData);
+      default:
+        return error("Unknown file intent.");
+    }
+  });
 }
 
 /* ───── handlers ───── */

@@ -4,8 +4,7 @@
  *   deleteFolder, addToFolder, removeFromFolder
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import shopify from "../shopify.server";
-import { ensureShop } from "../lib/sdl3d-graphql.server";
+import { withAdminAuth } from "../lib/admin-auth.server";
 import {
   listFolders,
   getFolderContents,
@@ -37,29 +36,29 @@ function error(message: string, status = 400) {
 /* ───── action ───── */
 
 export async function action({ request }: ActionFunctionArgs) {
-  const { session } = await shopify.authenticate.admin(request);
-  const shop = await ensureShop(session.shop);
-  const formData = await request.formData();
-  const intent = String(formData.get("intent") || "");
+  return withAdminAuth(request, async ({ shop }) => {
+    const formData = await request.formData();
+    const intent = String(formData.get("intent") || "");
 
-  switch (intent) {
-    case "listFolders":
-      return handleListFolders(shop.id);
-    case "getFolderContents":
-      return handleGetFolderContents(formData);
-    case "createFolder":
-      return handleCreateFolder(shop.id, formData);
-    case "renameFolder":
-      return handleRenameFolder(formData);
-    case "deleteFolder":
-      return handleDeleteFolder(formData);
-    case "addToFolder":
-      return handleAddToFolder(shop.id, formData);
-    case "removeFromFolder":
-      return handleRemoveFromFolder(formData);
-    default:
-      return error("Unknown folder intent.");
-  }
+    switch (intent) {
+      case "listFolders":
+        return handleListFolders(shop.id);
+      case "getFolderContents":
+        return handleGetFolderContents(formData);
+      case "createFolder":
+        return handleCreateFolder(shop.id, formData);
+      case "renameFolder":
+        return handleRenameFolder(formData);
+      case "deleteFolder":
+        return handleDeleteFolder(formData);
+      case "addToFolder":
+        return handleAddToFolder(shop.id, formData);
+      case "removeFromFolder":
+        return handleRemoveFromFolder(formData);
+      default:
+        return error("Unknown folder intent.");
+    }
+  });
 }
 
 /* ───── handlers ───── */

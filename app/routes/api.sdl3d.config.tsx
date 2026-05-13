@@ -7,9 +7,9 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 export function loader(_args: LoaderFunctionArgs) {
   return new Response("Method not allowed", { status: 405 });
 }
-import shopify from "../shopify.server";
+import { withAdminAuth } from "../lib/admin-auth.server";
 import prisma from "../db.server";
-import { ensureShop, type AdminGraphqlClient } from "../lib/sdl3d-graphql.server";
+import type { AdminGraphqlClient } from "../lib/sdl3d-graphql.server";
 import { publishConfigToMetafields } from "../lib/sdl3d-sync.server";
 import { defaultViewerSettings } from "../lib/sdl3d-shared";
 
@@ -50,26 +50,26 @@ function ok(message: string, reload = true) {
 /* ───── action ───── */
 
 export async function action({ request }: ActionFunctionArgs) {
-  const { admin, session } = await shopify.authenticate.admin(request);
-  const shop = await ensureShop(session.shop);
-  const formData = await request.formData();
-  const intent = String(formData.get("intent") || "");
-  const productGid = String(formData.get("productGid") || "");
+  return withAdminAuth(request, async ({ admin, session, shop }) => {
+    const formData = await request.formData();
+    const intent = String(formData.get("intent") || "");
+    const productGid = String(formData.get("productGid") || "");
 
-  if (!productGid) {
-    return error("Missing product GID.");
-  }
+    if (!productGid) {
+      return error("Missing product GID.");
+    }
 
-  switch (intent) {
-    case "publish":
-      return handlePublish(admin, session.shop, formData);
-    case "saveDraft":
-      return handleSaveDraft(shop, productGid, formData);
-    case "setViewerType":
-      return handleSetViewerType(shop, productGid, formData);
-    default:
-      return error("Unknown config intent.");
-  }
+    switch (intent) {
+      case "publish":
+        return handlePublish(admin, session.shop, formData);
+      case "saveDraft":
+        return handleSaveDraft(shop, productGid, formData);
+      case "setViewerType":
+        return handleSetViewerType(shop, productGid, formData);
+      default:
+        return error("Unknown config intent.");
+    }
+  });
 }
 
 /* ───── handlers ───── */

@@ -5,9 +5,8 @@
  * Presets now store hotspot collections only (no viewer settings).
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import shopify from "../shopify.server";
+import { withAdminAuth } from "../lib/admin-auth.server";
 import prisma from "../db.server";
-import { ensureShop } from "../lib/sdl3d-graphql.server";
 
 /* ───── helpers ───── */
 
@@ -29,65 +28,64 @@ function ok(message: string, extra?: Record<string, unknown>) {
 /* ───── loader (GET — list presets) ───── */
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const { session } = await shopify.authenticate.admin(request);
-  const shop = await ensureShop(session.shop);
+  return withAdminAuth(request, async ({ shop }) => {
+    const presets = await prisma.preset.findMany({
+      where: { shopId: shop.id },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        hotspotsJson: true,
+        hotspotsJson360: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
-  const presets = await prisma.preset.findMany({
-    where: { shopId: shop.id },
-    orderBy: { updatedAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      hotspotsJson: true,
-      hotspotsJson360: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
-
-  return json({
-    ok: true,
-    presets: presets.map((p) => {
-      let hotspotCount = 0;
-      try {
-        const arr = JSON.parse(p.hotspotsJson);
-        if (Array.isArray(arr)) hotspotCount = arr.length;
-      } catch { /* ignore */ }
-      let hotspot360Count = 0;
-      if (p.hotspotsJson360) {
+    return json({
+      ok: true,
+      presets: presets.map((p) => {
+        let hotspotCount = 0;
         try {
-          const arr = JSON.parse(p.hotspotsJson360);
-          if (Array.isArray(arr)) hotspot360Count = arr.length;
+          const arr = JSON.parse(p.hotspotsJson);
+          if (Array.isArray(arr)) hotspotCount = arr.length;
         } catch { /* ignore */ }
-      }
-      return {
-        ...p,
-        hotspotCount,
-        hotspot360Count,
-      };
-    }),
+        let hotspot360Count = 0;
+        if (p.hotspotsJson360) {
+          try {
+            const arr = JSON.parse(p.hotspotsJson360);
+            if (Array.isArray(arr)) hotspot360Count = arr.length;
+          } catch { /* ignore */ }
+        }
+        return {
+          ...p,
+          hotspotCount,
+          hotspot360Count,
+        };
+      }),
+    });
   });
 }
 
 /* ───── action ───── */
 
 export async function action({ request }: ActionFunctionArgs) {
-  const { session } = await shopify.authenticate.admin(request);
-  const shop = await ensureShop(session.shop);
-  const formData = await request.formData();
-  const intent = String(formData.get("intent") || "");
+  return withAdminAuth(request, async ({ shop }) => {
+    const formData = await request.formData();
+    const intent = String(formData.get("intent") || "");
 
-  switch (intent) {
-    case "create":
-    case "saveAsPreset":
-      return handleCreate(shop, formData);
-    case "delete":
-      return handleDelete(shop, formData);
-    case "rename":
-      return handleRename(shop, formData);
-    default:
-      return error("Unknown preset intent.");
-  }
+    switch (intent) {
+      case "create":
+      case "saveAsPreset":
+        return handleCreate(shop, formData);
+      case "delete":
+        return handleDelete(shop, formData);
+      case "rename":
+        return handleRename(shop, formData);
+      default:
+        return error("Unknown preset intent.");
+    }
+  });
 }
 
 /* ───── handlers ───── */
