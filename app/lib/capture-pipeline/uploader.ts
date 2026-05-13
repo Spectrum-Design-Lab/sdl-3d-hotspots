@@ -75,7 +75,11 @@ async function uploadFrame(
   const filename = path.basename(frame.outputPath);
   const key = `${opts.keyPrefix.replace(/\/$/, "")}/${filename}`;
 
-  await ctx.storage.putObject(key, body, getContentType(frame.outputPath));
+  // Frames must be storefront-fetchable; raw merchant uploads stay private.
+  await ctx.storage.putObject(key, body, {
+    contentType: getContentType(frame.outputPath),
+    acl: "public-read",
+  });
 
   return { ...frame, outputPath: `${publicBase}/${key}` };
 }
@@ -127,7 +131,10 @@ export async function uploadModel(
   const publicBase = resolvePublicBaseUrl(ctx, opts.publicBaseUrl);
   const key = `${opts.keyPrefix.replace(/\/$/, "")}/model.glb`;
 
-  await ctx.storage.putObject(key, fileBuffer, "model/gltf-binary");
+  await ctx.storage.putObject(key, fileBuffer, {
+    contentType: "model/gltf-binary",
+    acl: "public-read",
+  });
 
   return {
     modelUrl: `${publicBase}/${key}`,

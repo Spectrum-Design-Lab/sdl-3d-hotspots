@@ -219,7 +219,7 @@ export async function processCapture(
     await ctx.storage.putObject(
       manifestKey,
       JSON.stringify(manifest, null, 2),
-      "application/json",
+      { contentType: "application/json", acl: "public-read" },
     );
 
     await ctx.prisma.capture.update({

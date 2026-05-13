@@ -30,6 +30,20 @@ export type SignPutOptions = {
   expiresInSeconds?: number;
 };
 
+/**
+ * Per-object visibility. DO Spaces / S3 / R2 default to "private" — objects
+ * uploaded that way are only retrievable by callers with the SDK credentials
+ * (the worker can `getObject`, but anonymous browser/storefront fetches return
+ * 403). Processed frames and the manifest must be `"public-read"` so the
+ * storefront viewer can load them by URL. Raw merchant uploads stay private.
+ */
+export type ObjectVisibility = "private" | "public-read";
+
+export type PutObjectOptions = {
+  contentType?: string;
+  acl?: ObjectVisibility;
+};
+
 export type ListObjectsResult = {
   keys: string[];
   isTruncated: boolean;
@@ -43,7 +57,16 @@ export interface StorageBackend {
   headBucket(): Promise<void>;
   signPutUrl(opts: SignPutOptions): Promise<string>;
   getObject(key: string): Promise<Readable>;
-  putObject(key: string, body: Buffer | Uint8Array | string, contentType?: string): Promise<void>;
+  /**
+   * Upload a single object. Pass either a content-type string (back-compat
+   * shorthand) or a {@link PutObjectOptions} bag. Frames + manifests use
+   * `acl: "public-read"`; everything else stays private by default.
+   */
+  putObject(
+    key: string,
+    body: Buffer | Uint8Array | string,
+    contentTypeOrOptions?: string | PutObjectOptions,
+  ): Promise<void>;
   listObjects(prefix: string, continuationToken?: string): Promise<ListObjectsResult>;
 }
 
@@ -99,13 +122,23 @@ export class S3CompatibleBackend implements StorageBackend {
     return result.Body as Readable;
   }
 
-  async putObject(key: string, body: Buffer | Uint8Array | string, contentType?: string): Promise<void> {
+  async putObject(
+    key: string,
+    body: Buffer | Uint8Array | string,
+    contentTypeOrOptions?: string | PutObjectOptions,
+  ): Promise<void> {
+    const opts: PutObjectOptions =
+      typeof contentTypeOrOptions === "string"
+        ? { contentType: contentTypeOrOptions }
+        : (contentTypeOrOptions ?? {});
+
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
         Body: body,
-        ContentType: contentType,
+        ContentType: opts.contentType,
+        ACL: opts.acl,
       }),
     );
   }
