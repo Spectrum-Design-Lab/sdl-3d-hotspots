@@ -59,8 +59,8 @@ export default function Sdl3dSettingsRoute() {
   const metafieldData = metafieldFetcher.data;
 
   return (
-    <div className="sdl-editor" data-theme={darkMode ? "dark" : "light"}>
-      <div className="sdl-editor__inner" style={{ maxWidth: 800, margin: "0 auto", padding: 24 }}>
+    <div className="sdl-editor sdl-editor--page" data-theme={darkMode ? "dark" : "light"}>
+      <div className="sdl-editor__inner">
         <div style={{ marginBottom: 20 }}>
           <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Settings</h1>
           <p className="sdl-text-muted" style={{ margin: "4px 0 0" }}>

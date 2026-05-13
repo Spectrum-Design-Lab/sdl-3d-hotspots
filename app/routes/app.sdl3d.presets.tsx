@@ -72,8 +72,8 @@ export default function PresetsRoute() {
   }, [presets]);
 
   return (
-    <div className="sdl-editor" data-theme={darkMode ? "dark" : "light"}>
-      <div className="sdl-editor__inner" style={{ maxWidth: 800, margin: "0 auto", padding: 24 }}>
+    <div className="sdl-editor sdl-editor--page" data-theme={darkMode ? "dark" : "light"}>
+      <div className="sdl-editor__inner">
         {flash && (
           <div className="sdl-toast sdl-toast--success" style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 14, fontWeight: 700 }}>{flash}</div>

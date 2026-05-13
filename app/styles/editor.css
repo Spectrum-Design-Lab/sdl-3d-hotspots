@@ -73,9 +73,12 @@
 
 /* ── Shell (fixed height, no body scroll) ── */
 /* Lock the document so the editor owns the viewport. Scoped via :has() so
-   it only applies on the editor route. */
-html:has(.sdl-editor),
-body:has(.sdl-editor) {
+   it only applies on the editor route, and via :not(.sdl-editor--page) so
+   non-editor routes (storage, settings, presets) that reuse the same theme
+   tokens scroll the document naturally instead of getting trapped under a
+   fixed-position shell. */
+html:has(.sdl-editor:not(.sdl-editor--page)),
+body:has(.sdl-editor:not(.sdl-editor--page)) {
   margin: 0;
   height: 100%;
   overflow: hidden;
@@ -90,6 +93,25 @@ body:has(.sdl-editor) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* Page mode — settings / storage / presets / any non-editor route that
+   wants the editor's theme tokens but with normal document scrolling. */
+.sdl-editor.sdl-editor--page {
+  position: static;
+  inset: auto;
+  min-height: 100vh;
+  display: block;
+  overflow: visible;
+}
+
+.sdl-editor.sdl-editor--page .sdl-editor__inner {
+  flex: none;
+  min-height: auto;
+  display: block;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px;
 }
 
 .sdl-editor input::placeholder,
@@ -247,6 +269,10 @@ body:has(.sdl-editor) {
 /* ── Inputs ── */
 .sdl-input {
   width: 100%;
+  /* box-sizing: border-box keeps padding INSIDE the 100% width — without
+     this, .sdl-input fields inside grid columns overflow their container
+     because the 12px padding gets added on top of "100%". */
+  box-sizing: border-box;
   padding: var(--sdl-space-3);
   border-radius: var(--sdl-radius-md);
   border: 1px solid var(--border);

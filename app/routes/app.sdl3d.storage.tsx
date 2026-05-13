@@ -123,8 +123,8 @@ export default function Sdl3dStorageRoute() {
     : null;
 
   return (
-    <div className="sdl-editor" data-theme={data.darkMode ? "dark" : "light"}>
-      <div className="sdl-editor__inner" style={{ maxWidth: 760, margin: "0 auto", padding: 24 }}>
+    <div className="sdl-editor sdl-editor--page" data-theme={data.darkMode ? "dark" : "light"}>
+      <div className="sdl-editor__inner" style={{ maxWidth: 760 }}>
         <div style={{ marginBottom: 20 }}>
           <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Storage</h1>
           <p className="sdl-text-muted" style={{ margin: "4px 0 0" }}>
