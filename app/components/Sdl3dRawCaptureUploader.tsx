@@ -137,11 +137,11 @@ export function Sdl3dRawCaptureUploader({
   const completedFiredRef = useRef(false);
 
   const [state, setState] = useState<LocalState>(() => {
-    if (
-      initialCapture &&
-      initialCapture.status !== "COMPLETED" &&
-      initialCapture.status !== "FAILED"
-    ) {
+    if (!initialCapture) return { kind: "idle" };
+
+    // QUEUED or PROCESSING means the worker either has the job or will soon —
+    // start polling and show progress immediately.
+    if (initialCapture.status === "QUEUED" || initialCapture.status === "PROCESSING") {
       return {
         kind: "processing",
         captureId: initialCapture.id,
@@ -149,7 +149,8 @@ export function Sdl3dRawCaptureUploader({
         frameCountTarget: initialCapture.frameCountTarget,
       };
     }
-    if (initialCapture && initialCapture.status === "FAILED") {
+
+    if (initialCapture.status === "FAILED") {
       return {
         kind: "error",
         message: initialCapture.errorMessage ?? "Last capture failed.",
@@ -157,6 +158,12 @@ export function Sdl3dRawCaptureUploader({
         retryable: true,
       };
     }
+
+    // PENDING / UPLOADING — signRawUpload ran but recordRawUpload never did,
+    // which means the upload was abandoned (tab closed, network died, etc.).
+    // Don't pretend the worker is doing anything; let the merchant start over.
+    // The orphan row stays in the DB until the next capture or a manual cleanup
+    // overwrites it.
     return { kind: "idle" };
   });
 
