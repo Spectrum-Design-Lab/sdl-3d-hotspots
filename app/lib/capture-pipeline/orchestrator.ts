@@ -18,11 +18,11 @@
  */
 import path from "node:path";
 import os from "node:os";
-import { mkdir, mkdtemp, rm, writeFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { PrismaClient } from "@prisma/client";
 import { DEFAULT_PIPELINE, SUPPORTED_EXTENSIONS } from "@spectrum-design-lab/shared";
 import prisma from "../../db.server";
-import { loadStorageForShop, type StorageBackend } from "../storage.server";
+import { loadStorageForShop } from "../storage.server";
 import shopify from "../../shopify.server";
 import type { AdminGraphqlClient } from "../sdl3d-graphql.server";
 import {
@@ -202,24 +202,35 @@ export async function processCapture(
       },
     });
 
-    // 8. Persist raw size now that we have it (signRawUpload may have stored 0/null).
-    let observedRawSize: number | null = null;
-    try {
-      const info = await stat(path.join(tempDir, "..", "raw.zip")).catch(() => null);
-      observedRawSize = info?.size ?? zipBuffer.byteLength;
-    } catch {
-      observedRawSize = zipBuffer.byteLength;
-    }
+    // 8. Write a small processed manifest alongside the frames. Nothing in the
+    //    app reads this today, but it makes the bucket self-describing for
+    //    cli-360 / debug tooling, and lets us track which capture produced
+    //    which set of frames after the fact.
+    const manifestKey = `${keyPrefix}/manifest.json`;
+    const manifest = {
+      captureId,
+      shopId: ctx.shopId,
+      productConfigId: config.id,
+      frameCount: frames.length,
+      cdnBaseUrl: uploaded.cdnBaseUrl,
+      frames: frames.map((f) => f.imageUrl),
+      producedAt: new Date().toISOString(),
+    };
+    await ctx.storage.putObject(
+      manifestKey,
+      JSON.stringify(manifest, null, 2),
+      "application/json",
+    );
 
     await ctx.prisma.capture.update({
       where: { id: captureId },
       data: {
         status: "COMPLETED",
         frameCountActual: frames.length,
-        processedManifestKey: `${keyPrefix}/manifest.json`,
+        processedManifestKey: manifestKey,
         completedAt: new Date(),
-        ...(observedRawSize != null && (capture.rawSizeBytes ?? 0) === 0
-          ? { rawSizeBytes: observedRawSize }
+        ...((capture.rawSizeBytes ?? 0) === 0
+          ? { rawSizeBytes: zipBuffer.byteLength }
           : {}),
       },
     });
@@ -262,7 +273,7 @@ export async function runProcessCaptureJob(
     return;
   }
 
-  const adminClient = await buildAdminClientForShop(shopRow.shopDomain, data.captureId, storage);
+  const adminClient = await buildAdminClientForShop(shopRow.shopDomain, data.captureId);
   if (!adminClient) return; // markFailed already called
 
   const ctx: ProcessingContext = {
@@ -278,7 +289,6 @@ export async function runProcessCaptureJob(
 async function buildAdminClientForShop(
   shopDomain: string,
   captureId: string,
-  _storage: StorageBackend,
 ): Promise<AdminGraphqlClient | null> {
   try {
     const { admin } = await shopify.unauthenticated.admin(shopDomain);
