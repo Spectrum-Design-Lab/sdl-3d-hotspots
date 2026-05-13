@@ -43,12 +43,12 @@ model Shop {
   folders        Folder[]
   presets        Preset[]
   syncRuns       SyncRun[]
-  storage        ShopStorage?
+  storages       ShopStorage[]
 }
 
 model ShopStorage {
   id                  String    @id @default(cuid())
-  shopId              String    @unique
+  shopId              String
   provider            String
   endpoint            String
   region              String
@@ -57,10 +57,16 @@ model ShopStorage {
   secretKeyEncrypted  Bytes
   publicBaseUrl       String?
   testedAt            DateTime?
+  isDefault           Boolean   @default(false)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shop     Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  captures Capture[]
+
+  @@unique([shopId, provider])
+  @@index([shopId])
+  @@index([shopId, isDefault])
 }
 
 model ProductCache {
@@ -115,6 +121,7 @@ model ProductConfig {
 model Capture {
   id                    String    @id @default(cuid())
   productConfigId       String
+  storageId             String?
   status                String    @default("PENDING")
   rawKey                String
   rawSizeBytes          Int?
@@ -128,9 +135,11 @@ model Capture {
   updatedAt             DateTime  @updatedAt
 
   productConfig ProductConfig @relation(fields: [productConfigId], references: [id], onDelete: Cascade)
+  storage       ShopStorage?  @relation(fields: [storageId], references: [id], onDelete: SetNull)
 
   @@index([productConfigId])
   @@index([status])
+  @@index([storageId])
 }
 
 model Hotspot {

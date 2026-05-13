@@ -179,9 +179,18 @@ export function buildBackend(creds: StorageCredentials): StorageBackend {
   return new S3CompatibleBackend(creds);
 }
 
-export async function loadStorageForShop(shopId: string): Promise<StorageBackend | null> {
-  const row = await prisma.shopStorage.findUnique({ where: { shopId } });
-  if (!row) return null;
+type ShopStorageRow = {
+  id: string;
+  provider: string;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKeyEncrypted: Buffer | Uint8Array;
+  secretKeyEncrypted: Buffer | Uint8Array;
+  publicBaseUrl: string | null;
+};
+
+function rowToBackend(row: ShopStorageRow): StorageBackend {
   return buildBackend({
     provider: row.provider as StorageProvider,
     endpoint: row.endpoint,
@@ -191,4 +200,127 @@ export async function loadStorageForShop(shopId: string): Promise<StorageBackend
     secretKey: decrypt(row.secretKeyEncrypted),
     publicBaseUrl: row.publicBaseUrl,
   });
+}
+
+/**
+ * Load the shop's default storage backend. Captures / signRawUpload use this
+ * when a capture has no `storageId` of its own. Returns null if the shop has
+ * no storage configured at all, or — defensively — if no row carries
+ * isDefault (should never happen given the setDefault transaction).
+ */
+export async function loadDefaultStorageForShop(
+  shopId: string,
+): Promise<StorageBackend | null> {
+  const row = await prisma.shopStorage.findFirst({
+    where: { shopId, isDefault: true },
+  });
+  if (!row) {
+    const anyRow = await prisma.shopStorage.findFirst({ where: { shopId } });
+    if (anyRow) {
+      console.warn(
+        `[storage] shop ${shopId} has storage rows but none isDefault — falling back to most-recently-updated row ${anyRow.id}.`,
+      );
+      return rowToBackend(anyRow);
+    }
+    return null;
+  }
+  return rowToBackend(row);
+}
+
+/**
+ * Look up the shop's default storage row id without decrypting credentials.
+ * Used at signRawUpload time to stamp the resulting Capture so the worker
+ * reads from the bucket that was the default when the upload started — even
+ * if the merchant flips the default mid-job. Returns null if the shop has no
+ * default row configured.
+ */
+export async function getDefaultStorageRowId(
+  shopId: string,
+): Promise<string | null> {
+  const row = await prisma.shopStorage.findFirst({
+    where: { shopId, isDefault: true },
+    select: { id: true },
+  });
+  return row?.id ?? null;
+}
+
+/**
+ * Load a specific storage row by id. Captures use this once they've been
+ * stamped with a storageId so the worker reads from the bucket that was the
+ * default when the upload started, even if the merchant flips the default
+ * mid-job.
+ */
+export async function loadStorageForShopById(
+  shopId: string,
+  storageId: string,
+): Promise<StorageBackend | null> {
+  const row = await prisma.shopStorage.findFirst({
+    where: { id: storageId, shopId },
+  });
+  if (!row) return null;
+  return rowToBackend(row);
+}
+
+/**
+ * Load a specific storage row by provider. Used by the storage page's
+ * test-connection flow on a saved row, and (in 5C) by the editor top-bar
+ * storage selector.
+ */
+export async function loadStorageForShopByProvider(
+  shopId: string,
+  provider: StorageProvider,
+): Promise<StorageBackend | null> {
+  const row = await prisma.shopStorage.findUnique({
+    where: { shopId_provider: { shopId, provider } },
+  });
+  if (!row) return null;
+  return rowToBackend(row);
+}
+
+export type ShopStorageSummary = {
+  id: string;
+  provider: StorageProvider;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  publicBaseUrl: string | null;
+  testedAt: string | null;
+  updatedAt: string;
+  isDefault: boolean;
+};
+
+/**
+ * Lightweight list of the shop's configured storage rows, for the storage
+ * page's list UI. Sorted default-first, then by most-recently-updated. Never
+ * returns decrypted credentials.
+ */
+export async function listStoragesForShop(
+  shopId: string,
+): Promise<ShopStorageSummary[]> {
+  const rows = await prisma.shopStorage.findMany({
+    where: { shopId },
+    orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
+    select: {
+      id: true,
+      provider: true,
+      endpoint: true,
+      region: true,
+      bucket: true,
+      publicBaseUrl: true,
+      testedAt: true,
+      updatedAt: true,
+      isDefault: true,
+    },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    provider: r.provider as StorageProvider,
+    endpoint: r.endpoint,
+    region: r.region,
+    bucket: r.bucket,
+    publicBaseUrl: r.publicBaseUrl,
+    testedAt: r.testedAt ? r.testedAt.toISOString() : null,
+    updatedAt: r.updatedAt.toISOString(),
+    isDefault: r.isDefault,
+  }));
 }

@@ -22,7 +22,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { PrismaClient } from "@prisma/client";
 import { DEFAULT_PIPELINE, SUPPORTED_EXTENSIONS } from "@spectrum-design-lab/shared";
 import prisma from "../../db.server";
-import { loadStorageForShop, IMMUTABLE_CACHE_CONTROL } from "../storage.server";
+import { loadDefaultStorageForShop, IMMUTABLE_CACHE_CONTROL } from "../storage.server";
 import shopify from "../../shopify.server";
 import type { AdminGraphqlClient } from "../sdl3d-graphql.server";
 import {
@@ -261,7 +261,7 @@ export async function processCapture(
 export async function runProcessCaptureJob(
   data: ProcessCaptureJobData,
 ): Promise<void> {
-  const storage = await loadStorageForShop(data.shopId);
+  const storage = await loadDefaultStorageForShop(data.shopId);
   if (!storage) {
     await markFailed(
       prisma,

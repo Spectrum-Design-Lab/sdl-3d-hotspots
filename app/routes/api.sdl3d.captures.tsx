@@ -13,7 +13,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import prisma from "../db.server";
 import { withAdminAuth, type AuthenticatedAdmin } from "../lib/admin-auth.server";
 import { defaultViewerSettings } from "../lib/sdl3d-shared";
-import { loadStorageForShop } from "../lib/storage.server";
+import { loadDefaultStorageForShop } from "../lib/storage.server";
 import {
   DEFAULT_FRAME_COUNT_TARGET,
   rawCaptureKey,
@@ -145,7 +145,7 @@ async function handleSignRawUpload(
     return json({ ok: false, message: "Missing productGid." }, 400);
   }
 
-  const backend = await loadStorageForShop(auth.shop.id);
+  const backend = await loadDefaultStorageForShop(auth.shop.id);
   if (!backend) {
     return json(
       {
