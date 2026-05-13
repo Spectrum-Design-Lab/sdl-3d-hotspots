@@ -62,18 +62,38 @@ function extractCliShopDomain(request: Request, urlShopParam: string | null): st
  * if the request can't be authenticated — callers convert that to a JSON
  * response (see {@link runAuthenticatedAdminAction}).
  */
+// Every error our admin-auth helper throws is prefixed with this so it can't
+// be confused with Shopify-library errors (which have wording like
+// "Invalid Bearer tokens" that's easy to mistake for ours). If you see a 401
+// from /api/sdl3d/* without this prefix in the body, the failure is from
+// Shopify's session-auth path — not our CLI bearer logic.
+const ADMIN_AUTH_PREFIX = "[sdl3d-admin-auth]";
+
 export async function authenticateAdminApi(request: Request): Promise<AuthenticatedAdmin> {
   const bearer = extractBearerToken(request);
   const adminToken = process.env.CLI_ADMIN_TOKEN?.trim() ?? "";
 
-  if (bearer && adminToken && constantTimeEquals(bearer, adminToken)) {
-    // CLI flow — caller must tell us which shop to act as.
+  // Try CLI auth ONLY when the bearer length matches the configured CLI token.
+  // Embedded admin requests carry a Shopify session JWT in the Authorization
+  // header (App Bridge attaches it automatically); those JWTs are hundreds of
+  // characters long and will never match a 64-char CLI_ADMIN_TOKEN. If the
+  // bearer isn't a CLI-token match we silently fall through to Shopify's own
+  // session-token validator — that's the right behavior for App Bridge calls,
+  // and it also means a malformed/expired session JWT gets a Shopify-shaped
+  // error rather than a misleading CLI-shaped one.
+  const looksLikeCliToken =
+    bearer != null &&
+    adminToken.length > 0 &&
+    bearer.length === adminToken.length &&
+    constantTimeEquals(bearer, adminToken);
+
+  if (looksLikeCliToken) {
     const url = new URL(request.url);
     const shopDomain = extractCliShopDomain(request, url.searchParams.get("shop"));
     if (!shopDomain) {
       throw new AdminAuthError(
         400,
-        "CLI auth: provide the target shop via X-Shop-Domain header or ?shop= query param.",
+        `${ADMIN_AUTH_PREFIX} CLI bearer accepted, but no target shop provided. Send X-Shop-Domain: <shop>.myshopify.com header or ?shop= query param.`,
       );
     }
 
@@ -84,12 +104,13 @@ export async function authenticateAdminApi(request: Request): Promise<Authentica
     if (!sessionRow) {
       throw new AdminAuthError(
         404,
-        `CLI auth: no offline session stored for shop "${shopDomain}". The merchant must install the app first.`,
+        `${ADMIN_AUTH_PREFIX} CLI bearer accepted, but no offline Shopify session row exists for shop "${shopDomain}". The merchant must complete OAuth (install the app) at least once before CLI access works.`,
       );
     }
 
     const { admin } = await shopify.unauthenticated.admin(shopDomain);
     const shop = await ensureShop(shopDomain);
+    console.log(`${ADMIN_AUTH_PREFIX} CLI auth ok for shop=${shopDomain}`);
     return {
       admin,
       session: { shop: shopDomain },
@@ -98,18 +119,8 @@ export async function authenticateAdminApi(request: Request): Promise<Authentica
     };
   }
 
-  if (bearer && !adminToken) {
-    throw new AdminAuthError(
-      401,
-      "CLI auth attempted but CLI_ADMIN_TOKEN is not configured on this deployment.",
-    );
-  }
-
-  if (bearer && adminToken && !constantTimeEquals(bearer, adminToken)) {
-    throw new AdminAuthError(401, "Invalid bearer token.");
-  }
-
-  // Fall back to a normal embedded admin session.
+  // Fall back to normal embedded admin session auth. This is the path the
+  // browser takes on every fetcher.submit — App Bridge handles the JWT.
   const { admin, session } = await shopify.authenticate.admin(request);
   const shop = await ensureShop(session.shop);
   return {
