@@ -1585,6 +1585,17 @@ export default function Sdl3dEditorRoute() {
                         </div>
                       </>
                     )}
+
+                    <div className="sdl-subtle-card" style={{ marginTop: 12 }}>
+                      <label className="sdl-label--inline">
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          onChange={(e) => setEnabled(e.target.checked)}
+                        />
+                        Enabled on storefront
+                      </label>
+                    </div>
                   </div>
                 </details>
 
@@ -1661,16 +1672,6 @@ export default function Sdl3dEditorRoute() {
                   }}
                 >
                   <summary className="sdl-acc__summary">Publish</summary>
-                  <div className="sdl-subtle-card" style={{ marginBottom: 12 }}>
-                    <label className="sdl-label--inline">
-                      <input
-                        type="checkbox"
-                        checked={enabled}
-                        onChange={(e) => setEnabled(e.target.checked)}
-                      />
-                      Enabled on storefront
-                    </label>
-                  </div>
                   <Sdl3dViewerSettingsEditor
                     valueJson={viewerSettingsJson}
                     onChangeJson={setViewerSettingsJson}
