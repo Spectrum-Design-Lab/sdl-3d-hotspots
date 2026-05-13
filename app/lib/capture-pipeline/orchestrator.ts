@@ -22,7 +22,11 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { PrismaClient } from "@prisma/client";
 import { DEFAULT_PIPELINE, SUPPORTED_EXTENSIONS } from "@spectrum-design-lab/shared";
 import prisma from "../../db.server";
-import { loadDefaultStorageForShop, IMMUTABLE_CACHE_CONTROL } from "../storage.server";
+import {
+  loadDefaultStorageForShop,
+  loadStorageForShopById,
+  IMMUTABLE_CACHE_CONTROL,
+} from "../storage.server";
 import shopify from "../../shopify.server";
 import type { AdminGraphqlClient } from "../sdl3d-graphql.server";
 import {
@@ -261,7 +265,39 @@ export async function processCapture(
 export async function runProcessCaptureJob(
   data: ProcessCaptureJobData,
 ): Promise<void> {
-  const storage = await loadDefaultStorageForShop(data.shopId);
+  // Prefer the storage row stamped on the capture at signRawUpload time so we
+  // pull raw.zip from the bucket the merchant uploaded *to*, even if they've
+  // since flipped the shop's default to a different provider. Pre-5B captures
+  // have no storageId, so we fall back to the current default.
+  const captureRow = await prisma.capture.findUnique({
+    where: { id: data.captureId },
+    select: { storageId: true },
+  });
+  if (!captureRow) {
+    console.warn(`[capture-pipeline] capture ${data.captureId} not found; nothing to do.`);
+    return;
+  }
+
+  let storage = captureRow.storageId
+    ? await loadStorageForShopById(data.shopId, captureRow.storageId)
+    : null;
+
+  if (!storage && captureRow.storageId) {
+    // Stamped storage row was deleted (or pointed at a different shop). Fail
+    // loud rather than silently moving bytes to a different bucket — the
+    // merchant must reconfigure or delete the capture.
+    await markFailed(
+      prisma,
+      data.captureId,
+      `This capture's storage provider has been removed. Re-create the provider with the same bucket to retry, or delete the capture.`,
+    );
+    return;
+  }
+
+  if (!storage) {
+    storage = await loadDefaultStorageForShop(data.shopId);
+  }
+
   if (!storage) {
     await markFailed(
       prisma,

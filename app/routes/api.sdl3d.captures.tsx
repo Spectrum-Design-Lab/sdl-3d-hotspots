@@ -13,7 +13,10 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import prisma from "../db.server";
 import { withAdminAuth, type AuthenticatedAdmin } from "../lib/admin-auth.server";
 import { defaultViewerSettings } from "../lib/sdl3d-shared";
-import { loadDefaultStorageForShop } from "../lib/storage.server";
+import {
+  getDefaultStorageRowId,
+  loadStorageForShopById,
+} from "../lib/storage.server";
 import {
   DEFAULT_FRAME_COUNT_TARGET,
   rawCaptureKey,
@@ -145,8 +148,11 @@ async function handleSignRawUpload(
     return json({ ok: false, message: "Missing productGid." }, 400);
   }
 
-  const backend = await loadDefaultStorageForShop(auth.shop.id);
-  if (!backend) {
+  // Resolve the shop's default storage row up front so we can stamp the
+  // Capture with its id — the worker reads from that specific bucket later,
+  // even if the merchant flips the default mid-job.
+  const storageId = await getDefaultStorageRowId(auth.shop.id);
+  if (!storageId) {
     return json(
       {
         ok: false,
@@ -154,6 +160,19 @@ async function handleSignRawUpload(
         needsStorageSetup: true,
       },
       400,
+    );
+  }
+  const backend = await loadStorageForShopById(auth.shop.id, storageId);
+  if (!backend) {
+    // Race: row was deleted between the id lookup and the load. Surface a
+    // clean error rather than a 500.
+    return json(
+      {
+        ok: false,
+        message: "Default storage was changed mid-request. Please retry.",
+        needsStorageSetup: true,
+      },
+      409,
     );
   }
 
@@ -167,6 +186,7 @@ async function handleSignRawUpload(
   const capture = await prisma.capture.create({
     data: {
       productConfigId: config.id,
+      storageId,
       status: "PENDING",
       rawKey: "", // filled in after id is known
       rawSizeBytes: Number.isFinite(rawSizeBytes ?? NaN) ? rawSizeBytes : null,
