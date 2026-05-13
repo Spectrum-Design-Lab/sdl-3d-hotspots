@@ -4,13 +4,14 @@ import { useState, useMemo } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { adminGraphql } from "../lib/sdl3d-graphql.server";
 import "../styles/dashboard.css";
 import "../styles/onboarding.css";
 
 /* ───────────────────── loader ───────────────────── */
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shopDomain = session.shop;
 
   const shop = await prisma.shop.findUnique({
@@ -54,6 +55,71 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const titleMap = new Map(
     cachedProducts.map((p) => [p.shopifyProductGid, p.title]),
   );
+
+  // Any config without a ProductCache row falls back to its raw GID, which
+  // looks like "gid://shopify/Product/9099..." in the UI. That happens when
+  // a draft was created via the captures CLI or auto-pulled from metafields
+  // without the editor's product search ever populating the cache. Resolve
+  // those titles on the fly via the Admin API and upsert into the cache so
+  // subsequent loads skip this fetch.
+  const unresolvedGids = productGids.filter((gid) => !titleMap.has(gid));
+  if (unresolvedGids.length > 0) {
+    try {
+      const data = await adminGraphql<{
+        nodes: Array<
+          | { __typename: "Product"; id: string; title: string; handle: string; status: string }
+          | { __typename: string; id: string }
+          | null
+        >;
+      }>(
+        admin,
+        `query ResolveHomeProductTitles($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            __typename
+            ... on Product { id title handle status }
+          }
+        }`,
+        { ids: unresolvedGids },
+      );
+      const fresh: Array<{
+        shopifyProductGid: string;
+        title: string;
+        handle: string | null;
+        status: string | null;
+      }> = [];
+      for (const node of data.nodes) {
+        if (node && node.__typename === "Product" && "title" in node) {
+          titleMap.set(node.id, node.title);
+          fresh.push({
+            shopifyProductGid: node.id,
+            title: node.title,
+            handle: node.handle ?? null,
+            status: node.status ?? null,
+          });
+        }
+      }
+      if (fresh.length > 0) {
+        await Promise.all(
+          fresh.map((p) =>
+            prisma.productCache.upsert({
+              where: {
+                shopId_shopifyProductGid: {
+                  shopId: shop.id,
+                  shopifyProductGid: p.shopifyProductGid,
+                },
+              },
+              update: { title: p.title, handle: p.handle, status: p.status },
+              create: { shopId: shop.id, ...p },
+            }),
+          ),
+        );
+      }
+    } catch (err) {
+      // Soft-fail — falling back to the GID is ugly but not broken, and we
+      // don't want a transient Shopify hiccup to break the dashboard.
+      console.warn("[home] product-title resolve failed; leaving GIDs in place:", err);
+    }
+  }
 
   const enrichedConfigs = configs.map((c) => ({
     id: c.id,
