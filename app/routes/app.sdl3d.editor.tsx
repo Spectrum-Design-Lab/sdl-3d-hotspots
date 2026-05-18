@@ -1,5 +1,6 @@
 import { useBlocker, useFetcher, useLoaderData, useRevalidator, useRouteError, isRouteErrorResponse } from "react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Badge, Button } from "@shopify/polaris";
 import "../styles/editor.css";
 
 import prisma from "../db.server";
@@ -1231,15 +1232,18 @@ export default function Sdl3dEditorRoute() {
           </div>
         ) : null}
 
+        {/* Top bar — Slice 5C PR #5a: Polaris primitives (Button, Badge)
+            inside the existing sdl-editor__topbar flex container. Full
+            Polaris Page wrap is deferred to 5c, since the editor uses a
+            fixed-height embedded shell layout (per feedback_shopify_body_lock.md)
+            that conflicts with Polaris Page's centered-page chrome. Save-status
+            Banner UX win is also deferred — Banner would consume editor canvas
+            vertical space; the inline Badge is the right shape here. */}
         <div className="sdl-editor__topbar">
           <div className="sdl-editor__topbar__left">
-            <button
-              type="button"
-              className="sdl-btn sdl-btn--sm"
-              onClick={() => setShowProductBrowser(true)}
-            >
+            <Button onClick={() => setShowProductBrowser(true)} size="slim">
               Browse product
-            </button>
+            </Button>
             <span className="sdl-topbar-field">
               <span className="sdl-topbar-field__label">Product</span>
               <span className="sdl-topbar-field__value">
@@ -1248,47 +1252,43 @@ export default function Sdl3dEditorRoute() {
             </span>
             {loaderData.selectedProduct ? (
               <>
-                <span className={`sdl-badge sdl-badge--${readyTone}`}>
+                <Badge tone={readyTone === "danger" ? "critical" : "success"}>
                   {validation.isPublishReady ? "ready" : "blocked"}
-                </span>
+                </Badge>
                 <span className="sdl-topbar-field">
                   <span className="sdl-topbar-field__label">Mode</span>
                   <span className="sdl-topbar-field__value">
                     {viewerType === "IMAGE_360" ? "360° Spin" : "3D Model"}
                   </span>
                 </span>
-                <span className={`sdl-badge sdl-badge--${saveStateTone}`}>
-                  {saveStateLabel}
-                </span>
+                <Badge tone={saveStateTone}>{saveStateLabel}</Badge>
               </>
             ) : null}
           </div>
           <div className="sdl-editor__topbar__right">
             {loaderData.selectedProduct ? (
               <>
-                <button
-                  type="button"
+                <Button
                   onClick={forceSave}
-                  className="sdl-btn sdl-btn--primary sdl-btn--sm"
-                  disabled={!isDirty || saveFetcher.state !== "idle"}
+                  size="slim"
+                  disabled={!isDirty}
+                  loading={saveFetcher.state !== "idle"}
                 >
-                  {saveFetcher.state !== "idle" ? "Saving…" : "Save draft"}
-                </button>
-                <button
-                  type="button"
+                  Save draft
+                </Button>
+                <Button
+                  variant="primary"
+                  tone="success"
+                  size="slim"
                   onClick={submitPublish}
-                  className="sdl-btn sdl-btn--success sdl-btn--sm"
                   disabled={publishDisabled || isActionBusy}
-                  title={
-                    publishDisabled
-                      ? isDirty
-                        ? "Save changes before publishing."
-                        : "Fix validation errors before publishing."
-                      : undefined
+                  loading={
+                    isActionBusy &&
+                    actionFetcher.formData?.get("intent") === "publish"
                   }
                 >
-                  {isActionBusy && actionFetcher.formData?.get("intent") === "publish" ? "Publishing…" : "Publish"}
-                </button>
+                  Publish
+                </Button>
               </>
             ) : null}
           </div>
