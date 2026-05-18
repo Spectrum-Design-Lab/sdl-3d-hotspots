@@ -1,3 +1,36 @@
+/**
+ * Editor's Setup wizard sidebar — Polaris migration (Slice 5C PR #5b).
+ *
+ * Renders the 5-step "Setup" navigator (Product / Media / Viewer / Hotspots
+ * / Publish) inside the editor's left column. Clicking a step focuses the
+ * relevant inspector tab in the parent route.
+ *
+ * UX upgrades:
+ * - ProgressBar quantifies how close a product is to publish-ready (N of 5
+ *   steps in "done" status). Merchants can scan completion at a glance.
+ * - ActionList replaces the bespoke step buttons, giving keyboard nav,
+ *   focus rings, and active-item styling for free.
+ * - Polaris Icons replace the glyph strings (✓ / ○ / !) — CheckIcon,
+ *   CircleIcon, AlertCircleIcon mapped from StepStatus.
+ * - Validation blockers move from a muted in-card list to a Polaris Banner
+ *   with tone="critical", which is the canonical pattern for blocking
+ *   errors in Shopify admin.
+ * - Empty state (no product selected) is now a proper Polaris EmptyState.
+ */
+import { useMemo } from "react";
+import {
+  ActionList,
+  BlockStack,
+  Banner,
+  Card,
+  EmptyState,
+  ProgressBar,
+  Text,
+} from "@shopify/polaris";
+import {
+  CheckCircleIcon,
+  AlertCircleIcon,
+} from "@shopify/polaris-icons";
 import type { Tone } from "./Sdl3dEditorUI";
 
 export interface SidebarLoaderData {
@@ -49,11 +82,17 @@ interface Sdl3dEditorSidebarProps {
   onStepClick: (id: StepId) => void;
 }
 
-const STATUS_GLYPH: Record<StepStatus, string> = {
-  done: "✓",
-  todo: "○",
-  warn: "!",
-};
+function iconForStatus(status: StepStatus) {
+  switch (status) {
+    case "done":
+      return CheckCircleIcon;
+    case "warn":
+      return AlertCircleIcon;
+    case "todo":
+    default:
+      return null;
+  }
+}
 
 export function Sdl3dEditorSidebar({
   loaderData,
@@ -62,53 +101,109 @@ export function Sdl3dEditorSidebar({
   currentStep,
   onStepClick,
 }: Sdl3dEditorSidebarProps) {
+  // Completion percentage drives the ProgressBar. We count steps in "done"
+  // status only — "warn" and "todo" both register as incomplete.
+  const completionPct = useMemo(() => {
+    if (steps.length === 0) return 0;
+    const done = steps.filter((s) => s.status === "done").length;
+    return Math.round((done / steps.length) * 100);
+  }, [steps]);
+
+  const doneCount = steps.filter((s) => s.status === "done").length;
+
   if (!loaderData.selectedProduct) {
     return (
-      <div className="sdl-card">
-        <div className="sdl-empty-state">
-          Pick a product from the top bar to start configuring its viewer.
-        </div>
-      </div>
+      <Card>
+        <EmptyState
+          heading="Pick a product to start"
+          image=""
+          action={undefined}
+        >
+          <Text as="p">
+            Use the "Browse product" button in the top bar to choose which product to attach a 3D viewer to.
+          </Text>
+        </EmptyState>
+      </Card>
     );
   }
 
   return (
-    <section className="sdl-card sdl-steps-card">
-      <div className="sdl-card__header">
-        <div>
-          <div className="sdl-card__title">Setup</div>
-        </div>
-      </div>
-      <ol className="sdl-steps">
-        {steps.map((step) => (
-          <li key={step.id}>
-            <button
-              type="button"
-              className={`sdl-step sdl-step--${step.status} ${
-                currentStep === step.id ? "sdl-step--active" : ""
-              }`}
-              onClick={() => onStepClick(step.id)}
-            >
-              <span className={`sdl-step__marker sdl-step__marker--${step.status}`}>
-                {STATUS_GLYPH[step.status]}
-              </span>
-              <span className="sdl-step__label">{step.label}</span>
-            </button>
-          </li>
-        ))}
-      </ol>
+    <BlockStack gap="300">
+      <Card>
+        <BlockStack gap="300">
+          <BlockStack gap="100">
+            <Text as="h2" variant="headingSm">
+              Setup
+            </Text>
+            <Text as="p" tone="subdued" variant="bodySm">
+              {doneCount} of {steps.length} steps complete
+            </Text>
+            <ProgressBar progress={completionPct} size="small" />
+          </BlockStack>
+
+          <ActionList
+            items={steps.map((step) => ({
+              content: step.label,
+              prefix: (
+                <div
+                  style={{
+                    width: 16,
+                    height: 16,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color:
+                      step.status === "done"
+                        ? "var(--p-color-icon-success)"
+                        : step.status === "warn"
+                          ? "var(--p-color-icon-warning)"
+                          : "var(--p-color-icon-subdued)",
+                  }}
+                >
+                  <PolarisStepIcon status={step.status} />
+                </div>
+              ),
+              active: currentStep === step.id,
+              onAction: () => onStepClick(step.id),
+            }))}
+          />
+        </BlockStack>
+      </Card>
+
       {validation.errors.length > 0 ? (
-        <div className="sdl-mt-3">
-          <div className="sdl-text-muted" style={{ fontWeight: 700, marginBottom: 6, fontSize: 12 }}>
-            Blockers
-          </div>
-          <ul className="sdl-validation-list">
+        <Banner tone="critical" title="Resolve before publish">
+          <ul style={{ paddingLeft: 18, margin: 0 }}>
             {validation.errors.map((error) => (
-              <li key={error}>{error}</li>
+              <li key={error}>
+                <Text as="span" variant="bodySm">
+                  {error}
+                </Text>
+              </li>
             ))}
           </ul>
-        </div>
+        </Banner>
       ) : null}
-    </section>
+    </BlockStack>
+  );
+}
+
+function PolarisStepIcon({ status }: { status: StepStatus }) {
+  const Icon = iconForStatus(status);
+  if (Icon) {
+    return <Icon style={{ width: 16, height: 16 }} />;
+  }
+  // "todo" — render an empty circle outline since Polaris ships no plain
+  // CircleIcon variant. CSS-only so it inherits the surrounding color token.
+  return (
+    <span
+      aria-hidden
+      style={{
+        display: "inline-block",
+        width: 12,
+        height: 12,
+        borderRadius: "50%",
+        border: "1.5px solid currentColor",
+      }}
+    />
   );
 }
