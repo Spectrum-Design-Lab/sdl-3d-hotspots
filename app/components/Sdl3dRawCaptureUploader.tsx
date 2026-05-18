@@ -1,5 +1,6 @@
 /**
  * Slice 3 — "Upload raw captures" affordance for the editor.
+ * UI migrated to Polaris in Slice 5C PR #5h (2026-05-19).
  *
  * Flow:
  *   1. Pick files (single .zip OR a folder's worth of images we'll zip in the
@@ -16,6 +17,16 @@
  * No `.server` imports — this file is reachable from the route's JSX.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Banner,
+  BlockStack,
+  Button,
+  Card,
+  InlineStack,
+  ProgressBar,
+  Spinner,
+  Text,
+} from "@shopify/polaris";
 import type { CaptureStatus } from "../lib/captures-shared";
 
 const POLL_INTERVAL_MS = 2000;
@@ -414,101 +425,130 @@ export function Sdl3dRawCaptureUploader({
     state.kind === "recording" ||
     state.kind === "processing";
 
+  const uploadProgressPct =
+    state.kind === "uploading" && state.total > 0
+      ? Math.round((state.loaded / state.total) * 100)
+      : null;
+
   return (
-    <div className="sdl-subtle-card">
-      <div className="sdl-file-section__title">Raw captures (auto-process)</div>
-      <p style={{ fontSize: 12, opacity: 0.75, margin: "4px 0 8px" }}>
-        Upload a folder of raw turntable photos (or a .zip). The worker samples
-        them to {72} frames, converts to WebP, and writes the resulting sequence
-        to your bucket. Your bucket — never SDL&apos;s.
-      </p>
+    <Card>
+      <BlockStack gap="200">
+        <Text as="h3" variant="headingSm">
+          Raw captures (auto-process)
+        </Text>
+        <Text as="p" tone="subdued" variant="bodySm">
+          Upload a folder of raw turntable photos (or a .zip). The worker
+          samples them to 72 frames, converts to WebP, and writes the
+          resulting sequence to your bucket. Your bucket — never SDL&apos;s.
+        </Text>
 
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        accept=".zip,image/jpeg,image/png,image/webp,image/tiff,image/bmp"
-        style={{ display: "none" }}
-        onChange={(e) => {
-          if (e.target.files) handleFileChange(e.target.files);
-        }}
-      />
-      <button
-        type="button"
-        className="sdl-btn sdl-btn--primary"
-        disabled={isWorking}
-        onClick={() => inputRef.current?.click()}
-      >
-        {isWorking ? "Working…" : "Upload raw captures"}
-      </button>
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept=".zip,image/jpeg,image/png,image/webp,image/tiff,image/bmp"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files) handleFileChange(e.target.files);
+          }}
+        />
 
-      {state.kind === "zipping" && (
-        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
-          Zipping… {state.processed}/{state.total}
-        </div>
-      )}
-      {state.kind === "signing" && (
-        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
-          Requesting signed upload URL…
-        </div>
-      )}
-      {state.kind === "uploading" && (
-        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
-          Uploading to your bucket…{" "}
-          {state.total > 0
-            ? `${Math.round((state.loaded / state.total) * 100)}%`
-            : ""}
-        </div>
-      )}
-      {state.kind === "recording" && (
-        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
-          Enqueueing processing job…
-        </div>
-      )}
-      {state.kind === "processing" && (
-        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
-          Processing on the worker (status: {state.status.toLowerCase()})…
-          target {state.frameCountTarget} frames. Safe to leave this page; the
-          job runs server-side.
-        </div>
-      )}
-      {state.kind === "done" && (
-        <div style={{ fontSize: 12, color: "var(--sdl-success-fg, #10b981)", marginTop: 8 }}>
-          Done — {state.frameCount} frames live. The viewer should refresh below
-          in a moment.
-        </div>
-      )}
-      {state.kind === "error" && (
-        <div style={{ fontSize: 12, color: "var(--sdl-danger-fg, #ef4444)", marginTop: 8 }}>
-          <div>Error: {state.message}</div>
-          <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {state.needsStorageSetup && (
-              <a
-                href={storageSettingsHref}
-                style={{ textDecoration: "underline" }}
-              >
-                Open Storage settings
-              </a>
-            )}
-            {state.retryable && state.captureId && (
-              <button
-                type="button"
-                className="sdl-btn sdl-btn--sm"
-                onClick={handleRetry}
-              >
-                Retry
-              </button>
-            )}
-            <button
-              type="button"
-              className="sdl-btn sdl-btn--sm"
-              onClick={() => setState({ kind: "idle" })}
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+        <InlineStack>
+          <Button
+            variant="primary"
+            disabled={isWorking}
+            loading={isWorking && state.kind !== "processing"}
+            onClick={() => inputRef.current?.click()}
+          >
+            {isWorking ? "Working…" : "Upload raw captures"}
+          </Button>
+        </InlineStack>
+
+        {state.kind === "zipping" ? (
+          <BlockStack gap="100">
+            <InlineStack gap="200" blockAlign="center">
+              <Spinner size="small" accessibilityLabel="Zipping files" />
+              <Text as="span" variant="bodySm" tone="subdued">
+                {`Zipping… ${state.processed}/${state.total}`}
+              </Text>
+            </InlineStack>
+            <ProgressBar
+              size="small"
+              progress={state.total > 0 ? Math.round((state.processed / state.total) * 100) : 0}
+            />
+          </BlockStack>
+        ) : null}
+
+        {state.kind === "signing" ? (
+          <InlineStack gap="200" blockAlign="center">
+            <Spinner size="small" accessibilityLabel="Requesting signed URL" />
+            <Text as="span" variant="bodySm" tone="subdued">
+              Requesting signed upload URL…
+            </Text>
+          </InlineStack>
+        ) : null}
+
+        {state.kind === "uploading" ? (
+          <BlockStack gap="100">
+            <Text as="span" variant="bodySm" tone="subdued">
+              {uploadProgressPct !== null
+                ? `Uploading to your bucket… ${uploadProgressPct}%`
+                : "Uploading to your bucket…"}
+            </Text>
+            <ProgressBar size="small" progress={uploadProgressPct ?? 0} />
+          </BlockStack>
+        ) : null}
+
+        {state.kind === "recording" ? (
+          <InlineStack gap="200" blockAlign="center">
+            <Spinner size="small" accessibilityLabel="Enqueueing processing job" />
+            <Text as="span" variant="bodySm" tone="subdued">
+              Enqueueing processing job…
+            </Text>
+          </InlineStack>
+        ) : null}
+
+        {state.kind === "processing" ? (
+          <Banner tone="info">
+            <InlineStack gap="200" blockAlign="center">
+              <Spinner size="small" accessibilityLabel="Processing on worker" />
+              <Text as="span" variant="bodySm">
+                {`Processing on the worker (status: ${state.status.toLowerCase()})… target ${state.frameCountTarget} frames. Safe to leave this page; the job runs server-side.`}
+              </Text>
+            </InlineStack>
+          </Banner>
+        ) : null}
+
+        {state.kind === "done" ? (
+          <Banner tone="success" title="Capture processed">
+            <Text as="p" variant="bodySm">
+              {`${state.frameCount} frames live. The viewer should refresh below in a moment.`}
+            </Text>
+          </Banner>
+        ) : null}
+
+        {state.kind === "error" ? (
+          <Banner
+            tone="critical"
+            title="Capture failed"
+            action={
+              state.needsStorageSetup
+                ? { content: "Open Storage settings", url: storageSettingsHref }
+                : state.retryable && state.captureId
+                  ? { content: "Retry", onAction: handleRetry }
+                  : undefined
+            }
+            secondaryAction={{
+              content: "Dismiss",
+              onAction: () => setState({ kind: "idle" }),
+            }}
+          >
+            <Text as="p" variant="bodySm">
+              {state.message}
+            </Text>
+          </Banner>
+        ) : null}
+      </BlockStack>
+    </Card>
   );
 }
