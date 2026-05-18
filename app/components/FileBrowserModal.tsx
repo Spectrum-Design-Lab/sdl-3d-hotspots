@@ -1,5 +1,39 @@
+/**
+ * File picker modal — Polaris chrome migration (Slice 5C PR #5f).
+ *
+ * Mode-aware modal for picking a 3D model, poster image, or 360° image
+ * sequence. Wraps everything in a Polaris `Modal` so escape/focus
+ * trap/backdrop are owned by Polaris, and replaces the bespoke
+ * `.sdl-modal__header` / `.sdl-modal__toolbar` / `.sdl-modal__footer`
+ * chrome with Polaris primitives (TextField, Button, ButtonGroup,
+ * Banner, Box, BlockStack, InlineStack).
+ *
+ * **Scope note**: the inner file-thumbnail grid (`.sdl-modal__file`) and
+ * folder-card grid (`.sdl-modal__folder-card`) intentionally stay on
+ * bespoke CSS classes here — they're a custom thumbnail-first layout
+ * that doesn't map cleanly to Polaris `ResourceList` (row-based) or
+ * `MediaCard` (single-tile). A follow-up PR can convert them to a
+ * Polaris `InlineGrid` of small `Card` tiles; that change is independent
+ * of this chrome migration and big enough to deserve its own commit.
+ *
+ * Grid/list view toggle dropped per Slice 5C decision #6 — consistent
+ * with how `ProductBrowserModal` migrated in PR #5e. Grid is the canonical
+ * view since file pickers are thumbnail-first.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher } from "react-router";
+import {
+  Banner,
+  BlockStack,
+  Box,
+  Button,
+  ButtonGroup,
+  InlineStack,
+  Modal,
+  Spinner,
+  Text,
+  TextField,
+} from "@shopify/polaris";
 
 /* ────────────────────────────────────────────────────────────────────
  * Types
@@ -40,28 +74,19 @@ interface FileBrowserModalProps {
   open: boolean;
   onClose: () => void;
   mode: BrowserMode;
-  /** initial file list from loader */
   initialFiles: BrowsableFile[];
   initialHasMore: boolean;
   initialCursor: string | null;
-  /** currently selected file GID (single-select modes) */
   selectedGid?: string;
-  /** callback when user confirms selection */
   onSelect: (gids: string[]) => void;
-  /** callback when user uploads file(s) */
   onUpload: (files: FileList) => void;
-  /** product GID and search query for fetcher hidden fields */
   productGid: string;
   q: string;
-  /** busy state from parent actionFetcher */
   busy?: boolean;
-  /** for poster: fallback images */
   shopLogoUrl?: string | null;
   productFeaturedImageUrl?: string | null;
-  /** for sequence: zip upload handler */
   onZipUpload?: (file: File) => void;
   zipProcessing?: boolean;
-  /** reference filename for loading related files first */
   referenceFilename?: string;
 }
 
@@ -101,7 +126,6 @@ export function FileBrowserModal({
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchedFiles, setSearchedFiles] = useState<BrowsableFile[] | null>(null);
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -196,13 +220,11 @@ export function FileBrowserModal({
     }
   }, [open, referenceFilename]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Handle related files response
   useEffect(() => {
     if (relatedFetcher.state !== "idle" || !relatedFetcher.data?.ok) return;
     setRelatedFiles(relatedFetcher.data.files || []);
   }, [relatedFetcher.state, relatedFetcher.data]);
 
-  // Reset related state on modal open
   useEffect(() => {
     if (open) {
       setRelatedFiles(null);
@@ -210,7 +232,6 @@ export function FileBrowserModal({
     }
   }, [open]);
 
-  // Handle load-more results
   useEffect(() => {
     if (loadMoreFetcher.state !== "idle" || !loadMoreFetcher.data?.ok) return;
     const d = loadMoreFetcher.data;
@@ -219,7 +240,6 @@ export function FileBrowserModal({
     setHasMore(d.hasNextPage || false);
   }, [loadMoreFetcher.state, loadMoreFetcher.data]);
 
-  // Handle search results
   useEffect(() => {
     if (searchFetcher.state !== "idle" || !searchFetcher.data?.ok) return;
     if (searchFetcher.data.intent === "searchFiles") {
@@ -227,7 +247,6 @@ export function FileBrowserModal({
     }
   }, [searchFetcher.state, searchFetcher.data]);
 
-  // Handle folder fetcher results
   useEffect(() => {
     if (folderFetcher.state !== "idle" || !folderFetcher.data?.ok) return;
     const d = folderFetcher.data;
@@ -239,7 +258,6 @@ export function FileBrowserModal({
       setFolderAssets(d.assets);
     }
     if (d.folder) {
-      // New folder created -- refresh list
       fetchFolders();
       setShowNewFolderInput(false);
       setNewFolderName("");
@@ -255,7 +273,6 @@ export function FileBrowserModal({
     }
     if (d.message && d.message.includes("Added")) {
       setAddToFolderMode(false);
-      // Refresh folder contents if viewing one
       if (currentFolderId) fetchFolderContents(currentFolderId);
       fetchFolders();
     }
@@ -263,7 +280,7 @@ export function FileBrowserModal({
       if (currentFolderId) fetchFolderContents(currentFolderId);
       fetchFolders();
     }
-  }, [folderFetcher.state, folderFetcher.data]);
+  }, [folderFetcher.state, folderFetcher.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const allFiles = useMemo(
     () => [...initialFiles, ...extraFiles],
@@ -333,12 +350,11 @@ export function FileBrowserModal({
     folderFetcher.submit(fd, { method: "post", action: "/api/sdl3d/folders" });
   }
 
-  // Load folders when modal opens
   useEffect(() => {
     if (open && !foldersLoaded) {
       fetchFolders();
     }
-  }, [open, foldersLoaded]);
+  }, [open, foldersLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handlers ──
   const toggleFile = useCallback(
@@ -350,7 +366,6 @@ export function FileBrowserModal({
           else next.add(gid);
           return next;
         }
-        // single-select: toggle on/off
         return prev.has(gid) ? new Set() : new Set([gid]);
       });
     },
@@ -369,7 +384,6 @@ export function FileBrowserModal({
     loadMoreFetcher.submit(fd, { method: "post", action: "/api/sdl3d/files" });
   }, [cursor, fileType, productGid, q, loadMoreFetcher]);
 
-  // Infinite scroll: observe sentinel element
   useEffect(() => {
     if (observerRef.current) {
       observerRef.current.disconnect();
@@ -392,9 +406,8 @@ export function FileBrowserModal({
     return () => {
       observerRef.current?.disconnect();
     };
-  }, [open, hasMore, cursor, searchedFiles, loadMoreFetcher.state, handleLoadMore]);
+  }, [open, hasMore, cursor, searchedFiles, relatedFiles, showAllFiles, loadMoreFetcher.state, handleLoadMore]);
 
-  // Update observer when sentinel ref changes
   const setSentinelRef = useCallback((node: HTMLDivElement | null) => {
     sentinelRef.current = node;
     if (node && observerRef.current) {
@@ -448,7 +461,6 @@ export function FileBrowserModal({
     [onZipUpload, onClose],
   );
 
-  // Auto-select by prefix (sequence mode) — API-backed to find ALL matching files
   const autoSelectByPrefix = useCallback(() => {
     if (!searchTerm.trim()) return;
     const fd = new FormData();
@@ -458,33 +470,18 @@ export function FileBrowserModal({
     autoSelectFetcher.submit(fd, { method: "post", action: "/api/sdl3d/files" });
   }, [searchTerm, fileType, autoSelectFetcher]);
 
-  // Handle auto-select results
   useEffect(() => {
     if (autoSelectFetcher.state !== "idle" || !autoSelectFetcher.data?.ok) return;
     const files = autoSelectFetcher.data.files || [];
     if (files.length > 0) {
-      // Merge new files into extraFiles (dedup by id)
       setExtraFiles((prev) => {
         const existingIds = new Set([...initialFiles.map((f) => f.id), ...prev.map((f) => f.id)]);
         const newFiles = files.filter((f) => !existingIds.has(f.id));
         return [...prev, ...newFiles];
       });
-      // Select all matching
       setSelected(new Set(files.map((f) => f.id)));
     }
   }, [autoSelectFetcher.state, autoSelectFetcher.data, initialFiles]);
-
-  // Esc key
-  useEffect(() => {
-    if (!open) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
 
   const title =
     mode === "model"
@@ -504,7 +501,6 @@ export function FileBrowserModal({
 
   const folderBusy = folderFetcher.state !== "idle";
 
-  // Convert folder assets to BrowsableFile format for selection
   const folderDisplayFiles: BrowsableFile[] = folderAssets.map((a) => ({
     id: a.shopifyFileGid || a.id,
     typeName: a.kind === "MODEL_3D" ? "Model3d" : "MediaImage",
@@ -514,333 +510,200 @@ export function FileBrowserModal({
     previewUrl: a.url || null,
   }));
 
+  const confirmLabel = isMulti
+    ? `Use ${selected.size} file${selected.size !== 1 ? "s" : ""} as sequence`
+    : "Select";
+
   /* ────────────────────────────────────────────────────────────────
-   * Render: Folder contents (folder open)
+   * Render: file card grid (folder contents or directory)
+   * Bespoke `.sdl-modal__file*` classes preserved — full Polaris-card
+   * grid migration is a follow-up PR.
    * ──────────────────────────────────────────────────────────────── */
-  function renderFolderContents() {
+  function renderFileGrid(files: BrowsableFile[], emptyText: string) {
+    if (files.length === 0) {
+      return (
+        <Box padding="400">
+          <Text as="p" tone="subdued" alignment="center">
+            {emptyText}
+          </Text>
+        </Box>
+      );
+    }
     return (
-      <>
-        <div className={`sdl-modal__body sdl-modal__body--${viewMode}`}>
-          {folderAssets.length === 0 && !folderBusy ? (
-            <div className="sdl-modal__empty">
-              This folder is empty. Select files and use "Add to Folder".
-            </div>
-          ) : (
-            folderDisplayFiles.map((file) => {
-              const isSelected = selected.has(file.id);
-              return (
-                <button
-                  key={file.id}
-                  type="button"
-                  className={`sdl-modal__file ${isSelected ? "sdl-modal__file--selected" : ""}`}
-                  onClick={() => toggleFile(file.id)}
-                >
-                  <div className="sdl-modal__file-thumb">
-                    {file.previewUrl ? (
-                      <img src={file.previewUrl} alt={file.alt || file.name} loading="lazy" />
-                    ) : (
-                      <div className="sdl-modal__file-icon">
-                        {mode === "model" ? "📦" : "🖼"}
-                      </div>
-                    )}
-                    {isMulti && (
-                      <div className={`sdl-modal__file-check ${isSelected ? "sdl-modal__file-check--on" : ""}`}>
-                        {isSelected ? "✓" : ""}
-                      </div>
-                    )}
-                  </div>
-                  <div className="sdl-modal__file-name" title={file.name}>
-                    {file.name}
-                  </div>
-                  <div className="sdl-modal__file-status">
-                    {file.fileStatus}
-                  </div>
-                </button>
-              );
-            })
-          )}
-          {folderBusy && folderAssets.length === 0 && (
-            <div className="sdl-modal__empty">Loading…</div>
-          )}
-        </div>
-        {/* Remove from folder action */}
-        {selected.size > 0 && currentFolderId && (
-          <div className="sdl-modal__folder-actions-bar">
+      <div className="sdl-modal__body sdl-modal__body--grid">
+        {files.map((file) => {
+          const isSelected = selected.has(file.id);
+          return (
             <button
+              key={file.id}
               type="button"
-              className="sdl-btn sdl-btn--sm sdl-btn--danger"
-              onClick={() => {
-                const assetIdsToRemove = folderAssets
-                  .filter((a) => selected.has(a.shopifyFileGid || a.id))
-                  .map((a) => a.id);
-                if (assetIdsToRemove.length) {
-                  handleRemoveFromFolder(assetIdsToRemove);
-                  setSelected(new Set());
-                }
-              }}
-              disabled={folderBusy}
+              className={`sdl-modal__file ${isSelected ? "sdl-modal__file--selected" : ""}`}
+              onClick={() => toggleFile(file.id)}
             >
-              Remove {selected.size} from folder
+              <div className="sdl-modal__file-thumb">
+                {file.previewUrl ? (
+                  <img src={file.previewUrl} alt={file.alt || file.name} loading="lazy" />
+                ) : (
+                  <div className="sdl-modal__file-icon">
+                    {mode === "model" ? "📦" : "🖼"}
+                  </div>
+                )}
+                {isMulti && (
+                  <div className={`sdl-modal__file-check ${isSelected ? "sdl-modal__file-check--on" : ""}`}>
+                    {isSelected ? "✓" : ""}
+                  </div>
+                )}
+              </div>
+              <div className="sdl-modal__file-name" title={file.name}>
+                {file.name}
+              </div>
+              <div className="sdl-modal__file-status">
+                {file.fileStatus}
+              </div>
             </button>
-          </div>
-        )}
-      </>
+          );
+        })}
+      </div>
     );
   }
-
-  /* ────────────────────────────────────────────────────────────────
-   * Render: Unified directory view (folders + files together)
-   * ──────────────────────────────────────────────────────────────── */
-  function renderDirectoryView() {
-    const showFolders = !searchedFiles && folders.length > 0;
-    return (
-      <>
-        {relatedFiles && !searchedFiles && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 12px", fontSize: 13 }}>
-            <span className="sdl-text-muted">
-              {showAllFiles ? "Showing all files" : `Showing related files (${relatedFiles.length})`}
-            </span>
-            <button
-              type="button"
-              className="sdl-btn sdl-btn--xs"
-              onClick={() => setShowAllFiles((v) => !v)}
-            >
-              {showAllFiles ? "Show related" : "Show all files"}
-            </button>
-          </div>
-        )}
-        <div className={`sdl-modal__body sdl-modal__body--${viewMode}`}>
-          {/* Folders shown inline at top */}
-          {showFolders && folders.map((folder) => (
-            <div key={`folder-${folder.id}`} className="sdl-modal__folder-card">
-              {renamingFolderId === folder.id ? (
-                <div className="sdl-modal__folder-rename">
-                  <input
-                    type="text"
-                    className="sdl-input sdl-input--sm"
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleRenameFolder(folder.id, renameValue);
-                      if (e.key === "Escape") setRenamingFolderId(null);
-                    }}
-                    autoFocus
-                  />
-                  <div className="sdl-modal__folder-rename-actions">
-                    <button type="button" className="sdl-btn sdl-btn--primary sdl-btn--xs" onClick={() => handleRenameFolder(folder.id, renameValue)} disabled={folderBusy}>Save</button>
-                    <button type="button" className="sdl-btn sdl-btn--xs" onClick={() => setRenamingFolderId(null)}>Cancel</button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="sdl-modal__folder-open"
-                    onClick={() => {
-                      if (addToFolderMode) {
-                        handleAddSelectedToFolder(folder.id);
-                        setAddToFolderMode(false);
-                        return;
-                      }
-                      setCurrentFolderId(folder.id);
-                      setCurrentFolderName(folder.name);
-                      fetchFolderContents(folder.id);
-                    }}
-                  >
-                    <div className="sdl-modal__folder-icon">&#128193;</div>
-                    <div className="sdl-modal__folder-name">{folder.name}</div>
-                    <div className="sdl-modal__folder-count">
-                      {addToFolderMode
-                        ? `Add ${selected.size} file${selected.size !== 1 ? "s" : ""} here`
-                        : `${folder.assetCount} file${folder.assetCount !== 1 ? "s" : ""}`}
-                    </div>
-                  </button>
-                  {!addToFolderMode && (
-                    <div className="sdl-modal__folder-menu">
-                      <button type="button" className="sdl-btn sdl-btn--xs" onClick={() => { setRenamingFolderId(folder.id); setRenameValue(folder.name); }} title="Rename">Rename</button>
-                      <button type="button" className="sdl-btn sdl-btn--xs sdl-btn--danger" onClick={() => { if (confirm(`Delete folder "${folder.name}"? Files will not be deleted from Shopify.`)) handleDeleteFolder(folder.id); }} title="Delete">Delete</button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          ))}
-
-          {/* Files */}
-          {displayFiles.length === 0 && !showFolders ? (
-            <div className="sdl-modal__empty">
-              {searchedFiles !== null ? "No files match the search." : "No files found."}
-            </div>
-          ) : (
-            displayFiles.map((file) => {
-              const isSelected = selected.has(file.id);
-              return (
-                <button
-                  key={file.id}
-                  type="button"
-                  className={`sdl-modal__file ${isSelected ? "sdl-modal__file--selected" : ""}`}
-                  onClick={() => toggleFile(file.id)}
-                >
-                  <div className="sdl-modal__file-thumb">
-                    {file.previewUrl ? (
-                      <img src={file.previewUrl} alt={file.alt || file.name} loading="lazy" />
-                    ) : (
-                      <div className="sdl-modal__file-icon">
-                        {mode === "model" ? "\u{1F4E6}" : "\u{1F5BC}"}
-                      </div>
-                    )}
-                    {isMulti && (
-                      <div className={`sdl-modal__file-check ${isSelected ? "sdl-modal__file-check--on" : ""}`}>
-                        {isSelected ? "\u2713" : ""}
-                      </div>
-                    )}
-                  </div>
-                  <div className="sdl-modal__file-name" title={file.name}>
-                    {file.name}
-                  </div>
-                  <div className="sdl-modal__file-status">
-                    {file.fileStatus}
-                  </div>
-                </button>
-              );
-            })
-          )}
-        </div>
-
-        {/* Infinite scroll sentinel */}
-        {!searchedFiles && hasMore && (
-          <div ref={setSentinelRef} className="sdl-modal__load-more">
-            {loadMoreFetcher.state !== "idle" && (
-              <div className="sdl-text-muted" style={{ padding: "8px 0", textAlign: "center" }}>Loading more files…</div>
-            )}
-          </div>
-        )}
-      </>
-    );
-  }
-
-  /* ────────────────────────────────────────────────────────────────
-   * Render: Add to Folder dropdown
-   * ──────────────────────────────────────────────────────────────── */
 
   return (
-    <div className="sdl-modal-overlay" onClick={onClose}>
-      <div className="sdl-modal" onClick={(e) => e.stopPropagation()}>
-        {/* ── Header ── */}
-        <div className="sdl-modal__header">
-          <div className="sdl-modal__title">{title}</div>
-          <div className="sdl-modal__header-actions">
-            <div className="sdl-modal__view-toggle">
-              <button
-                type="button"
-                className={`sdl-modal__view-btn ${viewMode === "grid" ? "sdl-modal__view-btn--active" : ""}`}
-                onClick={() => setViewMode("grid")}
-                title="Grid view"
-              >
-                ⊞
-              </button>
-              <button
-                type="button"
-                className={`sdl-modal__view-btn ${viewMode === "list" ? "sdl-modal__view-btn--active" : ""}`}
-                onClick={() => setViewMode("list")}
-                title="List view"
-              >
-                ≡
-              </button>
-            </div>
-            <button type="button" className="sdl-modal__close" onClick={onClose}>
-              ✕
-            </button>
-          </div>
-        </div>
-
-        {/* ── Toolbar: search + upload ── */}
-        {!currentFolderId && (
-          <div className="sdl-modal__toolbar">
-            <div className="sdl-modal__search">
-              <input
-                type="text"
-                className="sdl-input"
-                placeholder="&#128269; Search"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearch();
-                }}
-              />
-              <button
-                type="button"
-                className="sdl-btn sdl-btn--primary sdl-btn--sm"
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      size="large"
+      primaryAction={{
+        content: confirmLabel,
+        onAction: handleConfirm,
+        disabled: selected.size === 0 || busy,
+      }}
+      secondaryActions={[
+        ...(!isMulti && selectedGid
+          ? [{
+              content: "Clear selection",
+              onAction: () => {
+                onSelect([]);
+                onClose();
+              },
+            }]
+          : []),
+        { content: "Cancel", onAction: onClose },
+      ]}
+    >
+      {/* ── Toolbar (top section) ── */}
+      <Modal.Section>
+        {currentFolderId ? (
+          // Breadcrumb when inside a folder
+          <InlineStack gap="200" blockAlign="center">
+            <Button
+              variant="plain"
+              onClick={() => {
+                setCurrentFolderId(null);
+                setCurrentFolderName(null);
+                setFolderAssets([]);
+                setSelected(new Set());
+              }}
+            >
+              ← All Files
+            </Button>
+            <Text as="span" tone="subdued">/</Text>
+            <Text as="span" fontWeight="semibold">{currentFolderName}</Text>
+          </InlineStack>
+        ) : (
+          <BlockStack gap="300">
+            {/* Search row */}
+            <InlineStack gap="200" blockAlign="end">
+              <Box width="100%">
+                <TextField
+                  label="Search"
+                  labelHidden
+                  value={searchTerm}
+                  onChange={setSearchTerm}
+                  onFocus={() => { /* no-op */ }}
+                  placeholder="Search files"
+                  autoComplete="off"
+                  clearButton
+                  onClearButtonClick={() => {
+                    setSearchTerm("");
+                    setSearchedFiles(null);
+                  }}
+                />
+              </Box>
+              <Button
+                variant="primary"
                 onClick={handleSearch}
-                disabled={searchFetcher.state !== "idle"}
+                loading={searchFetcher.state !== "idle"}
               >
-                {searchFetcher.state !== "idle" ? "…" : "Search"}
-              </button>
-              {searchedFiles && (
-                <button
-                  type="button"
-                  className="sdl-btn sdl-btn--sm"
-                  onClick={() => setSearchedFiles(null)}
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="sdl-modal__upload-actions">
+                Search
+              </Button>
+            </InlineStack>
+
+            {/* Upload + folder action row */}
+            <InlineStack gap="200" wrap>
               {showNewFolderInput ? (
-                <>
-                  <input
-                    type="text"
-                    className="sdl-input sdl-input--sm"
-                    placeholder="Folder name…"
-                    value={newFolderName}
-                    onChange={(e) => setNewFolderName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleCreateFolder(newFolderName);
-                      if (e.key === "Escape") {
-                        setShowNewFolderInput(false);
-                        setNewFolderName("");
-                      }
-                    }}
-                    autoFocus
-                    style={{ width: 140 }}
-                  />
-                  <button
-                    type="button"
-                    className="sdl-btn sdl-btn--primary sdl-btn--sm"
+                <InlineStack gap="200" blockAlign="end">
+                  <Box minWidth="160px">
+                    <TextField
+                      label="Folder name"
+                      labelHidden
+                      value={newFolderName}
+                      onChange={setNewFolderName}
+                      placeholder="Folder name…"
+                      autoComplete="off"
+                      autoFocus
+                    />
+                  </Box>
+                  <Button
+                    variant="primary"
                     onClick={() => handleCreateFolder(newFolderName)}
                     disabled={!newFolderName.trim() || folderBusy}
                   >
                     Create
-                  </button>
-                  <button
-                    type="button"
-                    className="sdl-btn sdl-btn--sm"
+                  </Button>
+                  <Button
                     onClick={() => {
                       setShowNewFolderInput(false);
                       setNewFolderName("");
                     }}
                   >
                     Cancel
-                  </button>
-                </>
+                  </Button>
+                </InlineStack>
               ) : (
-                <button
-                  type="button"
-                  className="sdl-btn sdl-btn--sm"
-                  onClick={() => setShowNewFolderInput(true)}
-                >
-                  + New Folder
-                </button>
+                <ButtonGroup>
+                  <Button onClick={() => setShowNewFolderInput(true)}>+ New Folder</Button>
+                  <Button onClick={handleUploadClick} disabled={busy}>
+                    Upload {mode === "model" ? "Model" : mode === "sequence" ? "Images" : "Image"}
+                  </Button>
+                  {mode === "sequence" && (
+                    <Button
+                      onClick={() => zipInputRef.current?.click()}
+                      disabled={busy || zipProcessing}
+                      loading={zipProcessing}
+                    >
+                      Upload ZIP
+                    </Button>
+                  )}
+                  {isMulti && (
+                    <>
+                      <Button
+                        onClick={autoSelectByPrefix}
+                        disabled={autoSelectFetcher.state !== "idle" || !searchTerm.trim()}
+                        loading={autoSelectFetcher.state !== "idle"}
+                      >
+                        Auto-select matching
+                      </Button>
+                      <Button
+                        onClick={() => setSelected(new Set())}
+                        disabled={selected.size === 0}
+                      >
+                        Clear selection
+                      </Button>
+                    </>
+                  )}
+                </ButtonGroup>
               )}
-              <button
-                type="button"
-                className="sdl-btn sdl-btn--sm"
-                onClick={handleUploadClick}
-                disabled={busy}
-              >
-                Upload {mode === "model" ? "Model" : mode === "sequence" ? "Images" : "Image"}
-              </button>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -850,171 +713,241 @@ export function FileBrowserModal({
                 onChange={handleFileChange}
               />
               {mode === "sequence" && (
-                <>
-                  <button
-                    type="button"
-                    className="sdl-btn sdl-btn--sm"
-                    onClick={() => zipInputRef.current?.click()}
-                    disabled={busy || zipProcessing}
-                  >
-                    {zipProcessing ? "Extracting…" : "Upload ZIP"}
-                  </button>
-                  <input
-                    ref={zipInputRef}
-                    type="file"
-                    accept=".zip"
-                    style={{ display: "none" }}
-                    onChange={handleZipChange}
-                  />
-                </>
+                <input
+                  ref={zipInputRef}
+                  type="file"
+                  accept=".zip"
+                  style={{ display: "none" }}
+                  onChange={handleZipChange}
+                />
               )}
-              {isMulti && (
-                <>
-                  <button
-                    type="button"
-                    className="sdl-btn sdl-btn--sm"
-                    onClick={() => {
-                      if (!searchTerm.trim()) {
-                        const input = document.querySelector<HTMLInputElement>(".sdl-modal__search .sdl-input");
-                        input?.focus();
-                        return;
-                      }
-                      autoSelectByPrefix();
-                    }}
-                    disabled={autoSelectFetcher.state !== "idle"}
+            </InlineStack>
+
+            {/* Related-files banner */}
+            {relatedFiles && !searchedFiles ? (
+              <Banner tone="info">
+                <InlineStack gap="200" blockAlign="center">
+                  <Text as="span" variant="bodySm">
+                    {showAllFiles
+                      ? "Showing all files"
+                      : `Showing files related to your current selection (${relatedFiles.length})`}
+                  </Text>
+                  <Button
+                    variant="plain"
+                    size="micro"
+                    onClick={() => setShowAllFiles((v) => !v)}
                   >
-                    {autoSelectFetcher.state !== "idle" ? "Finding..." : "Auto-select matching"}
-                  </button>
-                  <button
-                    type="button"
-                    className="sdl-btn sdl-btn--sm"
-                    onClick={() => setSelected(new Set())}
-                    disabled={selected.size === 0}
+                    {showAllFiles ? "Show related" : "Show all files"}
+                  </Button>
+                </InlineStack>
+              </Banner>
+            ) : null}
+
+            {/* Add-to-folder banner */}
+            {addToFolderMode ? (
+              <Banner tone="info">
+                <InlineStack gap="200" blockAlign="center">
+                  <Text as="span" variant="bodySm">
+                    Select a folder for {selected.size} file{selected.size !== 1 ? "s" : ""}:
+                  </Text>
+                  <Button
+                    variant="plain"
+                    size="micro"
+                    onClick={() => setAddToFolderMode(false)}
                   >
-                    Clear selection
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        )}
+                    Cancel
+                  </Button>
+                </InlineStack>
+              </Banner>
+            ) : null}
 
-        {/* ── Breadcrumb when inside a folder ── */}
-        {currentFolderId && (
-          <div className="sdl-modal__toolbar">
-            <div className="sdl-modal__breadcrumb" style={{ borderBottom: "none", padding: 0 }}>
-              <button
-                type="button"
-                className="sdl-modal__breadcrumb-back"
-                onClick={() => {
-                  setCurrentFolderId(null);
-                  setCurrentFolderName(null);
-                  setFolderAssets([]);
-                  setSelected(new Set());
-                }}
-              >
-                ← All Files
-              </button>
-              <span className="sdl-modal__breadcrumb-sep">/</span>
-              <span className="sdl-modal__breadcrumb-current">{currentFolderName}</span>
-            </div>
-          </div>
-        )}
-
-        {/* ── Add-to-folder bar ── */}
-        {addToFolderMode && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 20px", borderBottom: "1px solid var(--border-soft, #e5e7eb)", fontSize: 13 }}>
-            <span style={{ fontWeight: 600 }}>
-              Select a folder for {selected.size} file{selected.size !== 1 ? "s" : ""}:
-            </span>
-            <button
-              type="button"
-              className="sdl-btn sdl-btn--sm"
-              onClick={() => setAddToFolderMode(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-
-        {/* ── Main content area: unified directory view ── */}
-        {!currentFolderId && renderDirectoryView()}
-        {currentFolderId && renderFolderContents()}
-
-        {/* ── Footer ── */}
-        <div className="sdl-modal__footer">
-          <div className="sdl-modal__footer-info">
-            {isMulti ? (
-              <span>{selected.size} file{selected.size !== 1 ? "s" : ""} selected</span>
-            ) : selectedFile ? (
-              <span>
-                Selected: <strong>{selectedFile.name}</strong>
-                {selectedFile.fileStatus !== "READY" && (
-                  <span className="sdl-text-muted"> · {selectedFile.fileStatus}</span>
+            {/* Selection summary + Add-to-Folder shortcut */}
+            <InlineStack gap="300" align="space-between" blockAlign="center">
+              <Text as="span" variant="bodySm" tone={selected.size > 0 ? "base" : "subdued"}>
+                {isMulti ? (
+                  `${selected.size} file${selected.size !== 1 ? "s" : ""} selected`
+                ) : selectedFile ? (
+                  <>Selected: <strong>{selectedFile.name}</strong>{selectedFile.fileStatus !== "READY" ? ` · ${selectedFile.fileStatus}` : ""}</>
+                ) : (
+                  "No file selected"
                 )}
-              </span>
-            ) : (
-              <span className="sdl-text-muted">No file selected</span>
-            )}
-          </div>
-          <div className="sdl-modal__footer-actions" style={{ position: "relative" }}>
-            {/* Add to Folder button */}
-            {!currentFolderId && selected.size > 0 && !addToFolderMode && (
-              <button
-                type="button"
-                className="sdl-btn sdl-btn--sm"
-                onClick={() => {
-                  setAddToFolderMode(true);
-                  if (!foldersLoaded) fetchFolders();
-                }}
-              >
-                Add to Folder
-              </button>
-            )}
-            {!isMulti && selectedGid && (
-              <button
-                type="button"
-                className="sdl-btn sdl-btn--sm"
-                onClick={() => {
-                  onSelect([]);
-                  onClose();
-                }}
-              >
-                Clear selection
-              </button>
-            )}
-            <button type="button" className="sdl-btn sdl-btn--sm" onClick={onClose}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="sdl-btn sdl-btn--primary sdl-btn--sm"
-              onClick={handleConfirm}
-              disabled={selected.size === 0 || busy}
-            >
-              {isMulti ? `Use ${selected.size} file${selected.size !== 1 ? "s" : ""} as sequence` : "Select"}
-            </button>
-          </div>
-        </div>
-
-        {/* Poster fallback info */}
-        {mode === "poster" && !selectedFile && (shopLogoUrl || productFeaturedImageUrl) && (
-          <div className="sdl-modal__poster-fallbacks">
-            {shopLogoUrl && (
-              <div className="sdl-modal__poster-fallback">
-                <img src={shopLogoUrl} alt="Shop logo" />
-                <span>Shop logo shown while loading</span>
-              </div>
-            )}
-            {productFeaturedImageUrl && (
-              <div className="sdl-modal__poster-fallback">
-                <img src={productFeaturedImageUrl} alt="Product" />
-                <span>Product image used as fallback</span>
-              </div>
-            )}
-          </div>
+              </Text>
+              {!currentFolderId && selected.size > 0 && !addToFolderMode ? (
+                <Button
+                  size="slim"
+                  onClick={() => {
+                    setAddToFolderMode(true);
+                    if (!foldersLoaded) fetchFolders();
+                  }}
+                >
+                  Add to Folder
+                </Button>
+              ) : null}
+            </InlineStack>
+          </BlockStack>
         )}
-      </div>
-    </div>
+      </Modal.Section>
+
+      {/* ── Body: folders + files grid ── */}
+      <Modal.Section>
+        {currentFolderId ? (
+          // Folder contents view
+          <BlockStack gap="200">
+            {renderFileGrid(folderDisplayFiles, "This folder is empty. Select files and use \"Add to Folder\".")}
+            {folderBusy && folderDisplayFiles.length === 0 ? (
+              <InlineStack align="center">
+                <Spinner size="small" accessibilityLabel="Loading" />
+              </InlineStack>
+            ) : null}
+            {selected.size > 0 && currentFolderId ? (
+              <InlineStack align="end">
+                <Button
+                  tone="critical"
+                  onClick={() => {
+                    const assetIdsToRemove = folderAssets
+                      .filter((a) => selected.has(a.shopifyFileGid || a.id))
+                      .map((a) => a.id);
+                    if (assetIdsToRemove.length) {
+                      handleRemoveFromFolder(assetIdsToRemove);
+                      setSelected(new Set());
+                    }
+                  }}
+                  disabled={folderBusy}
+                >
+                  Remove {selected.size} from folder
+                </Button>
+              </InlineStack>
+            ) : null}
+          </BlockStack>
+        ) : (
+          // Directory view: folders inline above file grid
+          <BlockStack gap="200">
+            {!searchedFiles && folders.length > 0 ? (
+              <div className="sdl-modal__body sdl-modal__body--grid">
+                {folders.map((folder) => (
+                  <div key={`folder-${folder.id}`} className="sdl-modal__folder-card">
+                    {renamingFolderId === folder.id ? (
+                      <div className="sdl-modal__folder-rename">
+                        <input
+                          type="text"
+                          className="sdl-input sdl-input--sm"
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleRenameFolder(folder.id, renameValue);
+                            if (e.key === "Escape") setRenamingFolderId(null);
+                          }}
+                          autoFocus
+                        />
+                        <div className="sdl-modal__folder-rename-actions">
+                          <Button
+                            variant="primary"
+                            size="micro"
+                            onClick={() => handleRenameFolder(folder.id, renameValue)}
+                            disabled={folderBusy}
+                          >
+                            Save
+                          </Button>
+                          <Button size="micro" onClick={() => setRenamingFolderId(null)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="sdl-modal__folder-open"
+                          onClick={() => {
+                            if (addToFolderMode) {
+                              handleAddSelectedToFolder(folder.id);
+                              setAddToFolderMode(false);
+                              return;
+                            }
+                            setCurrentFolderId(folder.id);
+                            setCurrentFolderName(folder.name);
+                            fetchFolderContents(folder.id);
+                          }}
+                        >
+                          <div className="sdl-modal__folder-icon">📁</div>
+                          <div className="sdl-modal__folder-name">{folder.name}</div>
+                          <div className="sdl-modal__folder-count">
+                            {addToFolderMode
+                              ? `Add ${selected.size} file${selected.size !== 1 ? "s" : ""} here`
+                              : `${folder.assetCount} file${folder.assetCount !== 1 ? "s" : ""}`}
+                          </div>
+                        </button>
+                        {!addToFolderMode && (
+                          <div className="sdl-modal__folder-menu">
+                            <Button
+                              size="micro"
+                              onClick={() => {
+                                setRenamingFolderId(folder.id);
+                                setRenameValue(folder.name);
+                              }}
+                            >
+                              Rename
+                            </Button>
+                            <Button
+                              size="micro"
+                              tone="critical"
+                              onClick={() => {
+                                if (confirm(`Delete folder "${folder.name}"? Files will not be deleted from Shopify.`)) {
+                                  handleDeleteFolder(folder.id);
+                                }
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {renderFileGrid(
+              displayFiles,
+              searchedFiles !== null ? "No files match the search." : "No files found.",
+            )}
+
+            {!searchedFiles && hasMore ? (
+              <div ref={setSentinelRef} className="sdl-modal__load-more">
+                {loadMoreFetcher.state !== "idle" ? (
+                  <InlineStack align="center" gap="200">
+                    <Spinner size="small" accessibilityLabel="Loading more files" />
+                    <Text as="span" variant="bodySm" tone="subdued">
+                      Loading more files…
+                    </Text>
+                  </InlineStack>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* Poster fallback info */}
+            {mode === "poster" && !selectedFile && (shopLogoUrl || productFeaturedImageUrl) ? (
+              <Banner tone="info" title="Fallback images">
+                <BlockStack gap="100">
+                  {shopLogoUrl ? (
+                    <InlineStack gap="200" blockAlign="center">
+                      <img src={shopLogoUrl} alt="Shop logo" width={32} height={32} style={{ objectFit: "cover", borderRadius: 4 }} />
+                      <Text as="span" variant="bodySm">Shop logo shown while loading</Text>
+                    </InlineStack>
+                  ) : null}
+                  {productFeaturedImageUrl ? (
+                    <InlineStack gap="200" blockAlign="center">
+                      <img src={productFeaturedImageUrl} alt="Product" width={32} height={32} style={{ objectFit: "cover", borderRadius: 4 }} />
+                      <Text as="span" variant="bodySm">Product image used as fallback</Text>
+                    </InlineStack>
+                  ) : null}
+                </BlockStack>
+              </Banner>
+            ) : null}
+          </BlockStack>
+        )}
+      </Modal.Section>
+    </Modal>
   );
 }
