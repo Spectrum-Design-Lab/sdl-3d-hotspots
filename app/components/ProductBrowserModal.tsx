@@ -1,17 +1,50 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router";
+/**
+ * Product picker modal — Polaris migration (Slice 5C PR #5e).
+ *
+ * Replaces the bespoke sdl-modal overlay + grid/list toggle with a Polaris
+ * `Modal` containing a search-driven `ResourceList`. The Modal owns
+ * escape/focus/animation; the ResourceList handles single-select via row
+ * clicks that confirm-then-navigate to the editor's product context.
+ *
+ * Grid/list view toggle from the prior bespoke modal is intentionally
+ * dropped — Polaris ResourceList is a single canonical layout, matching
+ * the rest of Shopify admin, and the dual-view toggle wasn't carrying
+ * its weight UX-wise (most merchants only pick a product once per
+ * session).
+ *
+ * Search submits a same-route navigation that re-runs the editor loader
+ * with `?q=…` — identical behaviour to the prior modal, just with a
+ * Polaris TextField + Button instead of a bespoke search input.
+ */
+import { useCallback, useState } from "react";
+import { useNavigate } from "react-router";
+import {
+  Badge,
+  BlockStack,
+  Box,
+  Button,
+  EmptyState,
+  InlineStack,
+  Modal,
+  ResourceList,
+  ResourceItem,
+  Text,
+  TextField,
+} from "@shopify/polaris";
+
+interface Product {
+  id: string;
+  title: string;
+  handle: string | null;
+  status: string | null;
+}
 
 interface ProductBrowserModalProps {
   open: boolean;
   onClose: () => void;
   q: string;
   productGid: string;
-  products: Array<{
-    id: string;
-    title: string;
-    handle: string | null;
-    status: string | null;
-  }>;
+  products: Product[];
   confirmDiscardChanges: () => boolean;
 }
 
@@ -24,134 +57,91 @@ export function ProductBrowserModal({
   confirmDiscardChanges,
 }: ProductBrowserModalProps) {
   const navigate = useNavigate();
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [searchQuery, setSearchQuery] = useState(q);
 
-  // Esc key
-  useEffect(() => {
-    if (!open) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [open, onClose]);
+  const handleSearch = useCallback(() => {
+    if (!confirmDiscardChanges()) return;
+    const params = new URLSearchParams({ q: searchQuery });
+    if (productGid) params.set("product", productGid);
+    navigate(`/app/sdl3d/editor?${params.toString()}`);
+  }, [searchQuery, productGid, navigate, confirmDiscardChanges]);
 
-  const handleProductClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (!confirmDiscardChanges()) {
-        e.preventDefault();
-      } else {
-        onClose();
-      }
+  const handleSelectProduct = useCallback(
+    (productId: string) => {
+      if (!confirmDiscardChanges()) return;
+      const params = new URLSearchParams({ product: productId });
+      if (q) params.set("q", q);
+      navigate(`/app/sdl3d/editor?${params.toString()}`);
+      onClose();
     },
-    [confirmDiscardChanges, onClose],
+    [q, navigate, confirmDiscardChanges, onClose],
   );
 
-  if (!open) return null;
-
   return (
-    <div className="sdl-modal-overlay" onClick={onClose}>
-      <div className="sdl-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="sdl-modal__header">
-          <div className="sdl-modal__title">Find a Product</div>
-          <div className="sdl-modal__header-actions">
-            <div className="sdl-modal__view-toggle">
-              <button
-                type="button"
-                className={`sdl-modal__view-btn ${viewMode === "grid" ? "sdl-modal__view-btn--active" : ""}`}
-                onClick={() => setViewMode("grid")}
-                title="Grid view"
-              >
-                &#8862;
-              </button>
-              <button
-                type="button"
-                className={`sdl-modal__view-btn ${viewMode === "list" ? "sdl-modal__view-btn--active" : ""}`}
-                onClick={() => setViewMode("list")}
-                title="List view"
-              >
-                &#8801;
-              </button>
-            </div>
-            <button type="button" className="sdl-modal__close" onClick={onClose}>
-              &#10005;
-            </button>
-          </div>
-        </div>
-
-        {/* Search bar */}
-        <div className="sdl-modal__toolbar">
-          <form
-            className="sdl-modal__search"
-            style={{ flex: 1 }}
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!confirmDiscardChanges()) return;
-              const formData = new FormData(e.currentTarget);
-              const searchQ = (formData.get("q") as string) || "";
-              const params = new URLSearchParams({ q: searchQ });
-              if (productGid) params.set("product", productGid);
-              navigate(`/app/sdl3d/editor?${params.toString()}`);
-            }}
-          >
-            <input
-              type="text"
-              name="q"
-              defaultValue={q}
-              placeholder="&#128269; Search"
-              className="sdl-input"
-            />
-            <button type="submit" className="sdl-btn sdl-btn--primary sdl-btn--sm">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Find a product"
+      size="large"
+      secondaryActions={[{ content: "Close", onAction: onClose }]}
+    >
+      <Modal.Section>
+        <BlockStack gap="400">
+          <InlineStack gap="200" blockAlign="end">
+            <Box width="100%">
+              <TextField
+                label="Search"
+                labelHidden
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="Search products by title, handle, or tag"
+                autoComplete="off"
+                clearButton
+                onClearButtonClick={() => setSearchQuery("")}
+              />
+            </Box>
+            <Button variant="primary" onClick={handleSearch}>
               Search
-            </button>
-          </form>
-        </div>
+            </Button>
+          </InlineStack>
 
-        {/* Product results */}
-        <div className={`sdl-modal__body sdl-modal__body--${viewMode}`}>
-          {products.length > 0 ? (
-            products.map((p) => {
-              const active = p.id === productGid;
-              return (
-                <Link
-                  key={p.id}
-                  to={`/app/sdl3d/editor?q=${encodeURIComponent(q)}&product=${encodeURIComponent(p.id)}`}
-                  onClick={handleProductClick}
-                  className={`sdl-modal__file ${active ? "sdl-modal__file--selected" : ""}`}
-                  style={{ textDecoration: "none" }}
-                >
-                  <div className="sdl-modal__file-thumb">
-                    <div className="sdl-modal__file-icon">{"\u{1F4E6}"}</div>
-                  </div>
-                  <div className="sdl-modal__file-name" title={p.title}>{p.title}</div>
-                  <div className="sdl-modal__file-status">
-                    {p.handle || "no handle"} &middot; {p.status || "unknown"}
-                  </div>
-                </Link>
-              );
-            })
+          {products.length === 0 ? (
+            <EmptyState
+              heading={q ? `No products match "${q}"` : "No products found"}
+              image=""
+            >
+              <Text as="p">Try a different search or clear the query to see active products.</Text>
+            </EmptyState>
           ) : (
-            <div className="sdl-modal__empty">
-              {q ? `No products found for \u201c${q}\u201d` : "No products found."}
-            </div>
+            <ResourceList
+              items={products}
+              resourceName={{ singular: "product", plural: "products" }}
+              renderItem={(p) => {
+                const active = p.id === productGid;
+                return (
+                  <ResourceItem
+                    id={p.id}
+                    onClick={() => handleSelectProduct(p.id)}
+                    accessibilityLabel={`Open ${p.title}`}
+                  >
+                    <BlockStack gap="050">
+                      <InlineStack gap="200" blockAlign="center" wrap={false}>
+                        <Text as="h3" variant="bodyMd" fontWeight={active ? "bold" : "semibold"}>
+                          {p.title}
+                        </Text>
+                        {active ? <Badge tone="info">Current</Badge> : null}
+                      </InlineStack>
+                      <Text as="p" variant="bodySm" tone="subdued">
+                        {p.handle || "no handle"} · {p.status?.toLowerCase() || "unknown"}
+                      </Text>
+                    </BlockStack>
+                  </ResourceItem>
+                );
+              }}
+            />
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="sdl-modal__footer">
-          <div className="sdl-modal__footer-info">
-            {products.length > 0 && (
-              <span className="sdl-text-muted">{products.length} result{products.length !== 1 ? "s" : ""}</span>
-            )}
-          </div>
-          <div className="sdl-modal__footer-actions">
-            <button type="button" className="sdl-btn sdl-btn--sm" onClick={onClose}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+        </BlockStack>
+      </Modal.Section>
+    </Modal>
   );
 }

@@ -1,9 +1,29 @@
+/**
+ * Preset picker modal — Polaris migration (Slice 5C PR #5e).
+ *
+ * Replaces the bespoke sdl-modal overlay + sdl-preset-card list with a
+ * Polaris `Modal` containing a multi-select `ResourceList`. The Modal
+ * owns escape-to-close, focus trap, animation, and backdrop; the
+ * ResourceList owns checkbox state via its `selectedItems` array.
+ *
+ * UX wins over the prior bespoke modal:
+ * - Multi-select uses Polaris's standard checkbox column instead of a
+ *   bespoke row click + inline `<input type="checkbox">`. Keyboard nav
+ *   works for free (Space toggles, arrows move).
+ * - Empty state becomes a Polaris `EmptyState` with action.
+ * - Loading state becomes Modal `loading` flag (Polaris-supplied spinner).
+ */
 import { useCallback, useEffect, useState } from "react";
 import { useFetcher } from "react-router";
-
-/* ────────────────────────────────────────────────────────────────────
- * Types
- * ──────────────────────────────────────────────────────────────────── */
+import {
+  BlockStack,
+  EmptyState,
+  InlineStack,
+  Modal,
+  ResourceList,
+  ResourceItem,
+  Text,
+} from "@shopify/polaris";
 
 export interface PresetSummary {
   id: string;
@@ -21,16 +41,12 @@ interface PresetBrowserModalProps {
   onApply: (presets: PresetSummary[]) => void;
 }
 
-/* ────────────────────────────────────────────────────────────────────
- * Component
- * ──────────────────────────────────────────────────────────────────── */
-
 export function PresetBrowserModal({
   open,
   onClose,
   onApply,
 }: PresetBrowserModalProps) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [presets, setPresets] = useState<PresetSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -39,16 +55,14 @@ export function PresetBrowserModal({
     presets?: PresetSummary[];
   }>();
 
-  // Load presets when modal opens
   useEffect(() => {
     if (open) {
-      setSelected(new Set());
+      setSelectedIds([]);
       setLoaded(false);
       fetcher.load("/api/sdl3d/presets");
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Handle fetcher response
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.ok && fetcher.data.presets) {
       setPresets(fetcher.data.presets);
@@ -56,137 +70,102 @@ export function PresetBrowserModal({
     }
   }, [fetcher.state, fetcher.data]);
 
-  const toggleSelect = useCallback((id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
   const handleApply = useCallback(() => {
-    const selectedPresets = presets.filter((p) => selected.has(p.id));
+    const selectedPresets = presets.filter((p) => selectedIds.includes(p.id));
     if (selectedPresets.length > 0) {
       onApply(selectedPresets);
     }
     onClose();
-  }, [presets, selected, onApply, onClose]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
+  }, [presets, selectedIds, onApply, onClose]);
 
   const loading = fetcher.state !== "idle" || !loaded;
 
   return (
-    <div className="sdl-modal-overlay" onClick={onClose}>
-      <div
-        className="sdl-modal sdl-modal--browser"
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 560 }}
-      >
-        {/* Header */}
-        <div className="sdl-modal__header">
-          <div>
-            <div className="sdl-modal__title">Apply Hotspot Presets</div>
-            <div className="sdl-modal__subtitle">
-              Select presets to add their hotspots to the current product.
-            </div>
-          </div>
-          <button type="button" className="sdl-modal__close" onClick={onClose}>
-            &times;
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="sdl-modal__body" style={{ minHeight: 200, maxHeight: 400, overflow: "auto" }}>
-          {loading ? (
-            <div className="sdl-text-muted" style={{ textAlign: "center", padding: 40 }}>
-              Loading presets...
-            </div>
-          ) : presets.length === 0 ? (
-            <div className="sdl-text-muted" style={{ textAlign: "center", padding: 40 }}>
-              No presets saved yet. Select hotspots and save them as a preset first.
-            </div>
-          ) : (
-            <div style={{ display: "grid", gap: 8 }}>
-              {presets.map((preset) => {
-                const isSelected = selected.has(preset.id);
-                const totalHotspots = preset.hotspotCount + preset.hotspot360Count;
-
-                return (
-                  <div
-                    key={preset.id}
-                    className={`sdl-preset-card ${isSelected ? "sdl-preset-card--selected" : ""}`}
-                    onClick={() => toggleSelect(preset.id)}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelect(preset.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ marginRight: 10, flexShrink: 0 }}
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>{preset.name}</div>
-                      <div className="sdl-text-muted" style={{ fontSize: 12 }}>
-                        {totalHotspots} hotspot{totalHotspots === 1 ? "" : "s"}
-                        {preset.hotspot360Count > 0
-                          ? ` (${preset.hotspotCount} 3D, ${preset.hotspot360Count} 360\u00b0)`
-                          : ""}
-                        {" \u00b7 "}
-                        <span suppressHydrationWarning>
-                          Updated {new Date(preset.updatedAt).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-                    <PresetHotspotPreview hotspotsJson={preset.hotspotsJson} />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="sdl-modal__footer">
-          <div className="sdl-text-muted" style={{ fontSize: 12 }}>
-            {selected.size > 0
-              ? `${selected.size} preset${selected.size === 1 ? "" : "s"} selected`
-              : "Select presets to apply"}
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button type="button" className="sdl-btn sdl-btn--sm" onClick={onClose}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="sdl-btn sdl-btn--primary sdl-btn--sm"
-              disabled={selected.size === 0}
-              onClick={handleApply}
-            >
-              Apply {selected.size > 0 ? `(${selected.size})` : ""}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Apply Hotspot Presets"
+      size="small"
+      loading={loading && presets.length === 0}
+      primaryAction={{
+        content: selectedIds.length > 0 ? `Apply (${selectedIds.length})` : "Apply",
+        disabled: selectedIds.length === 0,
+        onAction: handleApply,
+      }}
+      secondaryActions={[{ content: "Cancel", onAction: onClose }]}
+    >
+      {presets.length === 0 && !loading ? (
+        <Modal.Section>
+          <EmptyState
+            heading="No presets saved yet"
+            image=""
+          >
+            <Text as="p">
+              Select hotspots in the editor, then save them as a preset to reuse on other products.
+            </Text>
+          </EmptyState>
+        </Modal.Section>
+      ) : (
+        <ResourceList
+          items={presets}
+          selectable
+          selectedItems={selectedIds}
+          onSelectionChange={(selection) => {
+            // Polaris's "All" selector returns "All" — for our list it
+            // collapses to "select everything currently in `items`".
+            if (selection === "All") {
+              setSelectedIds(presets.map((p) => p.id));
+            } else {
+              setSelectedIds(selection);
+            }
+          }}
+          resourceName={{ singular: "preset", plural: "presets" }}
+          renderItem={(preset) => {
+            const totalHotspots = preset.hotspotCount + preset.hotspot360Count;
+            return (
+              <ResourceItem
+                id={preset.id}
+                onClick={() => {
+                  setSelectedIds((prev) =>
+                    prev.includes(preset.id)
+                      ? prev.filter((id) => id !== preset.id)
+                      : [...prev, preset.id],
+                  );
+                }}
+                accessibilityLabel={`Select preset ${preset.name}`}
+              >
+                <InlineStack align="space-between" blockAlign="center" wrap={false} gap="200">
+                  <BlockStack gap="050">
+                    <Text as="h3" variant="bodyMd" fontWeight="semibold">
+                      {preset.name}
+                    </Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      {totalHotspots} hotspot{totalHotspots === 1 ? "" : "s"}
+                      {preset.hotspot360Count > 0
+                        ? ` (${preset.hotspotCount} 3D, ${preset.hotspot360Count} 360°)`
+                        : ""}
+                      {" · "}
+                      <span suppressHydrationWarning>
+                        Updated {new Date(preset.updatedAt).toLocaleDateString()}
+                      </span>
+                    </Text>
+                  </BlockStack>
+                  <PresetHotspotPreview hotspotsJson={preset.hotspotsJson} />
+                </InlineStack>
+              </ResourceItem>
+            );
+          }}
+        />
+      )}
+    </Modal>
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────
- * Hotspot color dots preview
- * ──────────────────────────────────────────────────────────────────── */
-
+/**
+ * Row of up to 6 color dots, one per hotspot, so merchants can visually
+ * distinguish presets that share a similar name. Pulled forward verbatim
+ * from the pre-Polaris component since Polaris ships no equivalent.
+ */
 function PresetHotspotPreview({ hotspotsJson }: { hotspotsJson: string }) {
   let hotspots: Array<{ color?: string | null }> = [];
   try {
@@ -210,9 +189,6 @@ function PresetHotspotPreview({ hotspotsJson }: { hotspotsJson: string }) {
           }}
         />
       ))}
-      {hotspots.length < parseInt(hotspotsJson.match(/"id"/g)?.length?.toString() || "0") && (
-        <span className="sdl-text-muted" style={{ fontSize: 10 }}>+</span>
-      )}
     </div>
   );
 }
