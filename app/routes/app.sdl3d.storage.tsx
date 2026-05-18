@@ -226,7 +226,11 @@ function StorageRowCard({
             {row.region ? <> · region <code>{row.region}</code></> : null}
           </div>
           {testedAtLabel ? (
-            <div className="sdl-text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+            <div
+              className="sdl-text-muted"
+              style={{ fontSize: 12, marginTop: 4 }}
+              suppressHydrationWarning
+            >
               Last tested: {testedAtLabel}
             </div>
           ) : (

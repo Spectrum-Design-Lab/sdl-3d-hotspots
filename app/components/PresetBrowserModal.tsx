@@ -144,7 +144,9 @@ export function PresetBrowserModal({
                           ? ` (${preset.hotspotCount} 3D, ${preset.hotspot360Count} 360\u00b0)`
                           : ""}
                         {" \u00b7 "}
-                        Updated {new Date(preset.updatedAt).toLocaleDateString()}
+                        <span suppressHydrationWarning>
+                          Updated {new Date(preset.updatedAt).toLocaleDateString()}
+                        </span>
                       </div>
                     </div>
                     <PresetHotspotPreview hotspotsJson={preset.hotspotsJson} />

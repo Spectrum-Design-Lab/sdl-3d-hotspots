@@ -447,7 +447,7 @@ function Dashboard({ data }: { data: { configs: any[]; syncRuns: any[]; totalCon
                           {config.hotspotCount} hotspot{config.hotspotCount !== 1 ? "s" : ""}
                         </span>
                         <span>{config.sourceMode} mode</span>
-                        <span>
+                        <span suppressHydrationWarning>
                           {new Date(config.updatedAt).toLocaleDateString()}
                         </span>
                       </div>
@@ -498,7 +498,7 @@ function Dashboard({ data }: { data: { configs: any[]; syncRuns: any[]; totalCon
                       {run.message ? (
                         <div className="sdl-sync-item__message">{run.message}</div>
                       ) : null}
-                      <div className="sdl-sync-item__time">
+                      <div className="sdl-sync-item__time" suppressHydrationWarning>
                         {new Date(run.createdAt).toLocaleString()}
                       </div>
                     </div>

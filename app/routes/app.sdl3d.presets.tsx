@@ -154,7 +154,9 @@ export default function PresetsRoute() {
                             ? ` (${preset.count3d} 3D, ${preset.count360} 360\u00b0)`
                             : ""}
                           {" \u00b7 "}
-                          Updated {new Date(preset.updatedAt).toLocaleDateString()}
+                          <span suppressHydrationWarning>
+                            Updated {new Date(preset.updatedAt).toLocaleDateString()}
+                          </span>
                         </div>
                       </>
                     )}
