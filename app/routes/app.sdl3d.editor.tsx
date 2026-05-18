@@ -11,7 +11,9 @@ import {
   Collapsible,
   Icon,
   InlineStack,
+  Modal,
   Text,
+  TextField,
 } from "@shopify/polaris";
 import { ChevronDownIcon, ChevronUpIcon } from "@shopify/polaris-icons";
 import "../styles/editor.css";
@@ -1848,63 +1850,51 @@ export default function Sdl3dEditorRoute() {
         onApply={handleApplyPresets}
       />
 
-      {/* ── Save Hotspots as Preset Dialog ── */}
-      {showPresetSaveDialog && (() => {
-        const saveCount = presetSaveHotspots3d.length + presetSaveHotspots360.length;
-        return (
-        <div className="sdl-modal-overlay" onClick={() => setShowPresetSaveDialog(false)}>
-          <div className="sdl-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
-            <div className="sdl-modal__header">
-              <div>
-                <div className="sdl-modal__title">Save Hotspots as Preset</div>
-                <div className="sdl-modal__subtitle">
-                  {saveCount} hotspot{saveCount === 1 ? "" : "s"} will be saved.
-                </div>
-              </div>
-              <button type="button" className="sdl-modal__close" onClick={() => setShowPresetSaveDialog(false)}>
-                &times;
-              </button>
-            </div>
-            <div className="sdl-modal__body" style={{ padding: 16 }}>
-              <actionFetcher.Form
-                method="post"
-                action="/api/sdl3d/presets"
-                onSubmit={() => {
-                  setShowPresetSaveDialog(false);
-                  setToastMessage("Saving preset...");
-                }}
-              >
-                <input type="hidden" name="fetcherMode" value="1" />
-                <input type="hidden" name="intent" value="saveAsPreset" />
-                <input type="hidden" name="hotspotsJson" value={JSON.stringify(presetSaveHotspots3d)} />
-                {presetSaveHotspots360.length > 0 && (
-                  <input type="hidden" name="hotspotsJson360" value={JSON.stringify(presetSaveHotspots360)} />
-                )}
-                <div className="sdl-hotspot-field">
-                  <label>Preset name</label>
-                  <input
-                    className="sdl-input"
-                    name="presetName"
-                    value={presetSaveName}
-                    onChange={(e) => setPresetSaveName(e.target.value)}
-                    placeholder="My hotspot preset"
-                    autoFocus
-                  />
-                </div>
-                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
-                  <button type="button" className="sdl-btn sdl-btn--sm" onClick={() => setShowPresetSaveDialog(false)}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="sdl-btn sdl-btn--primary sdl-btn--sm" disabled={!presetSaveName.trim()}>
-                    Save Preset
-                  </button>
-                </div>
-              </actionFetcher.Form>
-            </div>
-          </div>
-        </div>
-        );
-      })()}
+      {/* Save Hotspots as Preset — Polaris Modal (Slice 5C PR #5g). The
+          fetcher form sits inside Modal.Section so we still get free
+          XHR submission via actionFetcher.Form, but Polaris owns the
+          shell + focus trap + escape. */}
+      <Modal
+        open={showPresetSaveDialog}
+        onClose={() => setShowPresetSaveDialog(false)}
+        title="Save Hotspots as Preset"
+        size="small"
+        primaryAction={{
+          content: "Save Preset",
+          disabled: !presetSaveName.trim(),
+          onAction: () => {
+            const fd = new FormData();
+            fd.set("fetcherMode", "1");
+            fd.set("intent", "saveAsPreset");
+            fd.set("presetName", presetSaveName);
+            fd.set("hotspotsJson", JSON.stringify(presetSaveHotspots3d));
+            if (presetSaveHotspots360.length > 0) {
+              fd.set("hotspotsJson360", JSON.stringify(presetSaveHotspots360));
+            }
+            actionFetcher.submit(fd, { method: "post", action: "/api/sdl3d/presets" });
+            setShowPresetSaveDialog(false);
+            setToastMessage("Saving preset...");
+          },
+        }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setShowPresetSaveDialog(false) }]}
+      >
+        <Modal.Section>
+          <BlockStack gap="200">
+            <Text as="p" tone="subdued" variant="bodySm">
+              {presetSaveHotspots3d.length + presetSaveHotspots360.length} hotspot
+              {presetSaveHotspots3d.length + presetSaveHotspots360.length === 1 ? "" : "s"} will be saved.
+            </Text>
+            <TextField
+              label="Preset name"
+              value={presetSaveName}
+              onChange={setPresetSaveName}
+              placeholder="My hotspot preset"
+              autoFocus
+              autoComplete="off"
+            />
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
     </div>
   );
 }

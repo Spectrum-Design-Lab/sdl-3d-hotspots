@@ -1,24 +1,19 @@
 /**
- * File picker modal — Polaris chrome migration (Slice 5C PR #5f).
+ * File picker modal — fully Polaris (Slice 5C PR #5f + #5g).
  *
  * Mode-aware modal for picking a 3D model, poster image, or 360° image
- * sequence. Wraps everything in a Polaris `Modal` so escape/focus
- * trap/backdrop are owned by Polaris, and replaces the bespoke
- * `.sdl-modal__header` / `.sdl-modal__toolbar` / `.sdl-modal__footer`
- * chrome with Polaris primitives (TextField, Button, ButtonGroup,
- * Banner, Box, BlockStack, InlineStack).
+ * sequence. Wraps everything in a Polaris `Modal` (chrome migration —
+ * PR #5f) and now uses a Polaris `InlineGrid` of locally-defined
+ * `FileTile` / `FolderTile` components built from Polaris `Box` + native
+ * `<button>` + Polaris design tokens (PR #5g). The bespoke
+ * `.sdl-modal__file*` and `.sdl-modal__folder*` CSS classes are no
+ * longer consumed; PR #6 can sweep them along with the rest of the
+ * `sdl-modal__*` CSS surface.
  *
- * **Scope note**: the inner file-thumbnail grid (`.sdl-modal__file`) and
- * folder-card grid (`.sdl-modal__folder-card`) intentionally stay on
- * bespoke CSS classes here — they're a custom thumbnail-first layout
- * that doesn't map cleanly to Polaris `ResourceList` (row-based) or
- * `MediaCard` (single-tile). A follow-up PR can convert them to a
- * Polaris `InlineGrid` of small `Card` tiles; that change is independent
- * of this chrome migration and big enough to deserve its own commit.
- *
- * Grid/list view toggle dropped per Slice 5C decision #6 — consistent
- * with how `ProductBrowserModal` migrated in PR #5e. Grid is the canonical
- * view since file pickers are thumbnail-first.
+ * The inner grid stays click-to-select (multi for sequences, single
+ * for model/poster) — matching the pre-Polaris UX. Tiles use Polaris
+ * focus rings via `:focus-visible` styling on the native button so
+ * keyboard nav works out of the box.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher } from "react-router";
@@ -28,12 +23,14 @@ import {
   Box,
   Button,
   ButtonGroup,
+  InlineGrid,
   InlineStack,
   Modal,
   Spinner,
   Text,
   TextField,
 } from "@shopify/polaris";
+import { FolderIcon } from "@shopify/polaris-icons";
 
 /* ────────────────────────────────────────────────────────────────────
  * Types
@@ -515,55 +512,35 @@ export function FileBrowserModal({
     : "Select";
 
   /* ────────────────────────────────────────────────────────────────
-   * Render: file card grid (folder contents or directory)
-   * Bespoke `.sdl-modal__file*` classes preserved — full Polaris-card
-   * grid migration is a follow-up PR.
+   * Render: file card grid (folder contents or directory). Uses Polaris
+   * `InlineGrid` (responsive columns) of locally-defined `FileTile`s
+   * built from Polaris Box/tokens — no bespoke CSS class consumption.
    * ──────────────────────────────────────────────────────────────── */
   function renderFileGrid(files: BrowsableFile[], emptyText: string) {
     if (files.length === 0) {
       return (
-        <Box padding="400">
-          <Text as="p" tone="subdued" alignment="center">
-            {emptyText}
-          </Text>
+        <Box padding="400" minHeight="160px">
+          <InlineStack align="center" blockAlign="center">
+            <Text as="p" tone="subdued">
+              {emptyText}
+            </Text>
+          </InlineStack>
         </Box>
       );
     }
     return (
-      <div className="sdl-modal__body sdl-modal__body--grid">
-        {files.map((file) => {
-          const isSelected = selected.has(file.id);
-          return (
-            <button
-              key={file.id}
-              type="button"
-              className={`sdl-modal__file ${isSelected ? "sdl-modal__file--selected" : ""}`}
-              onClick={() => toggleFile(file.id)}
-            >
-              <div className="sdl-modal__file-thumb">
-                {file.previewUrl ? (
-                  <img src={file.previewUrl} alt={file.alt || file.name} loading="lazy" />
-                ) : (
-                  <div className="sdl-modal__file-icon">
-                    {mode === "model" ? "📦" : "🖼"}
-                  </div>
-                )}
-                {isMulti && (
-                  <div className={`sdl-modal__file-check ${isSelected ? "sdl-modal__file-check--on" : ""}`}>
-                    {isSelected ? "✓" : ""}
-                  </div>
-                )}
-              </div>
-              <div className="sdl-modal__file-name" title={file.name}>
-                {file.name}
-              </div>
-              <div className="sdl-modal__file-status">
-                {file.fileStatus}
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      <InlineGrid columns={{ xs: 2, sm: 3, md: 4, lg: 5 }} gap="300">
+        {files.map((file) => (
+          <FileTile
+            key={file.id}
+            file={file}
+            isSelected={selected.has(file.id)}
+            isMulti={isMulti}
+            mode={mode}
+            onClick={() => toggleFile(file.id)}
+          />
+        ))}
+      </InlineGrid>
     );
   }
 
@@ -814,7 +791,7 @@ export function FileBrowserModal({
                   }}
                   disabled={folderBusy}
                 >
-                  Remove {selected.size} from folder
+                  {`Remove ${selected.size} from folder`}
                 </Button>
               </InlineStack>
             ) : null}
@@ -823,89 +800,41 @@ export function FileBrowserModal({
           // Directory view: folders inline above file grid
           <BlockStack gap="200">
             {!searchedFiles && folders.length > 0 ? (
-              <div className="sdl-modal__body sdl-modal__body--grid">
+              <InlineGrid columns={{ xs: 2, sm: 3, md: 4, lg: 5 }} gap="300">
                 {folders.map((folder) => (
-                  <div key={`folder-${folder.id}`} className="sdl-modal__folder-card">
-                    {renamingFolderId === folder.id ? (
-                      <div className="sdl-modal__folder-rename">
-                        <input
-                          type="text"
-                          className="sdl-input sdl-input--sm"
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleRenameFolder(folder.id, renameValue);
-                            if (e.key === "Escape") setRenamingFolderId(null);
-                          }}
-                          autoFocus
-                        />
-                        <div className="sdl-modal__folder-rename-actions">
-                          <Button
-                            variant="primary"
-                            size="micro"
-                            onClick={() => handleRenameFolder(folder.id, renameValue)}
-                            disabled={folderBusy}
-                          >
-                            Save
-                          </Button>
-                          <Button size="micro" onClick={() => setRenamingFolderId(null)}>
-                            Cancel
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          className="sdl-modal__folder-open"
-                          onClick={() => {
-                            if (addToFolderMode) {
-                              handleAddSelectedToFolder(folder.id);
-                              setAddToFolderMode(false);
-                              return;
-                            }
-                            setCurrentFolderId(folder.id);
-                            setCurrentFolderName(folder.name);
-                            fetchFolderContents(folder.id);
-                          }}
-                        >
-                          <div className="sdl-modal__folder-icon">📁</div>
-                          <div className="sdl-modal__folder-name">{folder.name}</div>
-                          <div className="sdl-modal__folder-count">
-                            {addToFolderMode
-                              ? `Add ${selected.size} file${selected.size !== 1 ? "s" : ""} here`
-                              : `${folder.assetCount} file${folder.assetCount !== 1 ? "s" : ""}`}
-                          </div>
-                        </button>
-                        {!addToFolderMode && (
-                          <div className="sdl-modal__folder-menu">
-                            <Button
-                              size="micro"
-                              onClick={() => {
-                                setRenamingFolderId(folder.id);
-                                setRenameValue(folder.name);
-                              }}
-                            >
-                              Rename
-                            </Button>
-                            <Button
-                              size="micro"
-                              tone="critical"
-                              onClick={() => {
-                                if (confirm(`Delete folder "${folder.name}"? Files will not be deleted from Shopify.`)) {
-                                  handleDeleteFolder(folder.id);
-                                }
-                              }}
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
+                  <FolderTile
+                    key={`folder-${folder.id}`}
+                    folder={folder}
+                    isRenaming={renamingFolderId === folder.id}
+                    renameValue={renameValue}
+                    addToFolderMode={addToFolderMode}
+                    addToFolderCount={selected.size}
+                    folderBusy={folderBusy}
+                    onChangeRenameValue={setRenameValue}
+                    onSaveRename={() => handleRenameFolder(folder.id, renameValue)}
+                    onCancelRename={() => setRenamingFolderId(null)}
+                    onStartRename={() => {
+                      setRenamingFolderId(folder.id);
+                      setRenameValue(folder.name);
+                    }}
+                    onDelete={() => {
+                      if (confirm(`Delete folder "${folder.name}"? Files will not be deleted from Shopify.`)) {
+                        handleDeleteFolder(folder.id);
+                      }
+                    }}
+                    onOpen={() => {
+                      if (addToFolderMode) {
+                        handleAddSelectedToFolder(folder.id);
+                        setAddToFolderMode(false);
+                        return;
+                      }
+                      setCurrentFolderId(folder.id);
+                      setCurrentFolderName(folder.name);
+                      fetchFolderContents(folder.id);
+                    }}
+                  />
                 ))}
-              </div>
+              </InlineGrid>
             ) : null}
 
             {renderFileGrid(
@@ -914,7 +843,7 @@ export function FileBrowserModal({
             )}
 
             {!searchedFiles && hasMore ? (
-              <div ref={setSentinelRef} className="sdl-modal__load-more">
+              <div ref={setSentinelRef} style={{ padding: "8px 0", textAlign: "center" }}>
                 {loadMoreFetcher.state !== "idle" ? (
                   <InlineStack align="center" gap="200">
                     <Spinner size="small" accessibilityLabel="Loading more files" />
@@ -949,5 +878,161 @@ export function FileBrowserModal({
         )}
       </Modal.Section>
     </Modal>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────
+ * FileTile — one clickable card in the file grid. PR #5g.
+ *
+ * Polaris ships no thumbnail-card primitive that fits this layout
+ * (Thumbnail is fixed-size; MediaCard is single-tile), so the tile is
+ * a native <button> styled from Polaris design tokens. Hover/selected/
+ * focus rings use `--p-color-*` and `--p-border-*` so the visual stays
+ * coherent with the rest of Shopify admin.
+ * ──────────────────────────────────────────────────────────────────── */
+
+function FileTile({
+  file,
+  isSelected,
+  isMulti,
+  mode,
+  onClick,
+}: {
+  file: BrowsableFile;
+  isSelected: boolean;
+  isMulti: boolean;
+  mode: BrowserMode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="sdl-fb-tile"
+      data-selected={isSelected || undefined}
+      aria-pressed={isSelected}
+      title={file.name}
+    >
+      <div className="sdl-fb-tile__thumb">
+        {file.previewUrl ? (
+          <img
+            src={file.previewUrl}
+            alt={file.alt || file.name}
+            loading="lazy"
+            className="sdl-fb-tile__img"
+          />
+        ) : (
+          <span className="sdl-fb-tile__icon" aria-hidden>
+            {mode === "model" ? "📦" : "🖼"}
+          </span>
+        )}
+        {isMulti ? (
+          <span
+            className="sdl-fb-tile__check"
+            data-on={isSelected || undefined}
+            aria-hidden
+          >
+            {isSelected ? "✓" : ""}
+          </span>
+        ) : null}
+      </div>
+      <span className="sdl-fb-tile__name">{file.name}</span>
+      <span className="sdl-fb-tile__status">{file.fileStatus}</span>
+    </button>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────
+ * FolderTile — one clickable folder card. PR #5g.
+ *
+ * Two states: normal (click to open / "add here" in add-mode) and
+ * renaming (TextField + Save/Cancel inline). Rename, Delete actions
+ * sit in a footer row when not renaming.
+ * ──────────────────────────────────────────────────────────────────── */
+
+function FolderTile({
+  folder,
+  isRenaming,
+  renameValue,
+  addToFolderMode,
+  addToFolderCount,
+  folderBusy,
+  onChangeRenameValue,
+  onSaveRename,
+  onCancelRename,
+  onStartRename,
+  onDelete,
+  onOpen,
+}: {
+  folder: FolderSummary;
+  isRenaming: boolean;
+  renameValue: string;
+  addToFolderMode: boolean;
+  addToFolderCount: number;
+  folderBusy: boolean;
+  onChangeRenameValue: (next: string) => void;
+  onSaveRename: () => void;
+  onCancelRename: () => void;
+  onStartRename: () => void;
+  onDelete: () => void;
+  onOpen: () => void;
+}) {
+  if (isRenaming) {
+    return (
+      <div className="sdl-fb-folder">
+        <Box padding="300">
+          <BlockStack gap="200">
+            <TextField
+              label="Folder name"
+              labelHidden
+              value={renameValue}
+              onChange={onChangeRenameValue}
+              autoComplete="off"
+              autoFocus
+              onBlur={() => { /* keep editing on blur — explicit Save/Cancel */ }}
+            />
+            <InlineStack gap="100" align="end">
+              <Button
+                variant="primary"
+                size="micro"
+                onClick={onSaveRename}
+                disabled={folderBusy || !renameValue.trim()}
+              >
+                Save
+              </Button>
+              <Button size="micro" onClick={onCancelRename}>
+                Cancel
+              </Button>
+            </InlineStack>
+          </BlockStack>
+        </Box>
+      </div>
+    );
+  }
+
+  return (
+    <div className="sdl-fb-folder">
+      <button type="button" onClick={onOpen} className="sdl-fb-folder__open">
+        <span className="sdl-fb-folder__icon" aria-hidden>
+          <FolderIcon style={{ width: 32, height: 32 }} />
+        </span>
+        <span className="sdl-fb-folder__name">{folder.name}</span>
+        <span className="sdl-fb-folder__count">
+          {addToFolderMode
+            ? `Add ${addToFolderCount} file${addToFolderCount !== 1 ? "s" : ""} here`
+            : `${folder.assetCount} file${folder.assetCount !== 1 ? "s" : ""}`}
+        </span>
+      </button>
+      {!addToFolderMode ? (
+        <div className="sdl-fb-folder__menu">
+          <Button size="micro" onClick={onStartRename}>
+            Rename
+          </Button>
+          <Button size="micro" tone="critical" onClick={onDelete}>
+            Delete
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }
