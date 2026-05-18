@@ -27,14 +27,18 @@ export default function App() {
         <s-link href="/app/sdl3d/storage">Storage</s-link>
         <s-link href="/app/sdl3d/settings">Settings</s-link>
       </s-app-nav>
-      {/* BISECT (not for permanent merge): PolarisAppProvider temporarily
-          removed to test whether it's contributing to the lingering #418 /
-          #423 hydration errors. CSS import + Polaris dep stay so the
-          stylesheet still loads. If errors clear without this wrapper, the
-          fix is to render PolarisAppProvider client-only (useEffect + state)
-          on the next commit. If errors persist, they're pre-existing
-          AppBridge SSR mismatch and we accept them as a known issue. */}
-      <Outlet />
+      {/* Note (Slice 5C PR #0 bisect, 2026-05-18): Firefox reports React
+          #418 / #423 hydration errors after first paint, caused by AppBridge
+          upgrading <s-app-nav> / <s-link> web components before React
+          hydrates the embedded shell. Confirmed pre-existing — they fire
+          identically with or without PolarisAppProvider in the tree, so
+          Polaris is not the cause. React auto-recovers by client-rendering
+          the root (#423), so the app works; we lose SSR for the shell only.
+          Tracked as known tech debt for a future slice (likely revisited in
+          PR #5 if editor first-paint latency becomes a complaint). */}
+      <PolarisAppProvider i18n={enTranslations}>
+        <Outlet />
+      </PolarisAppProvider>
     </AppProvider>
   );
 }
