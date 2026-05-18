@@ -261,6 +261,22 @@ The 3D viewer canvas and hotspot overlays stay non-Polaris per Decision
 #5. Each sub-PR is independently shippable; landing all three is what
 "PR #5 complete" means.
 
+**5d — AppBridge hydration cleanup (carried into PR #5 from PR #0 bisect):**
+- Replace the raw `<s-app-nav>` / `<s-link>` web components in
+  [app/routes/app.tsx](sdl-3d-hotspots/app/routes/app.tsx) with the
+  React-component equivalents — `NavMenu` and `Link` from
+  `@shopify/app-bridge-react`. The React components hydrate cleanly because
+  they own their own DOM rather than relying on a browser custom-element
+  upgrade that races React's hydration pass.
+- Expected outcome: Firefox console clean of React `#418` / `#423` errors,
+  embedded shell SSRs correctly, ~50–200ms first-paint improvement on
+  perf-sensitive routes (especially the editor).
+- Why this lives in PR #5 specifically: the editor is the page where lost
+  SSR hurts most (largest React tree, most expensive client-render
+  cascade). Fixing it here closes the loop the same PR that's most likely
+  to regress on it. See [feedback_appbridge_hydration.md](C:/Users/Spectrum%20Design%20Lab/.claude/projects/c--dev-sdl-3d-hotspots/memory/feedback_appbridge_hydration.md) for full diagnosis.
+- ~30 min of work; can land independently of 5a/5b/5c.
+
 ### PR #6 — CSS cleanup
 
 Delete `.sdl-card`, `.sdl-btn` (and all modifiers), `.sdl-subtle-card`,
