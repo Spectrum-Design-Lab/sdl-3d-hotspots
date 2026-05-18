@@ -1,4 +1,27 @@
+/**
+ * 360° hotspot editor — Polaris migration (Slice 5C PR #5k).
+ *
+ * Renders inside the editor's "Hotspots" inspector panel when the
+ * viewer is in IMAGE_360 mode. Same shape as Sdl3dHotspotEditor but
+ * with frame-keyframe interpolation instead of fixed 3D coordinates,
+ * plus an inline expand-row UX (no separate detail editor section).
+ *
+ * Form fields swap to Polaris primitives. The row card uses the
+ * shared `.sdl-hs-row*` Polaris-token classes added in PR #5j, plus a
+ * Polaris `Collapsible` for the per-row expanded detail.
+ */
 import { useState } from "react";
+import {
+  BlockStack,
+  Box,
+  Button,
+  ButtonGroup,
+  Collapsible,
+  InlineStack,
+  Select,
+  Text,
+  TextField,
+} from "@shopify/polaris";
 import type { Hotspot360, Hotspot360Keyframe } from "../lib/sdl3d-shared";
 
 interface Sdl3dHotspot360EditorProps {
@@ -43,6 +66,15 @@ export function serializeHotspots360(hotspots: Hotspot360[]): string {
   return JSON.stringify(hotspots, null, 2);
 }
 
+const STYLE_OPTIONS = [
+  { label: "Card", value: "card" },
+  { label: "Tooltip", value: "tooltip" },
+  { label: "Dot", value: "dot" },
+  { label: "Badge", value: "badge" },
+  { label: "Icon Only", value: "icon-only" },
+  { label: "Panel", value: "panel" },
+];
+
 export function Sdl3dHotspot360Editor({
   hotspots,
   selectedHotspotId,
@@ -76,10 +108,8 @@ export function Sdl3dHotspot360Editor({
   }
 
   function batchToggleVisible(visible: boolean) {
-    onChange(hotspots.map((h) => checkedIds.has(h.id) ? { ...h, visible } : h));
+    onChange(hotspots.map((h) => (checkedIds.has(h.id) ? { ...h, visible } : h)));
   }
-
-  const selectedHotspot = hotspots.find((h) => h.id === selectedHotspotId) ?? null;
 
   function addHotspot() {
     const index = hotspots.length + 1;
@@ -97,9 +127,7 @@ export function Sdl3dHotspot360Editor({
   }
 
   function updateHotspot(id: string, patch: Partial<Hotspot360>) {
-    onChange(
-      hotspots.map((h) => (h.id === id ? { ...h, ...patch } : h)),
-    );
+    onChange(hotspots.map((h) => (h.id === id ? { ...h, ...patch } : h)));
   }
 
   function addKeyframe(hotspotId: string, frame: number, x: number, y: number) {
@@ -130,256 +158,272 @@ export function Sdl3dHotspot360Editor({
   }
 
   return (
-    <div className="sdl-inspector-content">
-      <div className="sdl-flex sdl-gap-3 sdl-mb-3" style={{ justifyContent: "space-between", alignItems: "center" }}>
-        <div className="sdl-text-muted" style={{ fontSize: 12 }}>
-          {hotspots.length} hotspot{hotspots.length !== 1 ? "s" : ""}
-        </div>
-        <div style={{ display: "flex", gap: 4 }}>
-          {onApplyPreset && (
-            <button type="button" onClick={onApplyPreset} className="sdl-btn sdl-btn--sm">
+    <BlockStack gap="300">
+      {/* Header: count + Apply Preset / Add */}
+      <InlineStack align="space-between" blockAlign="center" wrap={false}>
+        <Text as="p" tone="subdued" variant="bodySm">
+          {`${hotspots.length} hotspot${hotspots.length !== 1 ? "s" : ""}`}
+        </Text>
+        <ButtonGroup>
+          {onApplyPreset ? (
+            <Button size="slim" onClick={onApplyPreset}>
               Apply Preset
-            </button>
-          )}
-          <button
-            type="button"
-            className="sdl-btn sdl-btn--primary sdl-btn--sm"
-            onClick={addHotspot}
-          >
+            </Button>
+          ) : null}
+          <Button size="slim" variant="primary" onClick={addHotspot}>
             + Add hotspot
-          </button>
-        </div>
-      </div>
+          </Button>
+        </ButtonGroup>
+      </InlineStack>
 
       {/* Batch actions bar */}
       {checkedCount > 0 ? (
-        <div className="sdl-hotspot-batch" style={{ marginBottom: 8 }}>
-          <span className="sdl-hotspot-batch__count">{checkedCount} selected</span>
-          <button type="button" className="sdl-btn sdl-btn--sm" onClick={() => batchToggleVisible(true)}>
-            Show
-          </button>
-          <button type="button" className="sdl-btn sdl-btn--sm" onClick={() => batchToggleVisible(false)}>
-            Hide
-          </button>
-          {onSaveAsPreset && (
-            <button
-              type="button"
-              className="sdl-btn sdl-btn--primary sdl-btn--sm"
-              onClick={() => {
-                const selectedHotspots = hotspots.filter((h) => checkedIds.has(h.id));
-                onSaveAsPreset(selectedHotspots);
-              }}
-            >
-              Save as Preset
-            </button>
-          )}
-          <button type="button" className="sdl-btn sdl-btn--danger sdl-btn--sm" onClick={batchDelete}>
-            Delete
-          </button>
-          <button type="button" className="sdl-btn sdl-btn--sm" onClick={() => setCheckedIds(new Set())}>
-            Clear
-          </button>
-        </div>
+        <Box
+          padding="200"
+          background="bg-surface-secondary"
+          borderRadius="200"
+          borderColor="border-secondary"
+          borderWidth="025"
+        >
+          <InlineStack gap="200" blockAlign="center" wrap>
+            <Text as="span" variant="bodySm" fontWeight="semibold">
+              {`${checkedCount} selected`}
+            </Text>
+            <ButtonGroup>
+              <Button size="micro" onClick={() => batchToggleVisible(true)}>
+                Show
+              </Button>
+              <Button size="micro" onClick={() => batchToggleVisible(false)}>
+                Hide
+              </Button>
+              {onSaveAsPreset ? (
+                <Button
+                  size="micro"
+                  variant="primary"
+                  onClick={() => {
+                    const selectedHotspots = hotspots.filter((h) => checkedIds.has(h.id));
+                    onSaveAsPreset(selectedHotspots);
+                  }}
+                >
+                  Save as Preset
+                </Button>
+              ) : null}
+              <Button size="micro" tone="critical" onClick={batchDelete}>
+                Delete
+              </Button>
+              <Button size="micro" onClick={() => setCheckedIds(new Set())}>
+                Clear
+              </Button>
+            </ButtonGroup>
+          </InlineStack>
+        </Box>
       ) : null}
 
       {hotspots.length === 0 ? (
-        <div className="sdl-subtle-card sdl-text-muted" style={{ textAlign: "center" }}>
+        <Text as="p" tone="subdued" variant="bodySm" alignment="center">
           No hotspots yet. Click "Add hotspot" then click on the image to place it.
-        </div>
+        </Text>
       ) : null}
 
-      <div style={{ display: "grid", gap: 8 }}>
+      <div className="sdl-hs-list">
         {hotspots.map((hotspot) => {
           const isSelected = hotspot.id === selectedHotspotId;
           const isExpanded = expandedId === hotspot.id;
+          const collapseId = `hs360-row-${hotspot.id}`;
 
           return (
             <div
               key={hotspot.id}
-              className={`sdl-subtle-card ${isSelected ? "sdl-subtle-card--selected" : ""}`}
-              style={{ cursor: "pointer" }}
+              className="sdl-hs-row"
+              data-selected={isSelected || undefined}
+              data-checked={checkedIds.has(hotspot.id) || undefined}
+              onClick={() => {
+                onSelectHotspot(hotspot.id);
+                setExpandedId(isExpanded ? null : hotspot.id);
+              }}
+              style={{ flexDirection: "column", alignItems: "stretch" }}
             >
-              <div
-                className="sdl-flex sdl-gap-3"
-                style={{ justifyContent: "space-between", alignItems: "center" }}
-                onClick={() => {
-                  onSelectHotspot(hotspot.id);
-                  setExpandedId(isExpanded ? null : hotspot.id);
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {/* Row header (always visible) */}
+              <InlineStack align="space-between" blockAlign="center" wrap={false} gap="200">
+                <InlineStack gap="200" blockAlign="center" wrap={false}>
                   <input
                     type="checkbox"
+                    className="sdl-hs-row__check"
                     checked={checkedIds.has(hotspot.id)}
                     onChange={() => toggleCheck(hotspot.id)}
                     onClick={(e) => e.stopPropagation()}
-                    style={{ flexShrink: 0 }}
+                    aria-label={`Select ${hotspot.title}`}
                   />
                   <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 22,
-                      height: 22,
-                      borderRadius: 999,
-                      background: hotspot.color || "#3b82f6",
-                      color: "#fff",
-                      fontSize: 11,
-                      fontWeight: 700,
-                    }}
+                    className="sdl-hs-row__index"
+                    style={hotspot.color ? { background: hotspot.color, color: "#fff" } : undefined}
                   >
                     {hotspot.sortOrder}
                   </span>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{hotspot.title}</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="sdl-text-muted" style={{ fontSize: 11 }}>
-                    {hotspot.keyframes.length} kf
+                  <Text as="span" variant="bodyMd" fontWeight="semibold">
+                    {hotspot.title}
+                  </Text>
+                </InlineStack>
+                <InlineStack gap="200" blockAlign="center">
+                  <Text as="span" tone="subdued" variant="bodySm">
+                    {`${hotspot.keyframes.length} kf`}
+                  </Text>
+                  {/* Wrap in a span so row-click selection doesn't fire when
+                      the Delete button is clicked. Polaris Button.onClick has
+                      no event arg, so the stopPropagation must live on a
+                      wrapping element. */}
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      size="micro"
+                      tone="critical"
+                      variant="plain"
+                      onClick={() => removeHotspot(hotspot.id)}
+                    >
+                      Delete
+                    </Button>
                   </span>
-                  <button
-                    type="button"
-                    className="sdl-btn sdl-btn--ghost sdl-btn--sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeHotspot(hotspot.id);
-                    }}
-                    style={{ padding: "2px 6px", fontSize: 11, color: "#ef4444" }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
+                </InlineStack>
+              </InlineStack>
 
-              {isExpanded ? (
-                <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                  <div>
-                    <label className="sdl-label">Title</label>
-                    <input
-                      type="text"
-                      className="sdl-input"
+              {/* Expanded form */}
+              <Collapsible
+                id={collapseId}
+                open={isExpanded}
+                transition={{ duration: "150ms", timingFunction: "ease-in-out" }}
+              >
+                {/* Native div so we can stopPropagation — Polaris Box has no
+                    onClick. Padding via inline style to match Box's "300" token. */}
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ paddingTop: "var(--p-space-300, 12px)" }}
+                >
+                  <BlockStack gap="200">
+                    <TextField
+                      label="Title"
                       value={hotspot.title}
-                      onChange={(e) => updateHotspot(hotspot.id, { title: e.target.value })}
+                      onChange={(value) => updateHotspot(hotspot.id, { title: value })}
+                      autoComplete="off"
                     />
-                  </div>
-                  <div>
-                    <label className="sdl-label">Body</label>
-                    <textarea
-                      className="sdl-textarea"
+                    <TextField
+                      label="Body"
                       value={hotspot.body}
-                      onChange={(e) => updateHotspot(hotspot.id, { body: e.target.value })}
-                      rows={2}
+                      onChange={(value) => updateHotspot(hotspot.id, { body: value })}
+                      multiline={2}
+                      autoComplete="off"
                     />
-                  </div>
-                  <div className="sdl-flex sdl-gap-3">
-                    <div style={{ flex: 1 }}>
-                      <label className="sdl-label">Visible from frame</label>
-                      <input
-                        type="number"
-                        className="sdl-input"
-                        min={0}
-                        max={Math.max(0, frameCount - 1)}
-                        value={hotspot.visibleFrameStart}
-                        onChange={(e) =>
-                          updateHotspot(hotspot.id, {
-                            visibleFrameStart: Number(e.target.value),
-                          })
-                        }
-                      />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <label className="sdl-label">Visible to frame</label>
-                      <input
-                        type="number"
-                        className="sdl-input"
-                        min={0}
-                        max={Math.max(0, frameCount - 1)}
-                        value={hotspot.visibleFrameEnd}
-                        onChange={(e) =>
-                          updateHotspot(hotspot.id, {
-                            visibleFrameEnd: Number(e.target.value),
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
-                    <div>
-                      <label className="sdl-label">Style</label>
-                      <select
-                        className="sdl-input"
-                        value={hotspot.style || "card"}
-                        onChange={(e) => updateHotspot(hotspot.id, { style: e.target.value })}
-                      >
-                        <option value="card">Card</option>
-                        <option value="tooltip">Tooltip</option>
-                        <option value="dot">Dot</option>
-                        <option value="badge">Badge</option>
-                        <option value="icon-only">Icon Only</option>
-                        <option value="panel">Panel</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="sdl-label">Color</label>
-                      <input
-                        type="color"
-                        value={hotspot.color || "#3b82f6"}
-                        onChange={(e) => updateHotspot(hotspot.id, { color: e.target.value })}
-                        style={{ width: 40, height: 28, border: 0, cursor: "pointer" }}
-                      />
-                    </div>
-                  </div>
+                    <InlineStack gap="200" wrap={false}>
+                      <Box width="100%">
+                        <TextField
+                          label="Visible from frame"
+                          type="number"
+                          min={0}
+                          max={Math.max(0, frameCount - 1)}
+                          value={String(hotspot.visibleFrameStart)}
+                          onChange={(value) =>
+                            updateHotspot(hotspot.id, { visibleFrameStart: Number(value) })
+                          }
+                          autoComplete="off"
+                        />
+                      </Box>
+                      <Box width="100%">
+                        <TextField
+                          label="Visible to frame"
+                          type="number"
+                          min={0}
+                          max={Math.max(0, frameCount - 1)}
+                          value={String(hotspot.visibleFrameEnd)}
+                          onChange={(value) =>
+                            updateHotspot(hotspot.id, { visibleFrameEnd: Number(value) })
+                          }
+                          autoComplete="off"
+                        />
+                      </Box>
+                    </InlineStack>
+                    <InlineStack gap="300" blockAlign="end" wrap={false}>
+                      <Box width="100%">
+                        <Select
+                          label="Style"
+                          options={STYLE_OPTIONS}
+                          value={hotspot.style || "card"}
+                          onChange={(value) => updateHotspot(hotspot.id, { style: value })}
+                        />
+                      </Box>
+                      <BlockStack gap="100">
+                        <Text as="span" variant="bodySm" fontWeight="medium">
+                          Color
+                        </Text>
+                        <input
+                          type="color"
+                          value={hotspot.color || "#3b82f6"}
+                          onChange={(e) => updateHotspot(hotspot.id, { color: e.target.value })}
+                          aria-label="Hotspot color"
+                          style={{
+                            width: 40,
+                            height: 36,
+                            border: "1px solid var(--p-color-border, #c9cccf)",
+                            borderRadius: "var(--p-border-radius-200, 8px)",
+                            cursor: "pointer",
+                            padding: 0,
+                            background: "transparent",
+                          }}
+                        />
+                      </BlockStack>
+                    </InlineStack>
 
-                  {/* Keyframes section */}
-                  <div>
-                    <div className="sdl-flex sdl-gap-3 sdl-mb-3" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                      <label className="sdl-label" style={{ margin: 0 }}>Keyframes</label>
-                      <button
-                        type="button"
-                        className="sdl-btn sdl-btn--sm"
-                        onClick={() => addKeyframe(hotspot.id, currentFrame, 50, 50)}
-                      >
-                        + Add at frame {currentFrame}
-                      </button>
-                    </div>
-                    {hotspot.keyframes.length === 0 ? (
-                      <div className="sdl-text-muted" style={{ fontSize: 12 }}>
-                        No keyframes. Click on the image to place, or add manually.
-                      </div>
-                    ) : (
-                      <div style={{ display: "grid", gap: 6 }}>
-                        {hotspot.keyframes.map((kf) => (
-                          <div
-                            key={kf.frame}
-                            className="sdl-flex sdl-gap-3"
-                            style={{ alignItems: "center", fontSize: 12 }}
-                          >
-                            <span style={{ fontWeight: 700, minWidth: 60 }}>
-                              Frame {kf.frame}
-                            </span>
-                            <span className="sdl-text-muted">
-                              x: {kf.x.toFixed(1)}% y: {kf.y.toFixed(1)}%
-                            </span>
-                            <button
-                              type="button"
-                              className="sdl-btn sdl-btn--ghost sdl-btn--sm"
-                              onClick={() => removeKeyframe(hotspot.id, kf.frame)}
-                              style={{ padding: "1px 4px", fontSize: 10, marginLeft: "auto" }}
+                    {/* Keyframes section */}
+                    <BlockStack gap="200">
+                      <InlineStack align="space-between" blockAlign="center">
+                        <Text as="span" variant="bodyMd" fontWeight="semibold">
+                          Keyframes
+                        </Text>
+                        <Button
+                          size="slim"
+                          onClick={() => addKeyframe(hotspot.id, currentFrame, 50, 50)}
+                        >
+                          {`+ Add at frame ${currentFrame}`}
+                        </Button>
+                      </InlineStack>
+                      {hotspot.keyframes.length === 0 ? (
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          No keyframes. Click on the image to place, or add manually.
+                        </Text>
+                      ) : (
+                        <BlockStack gap="100">
+                          {hotspot.keyframes.map((kf) => (
+                            <InlineStack
+                              key={kf.frame}
+                              gap="200"
+                              blockAlign="center"
+                              align="space-between"
                             >
-                              Remove
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                              <InlineStack gap="200" blockAlign="center">
+                                <Text as="span" variant="bodySm" fontWeight="semibold">
+                                  {`Frame ${kf.frame}`}
+                                </Text>
+                                <Text as="span" tone="subdued" variant="bodySm">
+                                  {`x: ${kf.x.toFixed(1)}% y: ${kf.y.toFixed(1)}%`}
+                                </Text>
+                              </InlineStack>
+                              <Button
+                                size="micro"
+                                variant="plain"
+                                onClick={() => removeKeyframe(hotspot.id, kf.frame)}
+                              >
+                                Remove
+                              </Button>
+                            </InlineStack>
+                          ))}
+                        </BlockStack>
+                      )}
+                    </BlockStack>
+                  </BlockStack>
                 </div>
-              ) : null}
+              </Collapsible>
             </div>
           );
         })}
       </div>
-    </div>
+    </BlockStack>
   );
 }
 
