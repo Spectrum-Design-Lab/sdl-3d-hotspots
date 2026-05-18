@@ -2,6 +2,7 @@ import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
+import { NavMenu } from "@shopify/app-bridge-react";
 import { AppProvider as PolarisAppProvider } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import "@shopify/polaris/build/esm/styles.css";
@@ -20,22 +21,20 @@ export default function App() {
 
   return (
     <AppProvider embedded apiKey={apiKey}>
-      <s-app-nav>
-        <s-link href="/app">Home</s-link>
-        <s-link href="/app/sdl3d/editor">Editor</s-link>
-        <s-link href="/app/sdl3d/presets">Presets</s-link>
-        <s-link href="/app/sdl3d/storage">Storage</s-link>
-        <s-link href="/app/sdl3d/settings">Settings</s-link>
-      </s-app-nav>
-      {/* Note (Slice 5C PR #0 bisect, 2026-05-18): Firefox reports React
-          #418 / #423 hydration errors after first paint, caused by AppBridge
-          upgrading <s-app-nav> / <s-link> web components before React
-          hydrates the embedded shell. Confirmed pre-existing — they fire
-          identically with or without PolarisAppProvider in the tree, so
-          Polaris is not the cause. React auto-recovers by client-rendering
-          the root (#423), so the app works; we lose SSR for the shell only.
-          Tracked as known tech debt for a future slice (likely revisited in
-          PR #5 if editor first-paint latency becomes a complaint). */}
+      {/* Slice 5C PR #5d (2026-05-18): swapped the raw `<s-app-nav>` /
+          `<s-link>` web components for `<NavMenu>` + plain `<a>` children.
+          The React wrapper owns its DOM, so AppBridge's custom-element
+          upgrade no longer races React 18 hydration — closes the
+          long-standing Firefox `#418` / `#423` errors documented in
+          feedback_appbridge_hydration.md. `rel="home"` marks the dashboard
+          route as the embedded app's root for AppBridge breadcrumb logic. */}
+      <NavMenu>
+        <a href="/app" rel="home">Home</a>
+        <a href="/app/sdl3d/editor">Editor</a>
+        <a href="/app/sdl3d/presets">Presets</a>
+        <a href="/app/sdl3d/storage">Storage</a>
+        <a href="/app/sdl3d/settings">Settings</a>
+      </NavMenu>
       <PolarisAppProvider i18n={enTranslations}>
         <Outlet />
       </PolarisAppProvider>
