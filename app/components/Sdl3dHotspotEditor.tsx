@@ -1,4 +1,38 @@
-import { useState, useCallback } from "react";
+/**
+ * 3D-hotspot editor — Polaris migration (Slice 5C PR #5j).
+ *
+ * Renders inside the editor's "Hotspots" inspector panel when the
+ * viewer is in MODEL_3D mode. Owns hotspot list (drag reorder + multi-
+ * select + batch ops) and detail editor (Title / Body / Style / Color
+ * / Position / Camera / CTA fields).
+ *
+ * Form fields migrated to Polaris (TextField with `error` prop,
+ * Checkbox, Select). The detail editor's two inner "Position & Camera"
+ * and "Advanced" sections use Polaris `Collapsible` with locally-tracked
+ * open state.
+ *
+ * **Intentionally preserved**: the list rows stay native
+ * `<div draggable>` (Polaris ships no drag-reorder primitive) — but
+ * styling migrates onto new `.sdl-hs-row*` classes built from Polaris
+ * design tokens. The color swatch row also stays bespoke since Polaris
+ * `ColorPicker` is a full HSV picker overlay that's overkill for
+ * quick-pick presets.
+ */
+import { useCallback, useState } from "react";
+import {
+  BlockStack,
+  Box,
+  Button,
+  ButtonGroup,
+  Checkbox,
+  Collapsible,
+  Icon,
+  InlineStack,
+  Select,
+  Text,
+  TextField,
+} from "@shopify/polaris";
+import { ChevronDownIcon, ChevronUpIcon } from "@shopify/polaris-icons";
 import { getHotspotFieldErrors } from "../lib/sdl3d-validation";
 
 export type EditableHotspot = {
@@ -93,6 +127,15 @@ const COLOR_SWATCHES = [
   "#ffffff",
 ];
 
+const STYLE_OPTIONS = [
+  { label: "Card", value: "card" },
+  { label: "Tooltip", value: "tooltip" },
+  { label: "Dot", value: "dot" },
+  { label: "Badge", value: "badge" },
+  { label: "Icon Only", value: "icon-only" },
+  { label: "Panel", value: "panel" },
+];
+
 export function Sdl3dHotspotEditor({
   hotspots,
   selectedHotspotId,
@@ -115,6 +158,8 @@ export function Sdl3dHotspotEditor({
 
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [positionOpen, setPositionOpen] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   function replaceHotspots(next: EditableHotspot[]) {
     const normalized = normalizeSortOrder(next);
@@ -180,7 +225,6 @@ export function Sdl3dHotspotEditor({
     onSelectHotspot(next[targetIndex].id);
   }
 
-  // ── Batch actions ──
   const checkedCount = checkedIds.size;
 
   function toggleCheck(id: string) {
@@ -205,7 +249,6 @@ export function Sdl3dHotspotEditor({
     replaceHotspots(next);
   }
 
-  // ── Drag reorder ──
   const handleDragStart = useCallback((index: number) => {
     setDragIndex(index);
   }, []);
@@ -227,315 +270,325 @@ export function Sdl3dHotspotEditor({
     setDragIndex(null);
   }, []);
 
-  function errorHint(message?: string) {
-    if (!message) return null;
-    return <div className="sdl-hotspot-field__error">{message}</div>;
-  }
-
   return (
-    <div className="sdl-hotspot-editor">
-      {/* Header */}
-      <div className="sdl-hotspot-editor__header">
-        <div>
-          <strong>Hotspots</strong>
-          <div className="sdl-hotspot-editor__count">
-            {safeHotspots.length} hotspot{safeHotspots.length === 1 ? "" : "s"}
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 4 }}>
-          {onApplyPreset && (
-            <button type="button" onClick={onApplyPreset} className="sdl-btn sdl-btn--sm">
+    <BlockStack gap="300">
+      {/* Header: count + Add / Apply Preset */}
+      <InlineStack align="space-between" blockAlign="center" wrap={false}>
+        <BlockStack gap="050">
+          <Text as="h3" variant="headingSm">
+            Hotspots
+          </Text>
+          <Text as="p" tone="subdued" variant="bodySm">
+            {`${safeHotspots.length} hotspot${safeHotspots.length === 1 ? "" : "s"}`}
+          </Text>
+        </BlockStack>
+        <ButtonGroup>
+          {onApplyPreset ? (
+            <Button size="slim" onClick={onApplyPreset}>
               Apply Preset
-            </button>
-          )}
-          <button type="button" onClick={addHotspot} className="sdl-btn sdl-btn--primary sdl-btn--sm">
+            </Button>
+          ) : null}
+          <Button size="slim" variant="primary" onClick={addHotspot}>
             + Add
-          </button>
-        </div>
-      </div>
+          </Button>
+        </ButtonGroup>
+      </InlineStack>
 
-      {/* Batch actions bar */}
+      {/* Batch action bar */}
       {checkedCount > 0 ? (
-        <div className="sdl-hotspot-batch">
-          <span className="sdl-hotspot-batch__count">{checkedCount} selected</span>
-          <button type="button" className="sdl-btn sdl-btn--sm" onClick={() => batchToggleVisible(true)}>
-            Show
-          </button>
-          <button type="button" className="sdl-btn sdl-btn--sm" onClick={() => batchToggleVisible(false)}>
-            Hide
-          </button>
-          {onSaveAsPreset && (
-            <button
-              type="button"
-              className="sdl-btn sdl-btn--primary sdl-btn--sm"
-              onClick={() => {
-                const selectedHotspots = safeHotspots.filter((h) => checkedIds.has(h.id));
-                onSaveAsPreset(selectedHotspots);
-              }}
-            >
-              Save as Preset
-            </button>
-          )}
-          <button type="button" className="sdl-btn sdl-btn--danger sdl-btn--sm" onClick={batchDelete}>
-            Delete
-          </button>
-          <button type="button" className="sdl-btn sdl-btn--sm" onClick={() => setCheckedIds(new Set())}>
-            Clear
-          </button>
-        </div>
+        <Box
+          padding="200"
+          background="bg-surface-secondary"
+          borderRadius="200"
+          borderColor="border-secondary"
+          borderWidth="025"
+        >
+          <InlineStack gap="200" blockAlign="center" wrap>
+            <Text as="span" variant="bodySm" fontWeight="semibold">
+              {`${checkedCount} selected`}
+            </Text>
+            <ButtonGroup>
+              <Button size="micro" onClick={() => batchToggleVisible(true)}>
+                Show
+              </Button>
+              <Button size="micro" onClick={() => batchToggleVisible(false)}>
+                Hide
+              </Button>
+              {onSaveAsPreset ? (
+                <Button
+                  size="micro"
+                  variant="primary"
+                  onClick={() => {
+                    const selectedHotspots = safeHotspots.filter((h) => checkedIds.has(h.id));
+                    onSaveAsPreset(selectedHotspots);
+                  }}
+                >
+                  Save as Preset
+                </Button>
+              ) : null}
+              <Button size="micro" tone="critical" onClick={batchDelete}>
+                Delete
+              </Button>
+              <Button size="micro" onClick={() => setCheckedIds(new Set())}>
+                Clear
+              </Button>
+            </ButtonGroup>
+          </InlineStack>
+        </Box>
       ) : null}
 
-      {/* Hotspot list with drag reorder */}
-      <div className="sdl-hotspot-list">
-        {safeHotspots.length === 0 ? (
-          <div className="sdl-text-muted" style={{ fontSize: 13 }}>
-            No hotspots yet. Click <strong>+ Add</strong> or click on the model in Edit mode.
-          </div>
-        ) : (
-          safeHotspots.map((hotspot, index) => {
+      {/* Hotspot list (drag reorder — native HTML5 DnD, Polaris ships no equivalent) */}
+      {safeHotspots.length === 0 ? (
+        <Text as="p" tone="subdued" variant="bodySm">
+          No hotspots yet. Click <b>+ Add</b> or click on the model in Edit mode.
+        </Text>
+      ) : (
+        <div className="sdl-hs-list">
+          {safeHotspots.map((hotspot, index) => {
             const rowErrors = getHotspotFieldErrors(hotspot);
             const hasBlocking = rowErrors.position || rowErrors.normal || rowErrors.focusTarget || rowErrors.focusOrbit;
             const isSelected = hotspot.id === selectedHotspotId;
             const isChecked = checkedIds.has(hotspot.id);
 
-            let itemClass = "sdl-hotspot-item";
-            if (isSelected) itemClass += " sdl-hotspot-item--selected";
-            if (hasBlocking) itemClass += " sdl-hotspot-item--error";
-            if (isChecked) itemClass += " sdl-hotspot-item--checked";
-
             return (
               <div
                 key={hotspot.id}
-                className={itemClass}
+                className="sdl-hs-row"
+                data-selected={isSelected || undefined}
+                data-error={Boolean(hasBlocking) || undefined}
+                data-checked={isChecked || undefined}
                 draggable
                 onDragStart={() => handleDragStart(index)}
                 onDragOver={(e) => handleDragOver(e, index)}
                 onDragEnd={handleDragEnd}
                 onClick={() => onSelectHotspot(hotspot.id)}
               >
-                <span className="sdl-hotspot-item__drag" title="Drag to reorder">
+                <span className="sdl-hs-row__drag" title="Drag to reorder" aria-hidden>
                   ⠿
                 </span>
                 <input
                   type="checkbox"
-                  className="sdl-hotspot-item__check"
+                  className="sdl-hs-row__check"
                   checked={isChecked}
                   onChange={(e) => {
                     e.stopPropagation();
                     toggleCheck(hotspot.id);
                   }}
                   onClick={(e) => e.stopPropagation()}
+                  aria-label={`Select ${hotspot.title || `Hotspot ${index + 1}`}`}
                 />
                 <span
-                  className="sdl-hotspot-item__index"
+                  className="sdl-hs-row__index"
                   style={hotspot.color ? { background: hotspot.color, color: "#fff" } : undefined}
                 >
                   {index + 1}
                 </span>
-                <div className="sdl-hotspot-item__info">
-                  <div className="sdl-hotspot-item__title">
-                    {hotspot.title || `Hotspot ${index + 1}`}
-                  </div>
-                  <div className="sdl-hotspot-item__meta">
+                <span className="sdl-hs-row__info">
+                  <span className="sdl-hs-row__title">{hotspot.title || `Hotspot ${index + 1}`}</span>
+                  <span className="sdl-hs-row__meta">
                     {hotspot.visible ? "Visible" : "Hidden"} · {hotspot.style}
-                  </div>
-                </div>
+                  </span>
+                </span>
               </div>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
 
       {/* Detail editor */}
-      <div className="sdl-hotspot-detail">
-        {selected ? (
-          <>
-            {/* Quick actions */}
-            <div className="sdl-hotspot-detail__actions">
-              <button type="button" onClick={() => moveSelected(-1)} className="sdl-btn sdl-btn--sm" disabled={selectedIndex === 0}>
-                ↑
-              </button>
-              <button type="button" onClick={() => moveSelected(1)} className="sdl-btn sdl-btn--sm" disabled={selectedIndex === safeHotspots.length - 1}>
-                ↓
-              </button>
-              <button type="button" onClick={duplicateSelected} className="sdl-btn sdl-btn--sm">
-                Duplicate
-              </button>
-              <button type="button" onClick={removeSelected} className="sdl-btn sdl-btn--danger sdl-btn--sm">
-                Delete
-              </button>
-            </div>
+      {selected ? (
+        <BlockStack gap="300">
+          <ButtonGroup>
+            <Button
+              size="slim"
+              onClick={() => moveSelected(-1)}
+              disabled={selectedIndex === 0}
+              accessibilityLabel="Move up"
+            >
+              ↑
+            </Button>
+            <Button
+              size="slim"
+              onClick={() => moveSelected(1)}
+              disabled={selectedIndex === safeHotspots.length - 1}
+              accessibilityLabel="Move down"
+            >
+              ↓
+            </Button>
+            <Button size="slim" onClick={duplicateSelected}>
+              Duplicate
+            </Button>
+            <Button size="slim" tone="critical" onClick={removeSelected}>
+              Delete
+            </Button>
+          </ButtonGroup>
 
-            {/* Title - inline edit */}
-            <div className="sdl-hotspot-field">
-              <label>Title</label>
-              <input
-                type="text"
-                className={`sdl-input ${selectedErrors.title ? "sdl-input--error" : ""}`}
-                value={selected.title}
-                onChange={(e) => updateSelected({ title: e.target.value })}
+          <TextField
+            label="Title"
+            value={selected.title}
+            onChange={(value) => updateSelected({ title: value })}
+            error={selectedErrors.title}
+            autoComplete="off"
+          />
+          <TextField
+            label="Body"
+            value={selected.body}
+            onChange={(value) => updateSelected({ body: value })}
+            multiline={3}
+            autoComplete="off"
+          />
+          <Checkbox
+            label="Visible"
+            checked={selected.visible}
+            onChange={(checked) => updateSelected({ visible: checked })}
+          />
+
+          <Select
+            label="Style"
+            options={STYLE_OPTIONS}
+            value={selected.style}
+            onChange={(value) => updateSelected({ style: value })}
+          />
+
+          <BlockStack gap="150">
+            <TextField
+              label="Color"
+              value={selected.color ?? ""}
+              onChange={(value) => updateSelected({ color: value || null })}
+              placeholder="#3b82f6"
+              autoComplete="off"
+            />
+            <div className="sdl-hs-swatches" role="group" aria-label="Quick color presets">
+              {COLOR_SWATCHES.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className="sdl-hs-swatch"
+                  data-active={selected.color === c || undefined}
+                  style={{ background: c }}
+                  onClick={() => updateSelected({ color: c })}
+                  title={c}
+                  aria-label={`Use color ${c}`}
+                />
+              ))}
+            </div>
+          </BlockStack>
+
+          {/* Position & Camera collapsible */}
+          <SectionToggle
+            id="hotspot-position-section"
+            label="Position & Camera"
+            open={positionOpen}
+            onToggle={() => setPositionOpen((v) => !v)}
+          >
+            <BlockStack gap="200">
+              <TextField
+                label="Position"
+                value={selected.position}
+                onChange={(value) => updateSelected({ position: value })}
+                placeholder="0m 0m 0m"
+                error={selectedErrors.position}
+                autoComplete="off"
               />
-              {errorHint(selectedErrors.title)}
-            </div>
-
-            {/* Body */}
-            <div className="sdl-hotspot-field">
-              <label>Body</label>
-              <textarea
-                className="sdl-input"
-                value={selected.body}
-                onChange={(e) => updateSelected({ body: e.target.value })}
-                rows={3}
+              <TextField
+                label="Normal"
+                value={selected.normal ?? ""}
+                onChange={(value) => updateSelected({ normal: value || null })}
+                placeholder="0m 1m 0m"
+                error={selectedErrors.normal}
+                autoComplete="off"
               />
-            </div>
+              <TextField
+                label="Focus target"
+                value={selected.focusTarget ?? ""}
+                onChange={(value) => updateSelected({ focusTarget: value || null })}
+                placeholder="0m 0m 0m"
+                error={selectedErrors.focusTarget}
+                autoComplete="off"
+              />
+              <TextField
+                label="Focus orbit"
+                value={selected.focusOrbit ?? ""}
+                onChange={(value) => updateSelected({ focusOrbit: value || null })}
+                placeholder="20deg 72deg 85%"
+                error={selectedErrors.focusOrbit}
+                autoComplete="off"
+              />
+            </BlockStack>
+          </SectionToggle>
 
-            {/* Visible toggle */}
-            <div className="sdl-hotspot-field">
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={selected.visible}
-                  onChange={(e) => updateSelected({ visible: e.target.checked })}
-                />
-                Visible
-              </label>
-            </div>
+          {/* Advanced collapsible */}
+          <SectionToggle
+            id="hotspot-advanced-section"
+            label="Advanced"
+            open={advancedOpen}
+            onToggle={() => setAdvancedOpen((v) => !v)}
+          >
+            <BlockStack gap="200">
+              <TextField
+                label="Icon"
+                value={selected.icon ?? ""}
+                onChange={(value) => updateSelected({ icon: value || null })}
+                placeholder="plus"
+                autoComplete="off"
+              />
+              <TextField
+                label="CTA label"
+                value={selected.ctaLabel ?? ""}
+                onChange={(value) => updateSelected({ ctaLabel: value || null })}
+                autoComplete="off"
+              />
+              <TextField
+                label="CTA URL"
+                value={selected.ctaUrl ?? ""}
+                onChange={(value) => updateSelected({ ctaUrl: value || null })}
+                autoComplete="off"
+              />
+            </BlockStack>
+          </SectionToggle>
+        </BlockStack>
+      ) : (
+        <Text as="p" tone="subdued" variant="bodySm">
+          Select or add a hotspot to edit it.
+        </Text>
+      )}
+    </BlockStack>
+  );
+}
 
-            {/* Style + Color row */}
-            <div className="sdl-hotspot-field__row">
-              <div className="sdl-hotspot-field">
-                <label>Style</label>
-                <select
-                  className="sdl-input"
-                  value={selected.style}
-                  onChange={(e) => updateSelected({ style: e.target.value })}
-                >
-                  <option value="card">Card</option>
-                  <option value="tooltip">Tooltip</option>
-                  <option value="dot">Dot</option>
-                  <option value="badge">Badge</option>
-                  <option value="icon-only">Icon Only</option>
-                  <option value="panel">Panel</option>
-                </select>
-              </div>
-
-              <div className="sdl-hotspot-field">
-                <label>Color</label>
-                <input
-                  type="text"
-                  className="sdl-input"
-                  value={selected.color ?? ""}
-                  onChange={(e) => updateSelected({ color: e.target.value || null })}
-                  placeholder="#3b82f6"
-                />
-                <div className="sdl-color-swatches">
-                  {COLOR_SWATCHES.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className={`sdl-color-swatch ${selected.color === c ? "sdl-color-swatch--active" : ""}`}
-                      style={{ background: c }}
-                      onClick={() => updateSelected({ color: c })}
-                      title={c}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Position section - collapsible */}
-            <details className="sdl-collapsible" open>
-              <summary>Position &amp; Camera</summary>
-
-              <div className="sdl-hotspot-field">
-                <label>Position</label>
-                <input
-                  type="text"
-                  className={`sdl-input ${selectedErrors.position ? "sdl-input--error" : ""}`}
-                  value={selected.position}
-                  onChange={(e) => updateSelected({ position: e.target.value })}
-                  placeholder="0m 0m 0m"
-                />
-                {errorHint(selectedErrors.position)}
-              </div>
-
-              <div className="sdl-hotspot-field">
-                <label>Normal</label>
-                <input
-                  type="text"
-                  className={`sdl-input ${selectedErrors.normal ? "sdl-input--error" : ""}`}
-                  value={selected.normal ?? ""}
-                  onChange={(e) => updateSelected({ normal: e.target.value || null })}
-                  placeholder="0m 1m 0m"
-                />
-                {errorHint(selectedErrors.normal)}
-              </div>
-
-              <div className="sdl-hotspot-field">
-                <label>Focus target</label>
-                <input
-                  type="text"
-                  className={`sdl-input ${selectedErrors.focusTarget ? "sdl-input--error" : ""}`}
-                  value={selected.focusTarget ?? ""}
-                  onChange={(e) => updateSelected({ focusTarget: e.target.value || null })}
-                  placeholder="0m 0m 0m"
-                />
-                {errorHint(selectedErrors.focusTarget)}
-              </div>
-
-              <div className="sdl-hotspot-field">
-                <label>Focus orbit</label>
-                <input
-                  type="text"
-                  className={`sdl-input ${selectedErrors.focusOrbit ? "sdl-input--error" : ""}`}
-                  value={selected.focusOrbit ?? ""}
-                  onChange={(e) => updateSelected({ focusOrbit: e.target.value || null })}
-                  placeholder="20deg 72deg 85%"
-                />
-                {errorHint(selectedErrors.focusOrbit)}
-              </div>
-            </details>
-
-            {/* Advanced section - collapsible, closed by default */}
-            <details className="sdl-collapsible">
-              <summary>Advanced</summary>
-
-              <div className="sdl-hotspot-field">
-                <label>Icon</label>
-                <input
-                  type="text"
-                  className="sdl-input"
-                  value={selected.icon ?? ""}
-                  onChange={(e) => updateSelected({ icon: e.target.value || null })}
-                  placeholder="plus"
-                />
-              </div>
-
-              <div className="sdl-hotspot-field">
-                <label>CTA label</label>
-                <input
-                  type="text"
-                  className="sdl-input"
-                  value={selected.ctaLabel ?? ""}
-                  onChange={(e) => updateSelected({ ctaLabel: e.target.value || null })}
-                />
-              </div>
-
-              <div className="sdl-hotspot-field">
-                <label>CTA URL</label>
-                <input
-                  type="text"
-                  className="sdl-input"
-                  value={selected.ctaUrl ?? ""}
-                  onChange={(e) => updateSelected({ ctaUrl: e.target.value || null })}
-                />
-              </div>
-            </details>
-          </>
-        ) : (
-          <div className="sdl-text-muted">Select or add a hotspot to edit it.</div>
-        )}
-      </div>
-    </div>
+/** Inline collapsible block — chevron header + Polaris Collapsible body. */
+function SectionToggle({
+  id,
+  label,
+  open,
+  onToggle,
+  children,
+}: {
+  id: string;
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <BlockStack gap="100">
+      <button
+        type="button"
+        className="sdl-hs-section__trigger"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={onToggle}
+      >
+        <InlineStack align="space-between" blockAlign="center" wrap={false}>
+          <Text as="span" variant="bodyMd" fontWeight="semibold">
+            {label}
+          </Text>
+          <Icon source={open ? ChevronUpIcon : ChevronDownIcon} tone="subdued" />
+        </InlineStack>
+      </button>
+      <Collapsible id={id} open={open} transition={{ duration: "150ms", timingFunction: "ease-in-out" }}>
+        <Box paddingBlockStart="100">{children}</Box>
+      </Collapsible>
+    </BlockStack>
   );
 }

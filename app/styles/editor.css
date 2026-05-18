@@ -856,7 +856,155 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   filter: drop-shadow(0 0 18px rgba(59, 130, 246, 0.7));
 }
 
-/* ── Hotspot Editor ── */
+/* ── Hotspot editor — Polaris-token row + swatch styles (PR #5j+#5k) ──
+   Used by Sdl3dHotspotEditor (3D) and Sdl3dHotspot360Editor (360°).
+   Native <div draggable> rows because Polaris ships no drag-reorder
+   primitive; visuals styled with Polaris design tokens for coherence.
+   Legacy `.sdl-hotspot-*` / `.sdl-color-swatch*` rules below stay until
+   both editors are fully migrated, then PR #6 sweeps them. */
+
+.sdl-hs-list {
+  display: grid;
+  gap: var(--p-space-150, 6px);
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.sdl-hs-row {
+  display: flex;
+  align-items: center;
+  gap: var(--p-space-200, 8px);
+  width: 100%;
+  text-align: left;
+  padding: var(--p-space-200, 8px) var(--p-space-300, 12px);
+  border-radius: var(--p-border-radius-200, 8px);
+  border: 1.5px solid var(--p-color-border-secondary, #e1e3e5);
+  background: var(--p-color-bg-surface, #fff);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.sdl-hs-row:hover {
+  border-color: var(--p-color-border, #c9cccf);
+  background: var(--p-color-bg-surface-hover, #f6f6f7);
+}
+
+.sdl-hs-row[data-selected] {
+  border-color: var(--p-color-border-emphasis, #005bd3);
+  background: var(--p-color-bg-surface-selected, #ebf5ff);
+}
+
+.sdl-hs-row[data-error] {
+  border-color: var(--p-color-border-critical, #d72c0d);
+}
+
+.sdl-hs-row[data-checked] {
+  background: var(--p-color-bg-surface-selected, #ebf5ff);
+}
+
+.sdl-hs-row__drag {
+  cursor: grab;
+  color: var(--p-color-icon-secondary, #616161);
+  font-size: 14px;
+  flex-shrink: 0;
+  user-select: none;
+  line-height: 1;
+}
+
+.sdl-hs-row__drag:active {
+  cursor: grabbing;
+}
+
+.sdl-hs-row__check {
+  flex-shrink: 0;
+}
+
+.sdl-hs-row__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sdl-hs-row__title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--p-color-text, #303030);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sdl-hs-row__meta {
+  font-size: 11px;
+  color: var(--p-color-text-secondary, #616161);
+}
+
+.sdl-hs-row__index {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--p-color-bg-surface-secondary, #f6f6f7);
+  color: var(--p-color-text-secondary, #616161);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sdl-hs-swatches {
+  display: flex;
+  gap: var(--p-space-100, 4px);
+  flex-wrap: wrap;
+}
+
+.sdl-hs-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 0.12s, transform 0.12s;
+}
+
+.sdl-hs-swatch:hover {
+  transform: scale(1.15);
+}
+
+.sdl-hs-swatch:focus-visible {
+  outline: var(--p-focus-ring-outline, 2px solid #005bd3);
+  outline-offset: 2px;
+}
+
+.sdl-hs-swatch[data-active] {
+  border-color: var(--p-color-text, #303030);
+}
+
+.sdl-hs-section__trigger {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: var(--p-space-150, 6px) 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  display: block;
+}
+
+.sdl-hs-section__trigger:focus-visible {
+  outline: var(--p-focus-ring-outline, 2px solid #005bd3);
+  outline-offset: 2px;
+  border-radius: var(--p-border-radius-200, 8px);
+}
+
+/* ── Hotspot Editor (legacy — deleted by PR #6 once 360 editor migrates) ── */
 .sdl-hotspot-editor {
   display: grid;
   gap: var(--sdl-space-3);
