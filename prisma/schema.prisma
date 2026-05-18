@@ -76,6 +76,8 @@ model ProductCache {
   title             String
   handle            String?
   status            String?
+  imageUrl          String?
+  imageAlt          String?
   updatedAt         DateTime @default(now())
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)

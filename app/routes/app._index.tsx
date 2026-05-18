@@ -86,51 +86,88 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const cachedProducts = await prisma.productCache.findMany({
     where: { shopId: shop.id, shopifyProductGid: { in: productGids } },
   });
-  const titleMap = new Map(
-    cachedProducts.map((p) => [p.shopifyProductGid, p.title]),
+  type CachedEntry = {
+    title: string;
+    imageUrl: string | null;
+    imageAlt: string | null;
+  };
+  const cacheMap = new Map<string, CachedEntry>(
+    cachedProducts.map((p) => [
+      p.shopifyProductGid,
+      { title: p.title, imageUrl: p.imageUrl, imageAlt: p.imageAlt },
+    ]),
   );
+  // GIDs we know to be deleted/missing on Shopify — we won't keep retrying
+  // their resolve every page load. Populated below from the resolve response.
+  const missingGids = new Set<string>();
 
-  // Any config without a ProductCache row falls back to its raw GID, which
-  // looks like "gid://shopify/Product/9099..." in the UI. That happens when
-  // a draft was created via the captures CLI or auto-pulled from metafields
-  // without the editor's product search ever populating the cache. Resolve
-  // those titles on the fly via the Admin API and upsert into the cache so
-  // subsequent loads skip this fetch.
-  const unresolvedGids = productGids.filter((gid) => !titleMap.has(gid));
-  if (unresolvedGids.length > 0) {
+  // Resolve from Shopify when either (a) we've never cached this GID, or
+  // (b) we cached the title but the image data is pre-5C-fix (null). Caching
+  // image data means subsequent loads skip this fetch entirely.
+  const needsResolve = productGids.filter((gid) => {
+    const cached = cacheMap.get(gid);
+    return !cached || cached.imageUrl === null;
+  });
+  if (needsResolve.length > 0) {
     try {
       const data = await adminGraphql<{
         nodes: Array<
-          | { __typename: "Product"; id: string; title: string; handle: string; status: string }
+          | {
+              __typename: "Product";
+              id: string;
+              title: string;
+              handle: string;
+              status: string;
+              featuredImage: { url: string; altText: string | null } | null;
+            }
           | { __typename: string; id: string }
           | null
         >;
       }>(
         admin,
-        `query ResolveHomeProductTitles($ids: [ID!]!) {
+        `query ResolveHomeProducts($ids: [ID!]!) {
           nodes(ids: $ids) {
             __typename
-            ... on Product { id title handle status }
+            ... on Product {
+              id
+              title
+              handle
+              status
+              featuredImage { url altText }
+            }
           }
         }`,
-        { ids: unresolvedGids },
+        { ids: needsResolve },
       );
       const fresh: Array<{
         shopifyProductGid: string;
         title: string;
         handle: string | null;
         status: string | null;
+        imageUrl: string | null;
+        imageAlt: string | null;
       }> = [];
+      const resolvedIds = new Set<string>();
       for (const node of data.nodes) {
         if (node && node.__typename === "Product" && "title" in node) {
-          titleMap.set(node.id, node.title);
+          resolvedIds.add(node.id);
+          const imageUrl = node.featuredImage?.url ?? null;
+          const imageAlt = node.featuredImage?.altText ?? null;
+          cacheMap.set(node.id, { title: node.title, imageUrl, imageAlt });
           fresh.push({
             shopifyProductGid: node.id,
             title: node.title,
             handle: node.handle ?? null,
             status: node.status ?? null,
+            imageUrl,
+            imageAlt,
           });
         }
+      }
+      // Track any IDs we asked for that came back null — those products were
+      // deleted on Shopify but still have ProductConfigs in our DB.
+      for (const gid of needsResolve) {
+        if (!resolvedIds.has(gid)) missingGids.add(gid);
       }
       if (fresh.length > 0) {
         await Promise.all(
@@ -142,28 +179,49 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                   shopifyProductGid: p.shopifyProductGid,
                 },
               },
-              update: { title: p.title, handle: p.handle, status: p.status },
+              update: {
+                title: p.title,
+                handle: p.handle,
+                status: p.status,
+                imageUrl: p.imageUrl,
+                imageAlt: p.imageAlt,
+              },
               create: { shopId: shop.id, ...p },
             }),
           ),
         );
       }
     } catch (err) {
-      console.warn("[home] product-title resolve failed; leaving GIDs in place:", err);
+      console.warn("[home] product resolve failed; falling back to short IDs:", err);
     }
   }
 
-  const enrichedConfigs = configs.map((c) => ({
-    id: c.id,
-    shopifyProductGid: c.shopifyProductGid,
-    productTitle: titleMap.get(c.shopifyProductGid) ?? c.shopifyProductGid,
-    status: c.status,
-    enabled: c.enabled,
-    sourceMode: c.sourceMode,
-    hasModel: Boolean(c.modelFileShopifyGid),
-    hotspotCount: c._count.hotspots,
-    updatedAt: c.updatedAt.toISOString(),
-  }));
+  // Pretty fallback for products that have never been resolved OR were
+  // deleted on Shopify: extract the numeric portion from the GID so we show
+  // "Product 9099..." instead of the full "gid://shopify/Product/9099...".
+  const shortId = (gid: string) => {
+    const tail = gid.split("/").pop() ?? gid;
+    return `Product ${tail}`;
+  };
+
+  const enrichedConfigs = configs.map((c) => {
+    const cached = cacheMap.get(c.shopifyProductGid);
+    const isMissing = missingGids.has(c.shopifyProductGid) && !cached;
+    return {
+      id: c.id,
+      shopifyProductGid: c.shopifyProductGid,
+      productTitle: cached?.title ?? shortId(c.shopifyProductGid),
+      productImageUrl: cached?.imageUrl ?? null,
+      productImageAlt: cached?.imageAlt ?? null,
+      productMissing: isMissing,
+      status: c.status,
+      enabled: c.enabled,
+      sourceMode: c.sourceMode,
+      hasModel: Boolean(c.modelFileShopifyGid),
+      hotspotCount: c._count.hotspots,
+      updatedAt: c.updatedAt.toISOString(),
+    };
+  });
 
   return {
     needsOnboarding: false,
@@ -381,6 +439,9 @@ type DashConfig = {
   id: string;
   shopifyProductGid: string;
   productTitle: string;
+  productImageUrl: string | null;
+  productImageAlt: string | null;
+  productMissing: boolean;
   status: string;
   enabled: boolean;
   sourceMode: string;
@@ -599,18 +660,22 @@ function ProductResourceRow({ config }: { config: DashConfig }) {
     config.status === "PUBLISHED" ? "success" : "info";
   const enabledTone: "success" | undefined = config.enabled ? "success" : undefined;
 
+  // Polaris Thumbnail renders a placeholder image when source is empty —
+  // perfect for products with no featured image or that have been deleted.
+  const thumbnail = (
+    <Thumbnail
+      size="small"
+      source={config.productImageUrl ?? ""}
+      alt={config.productImageAlt ?? config.productTitle}
+    />
+  );
+
   return (
     <ResourceItem
       id={config.id}
       url={editorUrl}
       accessibilityLabel={`Open ${config.productTitle} in editor`}
-      media={
-        <Thumbnail
-          size="small"
-          source=""
-          alt={config.hasModel ? "Has 3D model" : "No model yet"}
-        />
-      }
+      media={thumbnail}
     >
       <BlockStack gap="100">
         <InlineStack gap="200" blockAlign="center" wrap={false}>
@@ -620,6 +685,9 @@ function ProductResourceRow({ config }: { config: DashConfig }) {
           {config.hasModel ? <Badge tone="info">3D</Badge> : null}
           <Badge tone={statusTone}>{config.status}</Badge>
           <Badge tone={enabledTone}>{config.enabled ? "Enabled" : "Disabled"}</Badge>
+          {config.productMissing ? (
+            <Badge tone="critical">Deleted on Shopify</Badge>
+          ) : null}
         </InlineStack>
         <Text as="p" tone="subdued" variant="bodySm">
           {config.hotspotCount} hotspot{config.hotspotCount === 1 ? "" : "s"}
