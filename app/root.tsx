@@ -14,7 +14,7 @@ export default function App() {
         <Meta />
         <Links />
       </head>
-      <body suppressHydrationWarning>
+      <body>
         <Outlet />
         <ScrollRestoration />
         <Scripts />
