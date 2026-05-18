@@ -1,21 +1,75 @@
 /**
- * Storage settings page — list of configured providers with inline add/edit
- * (Slice 5B). Captures upload to the row marked `isDefault`. Single-row
- * merchants see the same flow as before (the migration leaves the existing
- * row as the default), just rendered as a list of one.
+ * Storage settings page — Polaris migration (Slice 5C PR #2).
+ *
+ * Builds on the multi-provider data model that landed in Slice 5B and replaces
+ * the bespoke card list + inline edit panel with Polaris primitives:
+ *   - Page header with primaryAction for "Add provider"
+ *   - ResourceList for the configured providers, one ResourceItem per row
+ *   - Modal for add/edit (single Modal toggling between modes)
+ *   - Modal for delete confirmation (replaces window.confirm)
+ *   - Toast for save/test/delete/default-switch feedback
+ *   - Badge tones for "Default" + "Tested OK / Not tested / Last failed"
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   useLoaderData,
   useFetcher,
   useRouteError,
   isRouteErrorResponse,
 } from "react-router";
+import {
+  Badge,
+  Banner,
+  BlockStack,
+  Box,
+  Button,
+  Card,
+  EmptyState,
+  Form as PolarisForm,
+  FormLayout,
+  Frame,
+  InlineStack,
+  Layout,
+  Modal,
+  Page,
+  ResourceItem,
+  ResourceList,
+  Select,
+  Text,
+  TextField,
+  Toast,
+} from "@shopify/polaris";
+
 import shopify from "../shopify.server";
 import { ensureShop } from "../lib/sdl3d-graphql.server";
 import { listStoragesForShop, type ShopStorageSummary } from "../lib/storage.server";
 import { STORAGE_PROVIDERS, type StorageProvider } from "../lib/storage-shared";
-import "../styles/editor.css";
+
+type StorageActionData = {
+  ok?: boolean;
+  message?: string;
+  storageId?: string;
+  promotedStorageId?: string | null;
+};
+
+type LoaderData = {
+  shop: string;
+  hasEncryptionKey: boolean;
+  storages: ShopStorageSummary[];
+};
+
+export async function loader({ request }: { request: Request }) {
+  const { session } = await shopify.authenticate.admin(request);
+  const shop = await ensureShop(session.shop);
+  const storages = await listStoragesForShop(shop.id);
+  const hasEncryptionKey = Boolean(process.env.STORAGE_ENC_KEY);
+
+  return {
+    shop: session.shop,
+    hasEncryptionKey,
+    storages,
+  } satisfies LoaderData;
+}
 
 function parseSpaceUrl(input: string): { bucket?: string; endpoint?: string; region?: string } {
   const trimmed = input.trim();
@@ -25,11 +79,7 @@ function parseSpaceUrl(input: string): { bucket?: string; endpoint?: string; reg
     const parts = u.hostname.split(".");
     if (parts.length < 2) return {};
     const [bucket, ...rest] = parts;
-    return {
-      bucket,
-      endpoint: rest.join("."),
-      region: rest[0],
-    };
+    return { bucket, endpoint: rest.join("."), region: rest[0] };
   } catch {
     return {};
   }
@@ -45,43 +95,16 @@ function providerLabel(value: StorageProvider): string {
   return STORAGE_PROVIDERS.find((p) => p.value === value)?.label ?? value;
 }
 
-type StorageActionData = { ok?: boolean; message?: string; storageId?: string };
-
-type LoaderData = {
-  shop: string;
-  darkMode: boolean;
-  hasEncryptionKey: boolean;
-  storages: ShopStorageSummary[];
-};
-
-export async function loader({ request }: { request: Request }) {
-  const { session } = await shopify.authenticate.admin(request);
-  const shop = await ensureShop(session.shop);
-  const storages = await listStoragesForShop(shop.id);
-  const hasEncryptionKey = Boolean(process.env.STORAGE_ENC_KEY);
-
-  return {
-    shop: session.shop,
-    darkMode: shop.darkMode ?? false,
-    hasEncryptionKey,
-    storages,
-  } satisfies LoaderData;
-}
-
-// `null` = no panel open. `"new"` = Add panel open. otherwise = edit a row by id.
-type OpenPanel = null | "new" | string;
+type ModalState =
+  | { mode: "closed" }
+  | { mode: "add" }
+  | { mode: "edit"; row: ShopStorageSummary };
 
 export default function Sdl3dStorageRoute() {
   const data = useLoaderData<typeof loader>();
-  const [openPanel, setOpenPanel] = useState<OpenPanel>(() =>
-    data.storages.length === 0 ? "new" : null,
-  );
-
-  // Auto-open Add panel on first visit (no rows yet) — but also collapse the
-  // panel once the merchant saves their first row.
-  useEffect(() => {
-    if (data.storages.length === 0 && openPanel !== "new") setOpenPanel("new");
-  }, [data.storages.length, openPanel]);
+  const [modalState, setModalState] = useState<ModalState>({ mode: "closed" });
+  const [deleteTarget, setDeleteTarget] = useState<ShopStorageSummary | null>(null);
+  const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null);
 
   const configuredProviders = useMemo(
     () => new Set(data.storages.map((s) => s.provider)),
@@ -93,207 +116,219 @@ export default function Sdl3dStorageRoute() {
   );
   const canAddMore = availableProvidersForAdd.some((p) => !p.comingSoon);
 
-  return (
-    <div className="sdl-editor sdl-editor--page" data-theme={data.darkMode ? "dark" : "light"}>
-      <div className="sdl-editor__inner" style={{ maxWidth: 760 }}>
-        <div style={{ marginBottom: 20 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Storage</h1>
-          <p className="sdl-text-muted" style={{ margin: "4px 0 0" }}>
-            Connect one or more object-storage buckets. Captures upload to the bucket marked <strong>default</strong>.
-          </p>
-        </div>
+  const handleOpenAdd = useCallback(() => setModalState({ mode: "add" }), []);
+  const handleOpenEdit = useCallback(
+    (row: ShopStorageSummary) => setModalState({ mode: "edit", row }),
+    [],
+  );
+  const handleCloseModal = useCallback(() => setModalState({ mode: "closed" }), []);
 
-        {!data.hasEncryptionKey ? (
-          <section className="sdl-card" style={{ borderColor: "#dc2626" }}>
-            <div className="sdl-card__header">
-              <div>
-                <div className="sdl-card__title">Encryption key missing</div>
-                <div className="sdl-card__subtitle">
-                  Set <code>STORAGE_ENC_KEY</code> in the deployment environment before saving credentials. Generate with{" "}
-                  <code>openssl rand -hex 32</code>. Once lost, encrypted credentials cannot be recovered — keep a copy in your secrets manager.
-                </div>
-              </div>
-            </div>
-          </section>
+  return (
+    <Frame>
+      <Page
+        title="Storage"
+        subtitle="Connect one or more object-storage buckets. Captures upload to the bucket marked default."
+        primaryAction={{
+          content: "Add provider",
+          onAction: handleOpenAdd,
+          disabled: !canAddMore || !data.hasEncryptionKey,
+          helpText: !canAddMore
+            ? "All available providers are already configured."
+            : !data.hasEncryptionKey
+              ? "Set STORAGE_ENC_KEY first."
+              : undefined,
+        }}
+      >
+        <Layout>
+          {!data.hasEncryptionKey ? (
+            <Layout.Section>
+              <Banner tone="critical" title="Encryption key missing">
+                <BlockStack gap="200">
+                  <Text as="p">
+                    Set <code>STORAGE_ENC_KEY</code> in the deployment environment before saving credentials. Generate with{" "}
+                    <code>openssl rand -hex 32</code>.
+                  </Text>
+                  <Text as="p" tone="subdued">
+                    Once lost, encrypted credentials cannot be recovered — keep a copy in your secrets manager.
+                  </Text>
+                </BlockStack>
+              </Banner>
+            </Layout.Section>
+          ) : null}
+
+          <Layout.Section>
+            <Card padding="0">
+              {data.storages.length === 0 ? (
+                <Box padding="500">
+                  <EmptyState
+                    heading="No storage configured yet"
+                    action={{
+                      content: "Add provider",
+                      onAction: handleOpenAdd,
+                      disabled: !data.hasEncryptionKey,
+                    }}
+                    image=""
+                  >
+                    <Text as="p">
+                      Connect a DigitalOcean Spaces, AWS S3, Cloudflare R2, or Bunny.net bucket so the capture pipeline has somewhere to upload frames.
+                    </Text>
+                  </EmptyState>
+                </Box>
+              ) : (
+                <ResourceList
+                  resourceName={{ singular: "provider", plural: "providers" }}
+                  items={data.storages}
+                  renderItem={(row) => (
+                    <StorageResourceRow
+                      key={row.id}
+                      row={row}
+                      onEdit={() => handleOpenEdit(row)}
+                      onDelete={() => setDeleteTarget(row)}
+                      onSetDefault={() => undefined /* handled inside row via fetcher */}
+                      onToast={setToast}
+                    />
+                  )}
+                />
+              )}
+            </Card>
+          </Layout.Section>
+        </Layout>
+
+        {modalState.mode !== "closed" ? (
+          <StorageEditModal
+            state={modalState}
+            availableProvidersForAdd={availableProvidersForAdd}
+            hasEncryptionKey={data.hasEncryptionKey}
+            onClose={handleCloseModal}
+            onToast={setToast}
+          />
         ) : null}
 
-        <div style={{ display: "grid", gap: 12 }}>
-          {data.storages.map((row) =>
-            openPanel === row.id ? (
-              <StorageEditPanel
-                key={row.id}
-                row={row}
-                onClose={() => setOpenPanel(null)}
-                hasEncryptionKey={data.hasEncryptionKey}
-              />
-            ) : (
-              <StorageRowCard
-                key={row.id}
-                row={row}
-                onEdit={() => setOpenPanel(row.id)}
-              />
-            ),
-          )}
+        {deleteTarget ? (
+          <StorageDeleteModal
+            row={deleteTarget}
+            onClose={() => setDeleteTarget(null)}
+            onToast={setToast}
+          />
+        ) : null}
+      </Page>
 
-          {openPanel === "new" ? (
-            <StorageEditPanel
-              row={null}
-              availableProviders={availableProvidersForAdd}
-              onClose={() => setOpenPanel(null)}
-              hasEncryptionKey={data.hasEncryptionKey}
-            />
-          ) : (
-            <button
-              type="button"
-              className="sdl-btn"
-              disabled={!canAddMore || !data.hasEncryptionKey}
-              onClick={() => setOpenPanel("new")}
-              title={
-                !canAddMore
-                  ? "All available providers are already configured."
-                  : !data.hasEncryptionKey
-                    ? "Set STORAGE_ENC_KEY first."
-                    : undefined
-              }
-              style={{ justifySelf: "start" }}
-            >
-              + Add provider
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+      {toast ? (
+        <Toast
+          content={toast.message}
+          error={toast.error}
+          onDismiss={() => setToast(null)}
+          duration={4000}
+        />
+      ) : null}
+    </Frame>
   );
 }
 
-function StorageRowCard({
+function StorageResourceRow({
   row,
   onEdit,
+  onDelete,
+  onToast,
 }: {
   row: ShopStorageSummary;
   onEdit: () => void;
+  onDelete: () => void;
+  onSetDefault: () => void;
+  onToast: (t: { message: string; error?: boolean }) => void;
 }) {
   const defaultFetcher = useFetcher<StorageActionData>();
-  const deleteFetcher = useFetcher<StorageActionData>();
+  const isSettingDefault = defaultFetcher.state !== "idle";
 
-  const isBusy = defaultFetcher.state !== "idle" || deleteFetcher.state !== "idle";
+  useEffect(() => {
+    if (defaultFetcher.state === "idle" && defaultFetcher.data) {
+      if (defaultFetcher.data.ok) {
+        onToast({ message: `${providerLabel(row.provider)} is now the default.` });
+      } else if (defaultFetcher.data.message) {
+        onToast({ message: defaultFetcher.data.message, error: true });
+      }
+    }
+  }, [defaultFetcher.state, defaultFetcher.data, onToast, row.provider]);
 
-  const testedAtLabel = row.testedAt ? new Date(row.testedAt).toLocaleString() : null;
-
-  const handleDelete = () => {
-    const confirmMsg = row.isDefault
-      ? "Delete this provider? It is currently the default — another provider (if any) will be promoted automatically."
-      : "Delete this provider? Existing captures stamped against this row will keep their reference, but new uploads will need a different provider.";
-    if (!window.confirm(confirmMsg)) return;
-    const fd = new FormData();
-    fd.set("intent", "deleteStorage");
-    fd.set("storageId", row.id);
-    deleteFetcher.submit(fd, { method: "post", action: "/api/sdl3d/storage" });
-  };
-
-  const handleSetDefault = () => {
+  const handleSetDefault = useCallback(() => {
     const fd = new FormData();
     fd.set("intent", "setDefault");
     fd.set("storageId", row.id);
     defaultFetcher.submit(fd, { method: "post", action: "/api/sdl3d/storage" });
-  };
+  }, [defaultFetcher, row.id]);
+
+  const testedAtLabel = row.testedAt ? new Date(row.testedAt).toLocaleString() : null;
+  const testStatus: { tone: "success" | "warning" | "info"; label: string } = row.testedAt
+    ? { tone: "success", label: "Tested" }
+    : { tone: "warning", label: "Not tested" };
 
   return (
-    <section className="sdl-card">
-      <div className="sdl-card__header">
-        <div>
-          <div className="sdl-card__title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <ResourceItem
+      id={row.id}
+      onClick={onEdit}
+      accessibilityLabel={`Edit ${providerLabel(row.provider)}`}
+    >
+      <BlockStack gap="200">
+        <InlineStack gap="300" blockAlign="center" wrap={false}>
+          <Text as="h3" variant="headingSm">
             {providerLabel(row.provider)}
-            {row.isDefault ? (
-              <span
-                className="sdl-subtle-card"
-                style={{
-                  padding: "2px 8px",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: 0.5,
-                  textTransform: "uppercase",
-                  borderColor: "#10b981",
-                  color: "#10b981",
-                }}
-              >
-                Default
-              </span>
-            ) : null}
-          </div>
-          <div className="sdl-card__subtitle">
-            <code>{row.bucket}</code> @ <code>{row.endpoint}</code>
-            {row.region ? <> · region <code>{row.region}</code></> : null}
-          </div>
-          {testedAtLabel ? (
-            <div
-              className="sdl-text-muted"
-              style={{ fontSize: 12, marginTop: 4 }}
-              suppressHydrationWarning
-            >
-              Last tested: {testedAtLabel}
-            </div>
-          ) : (
-            <div className="sdl-text-muted" style={{ fontSize: 12, marginTop: 4 }}>
-              Not yet tested
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          </Text>
+          {row.isDefault ? <Badge tone="success">Default</Badge> : null}
+          <Badge tone={testStatus.tone}>{testStatus.label}</Badge>
+        </InlineStack>
+        <Text as="p" tone="subdued">
+          <code>{row.bucket}</code> @ <code>{row.endpoint}</code>
+          {row.region ? <> · region <code>{row.region}</code></> : null}
+        </Text>
+        {testedAtLabel ? (
+          <Text as="p" tone="subdued" variant="bodySm">
+            <span suppressHydrationWarning>Last tested: {testedAtLabel}</span>
+          </Text>
+        ) : null}
+        <InlineStack gap="200">
           {!row.isDefault ? (
-            <button
-              type="button"
-              className="sdl-btn"
-              disabled={isBusy}
+            <Button
+              size="slim"
               onClick={handleSetDefault}
+              loading={isSettingDefault}
+              disabled={isSettingDefault}
             >
-              {defaultFetcher.state !== "idle" ? "Setting…" : "Set as default"}
-            </button>
+              Set as default
+            </Button>
           ) : null}
-          <button type="button" className="sdl-btn" disabled={isBusy} onClick={onEdit}>
+          <Button size="slim" onClick={onEdit}>
             Edit
-          </button>
-          <button
-            type="button"
-            className="sdl-btn"
-            disabled={isBusy}
-            onClick={handleDelete}
-            style={{ color: "#dc2626" }}
-          >
-            {deleteFetcher.state !== "idle" ? "Deleting…" : "Delete"}
-          </button>
-        </div>
-      </div>
-
-      {defaultFetcher.data?.message && !defaultFetcher.data.ok ? (
-        <div className="sdl-subtle-card" style={{ borderColor: "#dc2626", marginTop: 12 }}>
-          {defaultFetcher.data.message}
-        </div>
-      ) : null}
-      {deleteFetcher.data?.message && !deleteFetcher.data.ok ? (
-        <div className="sdl-subtle-card" style={{ borderColor: "#dc2626", marginTop: 12 }}>
-          {deleteFetcher.data.message}
-        </div>
-      ) : null}
-    </section>
+          </Button>
+          <Button size="slim" tone="critical" onClick={onDelete}>
+            Delete
+          </Button>
+        </InlineStack>
+      </BlockStack>
+    </ResourceItem>
   );
 }
 
-function StorageEditPanel({
-  row,
-  availableProviders,
-  onClose,
+function StorageEditModal({
+  state,
+  availableProvidersForAdd,
   hasEncryptionKey,
+  onClose,
+  onToast,
 }: {
-  row: ShopStorageSummary | null;
-  availableProviders?: ReadonlyArray<{ value: StorageProvider; label: string; comingSoon?: boolean }>;
-  onClose: () => void;
+  state: { mode: "add" } | { mode: "edit"; row: ShopStorageSummary };
+  availableProvidersForAdd: ReadonlyArray<{
+    value: StorageProvider;
+    label: string;
+    comingSoon?: boolean;
+  }>;
   hasEncryptionKey: boolean;
+  onClose: () => void;
+  onToast: (t: { message: string; error?: boolean }) => void;
 }) {
-  const isEdit = row !== null;
   const saveFetcher = useFetcher<StorageActionData>();
   const testFetcher = useFetcher<StorageActionData>();
+  const isEdit = state.mode === "edit";
+  const row = isEdit ? state.row : null;
 
   const [provider, setProvider] = useState<StorageProvider | "">(row?.provider ?? "");
   const [endpoint, setEndpoint] = useState(row?.endpoint ?? "");
@@ -306,29 +341,65 @@ function StorageEditPanel({
   const [accessKey, setAccessKey] = useState("");
   const [secretKey, setSecretKey] = useState("");
 
-  // Close the panel as soon as a save succeeds — the loader has already
-  // revalidated by then so the new/updated row appears in the list.
+  // Polaris Select wants string options; build them from STORAGE_PROVIDERS.
+  const providerOptions = useMemo(() => {
+    const all = isEdit ? STORAGE_PROVIDERS : availableProvidersForAdd;
+    return [
+      { label: "Select a provider…", value: "", disabled: true },
+      ...all.map((p) => ({
+        label: p.label,
+        value: p.value,
+        disabled: p.comingSoon,
+      })),
+    ];
+  }, [isEdit, availableProvidersForAdd]);
+
+  // Close on successful save.
   useEffect(() => {
     if (saveFetcher.state === "idle" && saveFetcher.data?.ok) {
+      onToast({
+        message: isEdit
+          ? "Storage credentials updated."
+          : "Storage provider added.",
+      });
       onClose();
+    } else if (saveFetcher.state === "idle" && saveFetcher.data?.message && !saveFetcher.data.ok) {
+      onToast({ message: saveFetcher.data.message, error: true });
     }
-  }, [saveFetcher.state, saveFetcher.data, onClose]);
+  }, [saveFetcher.state, saveFetcher.data, isEdit, onClose, onToast]);
 
-  const onSpaceUrlChange = (next: string) => {
+  // Surface test connection feedback as toast (don't close modal).
+  useEffect(() => {
+    if (testFetcher.state === "idle" && testFetcher.data) {
+      if (testFetcher.data.ok) {
+        onToast({ message: "Connection successful — bucket reachable." });
+      } else if (testFetcher.data.message) {
+        onToast({ message: testFetcher.data.message, error: true });
+      }
+    }
+  }, [testFetcher.state, testFetcher.data, onToast]);
+
+  const onSpaceUrlChange = useCallback((next: string) => {
     setSpaceUrl(next);
     const parsed = parseSpaceUrl(next);
     if (parsed.bucket !== undefined) setBucket(parsed.bucket);
     if (parsed.endpoint !== undefined) setEndpoint(parsed.endpoint);
     if (parsed.region !== undefined) setRegion(parsed.region);
-  };
-  const onBucketChange = (next: string) => {
-    setBucket(next);
-    setSpaceUrl(deriveSpaceUrl(next, endpoint));
-  };
-  const onEndpointChange = (next: string) => {
-    setEndpoint(next);
-    setSpaceUrl(deriveSpaceUrl(bucket, next));
-  };
+  }, []);
+  const onBucketChange = useCallback(
+    (next: string) => {
+      setBucket(next);
+      setSpaceUrl(deriveSpaceUrl(next, endpoint));
+    },
+    [endpoint],
+  );
+  const onEndpointChange = useCallback(
+    (next: string) => {
+      setEndpoint(next);
+      setSpaceUrl(deriveSpaceUrl(bucket, next));
+    },
+    [bucket],
+  );
 
   const isSaving = saveFetcher.state !== "idle";
   const isTesting = testFetcher.state !== "idle";
@@ -338,204 +409,219 @@ function StorageEditPanel({
     ? Boolean(provider && endpoint && bucket)
     : Boolean(provider && endpoint && bucket && accessKey && secretKey);
 
+  const handleSubmit = useCallback(() => {
+    const fd = new FormData();
+    fd.set("intent", "saveCredentials");
+    if (isEdit && row) fd.set("storageId", row.id);
+    fd.set("provider", provider);
+    fd.set("endpoint", endpoint);
+    fd.set("region", region);
+    fd.set("bucket", bucket);
+    fd.set("publicBaseUrl", publicBaseUrl);
+    if (accessKey) fd.set("accessKey", accessKey);
+    if (secretKey) fd.set("secretKey", secretKey);
+    saveFetcher.submit(fd, { method: "post", action: "/api/sdl3d/storage" });
+  }, [isEdit, row, provider, endpoint, region, bucket, publicBaseUrl, accessKey, secretKey, saveFetcher]);
+
+  const handleTest = useCallback(() => {
+    const fd = new FormData();
+    fd.set("intent", "testConnection");
+    if (isEdit && row) fd.set("storageId", row.id);
+    if (provider) fd.set("provider", provider);
+    if (endpoint) fd.set("endpoint", endpoint);
+    if (region) fd.set("region", region);
+    if (bucket) fd.set("bucket", bucket);
+    if (publicBaseUrl) fd.set("publicBaseUrl", publicBaseUrl);
+    if (accessKey) fd.set("accessKey", accessKey);
+    if (secretKey) fd.set("secretKey", secretKey);
+    testFetcher.submit(fd, { method: "post", action: "/api/sdl3d/storage" });
+  }, [isEdit, row, provider, endpoint, region, bucket, publicBaseUrl, accessKey, secretKey, testFetcher]);
+
   return (
-    <section className="sdl-card">
-      <div className="sdl-card__header">
-        <div>
-          <div className="sdl-card__title">
-            {isEdit ? `Edit ${providerLabel(row!.provider)}` : "Add provider"}
-          </div>
-          <div className="sdl-card__subtitle">
+    <Modal
+      open
+      onClose={onClose}
+      title={isEdit ? `Edit ${providerLabel(row!.provider)}` : "Add storage provider"}
+      primaryAction={{
+        content: isEdit ? "Update credentials" : "Save credentials",
+        onAction: handleSubmit,
+        loading: isSaving,
+        disabled: !canSubmit || !hasEncryptionKey,
+      }}
+      secondaryActions={[
+        {
+          content: "Test connection",
+          onAction: handleTest,
+          loading: isTesting,
+          disabled: !canTest,
+        },
+        {
+          content: "Cancel",
+          onAction: onClose,
+        },
+      ]}
+    >
+      <Modal.Section>
+        <BlockStack gap="400">
+          <Text as="p" tone="subdued">
             Stored encrypted (AES-256-GCM) in your app database. Never sent to Spectrum Design Lab.
-          </div>
-        </div>
-        <button type="button" className="sdl-btn" onClick={onClose}>
-          Cancel
-        </button>
-      </div>
-
-      <saveFetcher.Form method="post" action="/api/sdl3d/storage">
-        <input type="hidden" name="intent" value="saveCredentials" />
-        {isEdit ? <input type="hidden" name="storageId" value={row!.id} /> : null}
-
-        <div style={{ display: "grid", gap: 14 }}>
-          <div>
-            <label className="sdl-label" htmlFor="storage-provider">Provider</label>
-            <select
-              id="storage-provider"
-              className="sdl-input"
-              name="provider"
-              value={provider}
-              onChange={(e) => setProvider(e.target.value as StorageProvider | "")}
-              required
-              disabled={isEdit}
-            >
-              <option value="" disabled>Select a provider…</option>
-              {(isEdit ? STORAGE_PROVIDERS : availableProviders ?? STORAGE_PROVIDERS).map((p) => (
-                <option key={p.value} value={p.value} disabled={p.comingSoon}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-            {isEdit ? (
-              <div className="sdl-text-muted" style={{ fontSize: 12, marginTop: 4 }}>
-                Provider can't change on edit — delete and re-add to change.
-              </div>
-            ) : null}
-          </div>
-
-          <div>
-            <label className="sdl-label" htmlFor="storage-space-url">Space URL</label>
-            <input
-              id="storage-space-url"
-              className="sdl-input"
-              type="url"
-              autoComplete="off"
-              placeholder="https://my-bucket.fra1.digitaloceanspaces.com"
-              value={spaceUrl}
-              onChange={(e) => onSpaceUrlChange(e.target.value)}
-            />
-            <div className="sdl-text-muted" style={{ fontSize: 12, marginTop: 4 }}>
-              Paste the full URL DigitalOcean shows for your Space. The endpoint, region, and bucket below will fill in automatically. Edit any field below to fine-tune.
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr" }}>
-            <div>
-              <label className="sdl-label" htmlFor="storage-endpoint">Endpoint</label>
-              <input
-                id="storage-endpoint"
-                className="sdl-input"
-                name="endpoint"
-                placeholder="fra1.digitaloceanspaces.com"
-                value={endpoint}
-                onChange={(e) => onEndpointChange(e.target.value)}
-                required
+          </Text>
+          <PolarisForm onSubmit={handleSubmit}>
+            <FormLayout>
+              <Select
+                label="Provider"
+                options={providerOptions}
+                value={provider}
+                onChange={(value) => setProvider(value as StorageProvider | "")}
+                disabled={isEdit}
+                helpText={
+                  isEdit
+                    ? "Provider can't change on edit — delete and re-add to change."
+                    : undefined
+                }
               />
-            </div>
-            <div>
-              <label className="sdl-label" htmlFor="storage-region">Region</label>
-              <input
-                id="storage-region"
-                className="sdl-input"
-                name="region"
-                placeholder="fra1"
-                value={region}
-                onChange={(e) => setRegion(e.target.value)}
-              />
-            </div>
-          </div>
 
-          <div>
-            <label className="sdl-label" htmlFor="storage-bucket">Bucket</label>
-            <input
-              id="storage-bucket"
-              className="sdl-input"
-              name="bucket"
-              placeholder="my-merchant-assets"
-              value={bucket}
-              onChange={(e) => onBucketChange(e.target.value)}
-              required
-            />
-          </div>
-
-          <div style={{ display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr" }}>
-            <div>
-              <label className="sdl-label" htmlFor="storage-access-key">Access key ID</label>
-              <input
-                id="storage-access-key"
-                className="sdl-input"
-                name="accessKey"
+              <TextField
+                label="Space URL"
+                type="url"
                 autoComplete="off"
-                placeholder={isEdit ? "••••••••••••••••" : "AKIA…"}
-                value={accessKey}
-                onChange={(e) => setAccessKey(e.target.value)}
-                required={!hasSavedCreds}
+                value={spaceUrl}
+                onChange={onSpaceUrlChange}
+                placeholder="https://my-bucket.fra1.digitaloceanspaces.com"
+                helpText="Paste the full URL DigitalOcean shows for your Space. Endpoint, region, and bucket fill in automatically — edit individual fields to fine-tune."
               />
-            </div>
-            <div>
-              <label className="sdl-label" htmlFor="storage-secret-key">Secret access key</label>
-              <input
-                id="storage-secret-key"
-                className="sdl-input"
-                name="secretKey"
-                type="password"
+
+              <FormLayout.Group>
+                <TextField
+                  label="Endpoint"
+                  autoComplete="off"
+                  value={endpoint}
+                  onChange={onEndpointChange}
+                  placeholder="fra1.digitaloceanspaces.com"
+                  requiredIndicator
+                />
+                <TextField
+                  label="Region"
+                  autoComplete="off"
+                  value={region}
+                  onChange={setRegion}
+                  placeholder="fra1"
+                />
+              </FormLayout.Group>
+
+              <TextField
+                label="Bucket"
                 autoComplete="off"
-                placeholder={isEdit ? "••••••••••••••••••••••••" : "•••••"}
-                value={secretKey}
-                onChange={(e) => setSecretKey(e.target.value)}
-                required={!hasSavedCreds}
+                value={bucket}
+                onChange={onBucketChange}
+                placeholder="my-merchant-assets"
+                requiredIndicator
               />
-            </div>
-          </div>
-          {hasSavedCreds ? (
-            <div className="sdl-text-muted" style={{ fontSize: 12, marginTop: -8 }}>
-              Leave the key fields blank to keep the existing credentials and only update the other fields.
-            </div>
+
+              <FormLayout.Group>
+                <TextField
+                  label="Access key ID"
+                  autoComplete="off"
+                  value={accessKey}
+                  onChange={setAccessKey}
+                  placeholder={isEdit ? "••••••••••••••••" : "AKIA…"}
+                  requiredIndicator={!hasSavedCreds}
+                />
+                <TextField
+                  label="Secret access key"
+                  type="password"
+                  autoComplete="off"
+                  value={secretKey}
+                  onChange={setSecretKey}
+                  placeholder={isEdit ? "••••••••••••••••••••••••" : "•••••"}
+                  requiredIndicator={!hasSavedCreds}
+                />
+              </FormLayout.Group>
+              {hasSavedCreds ? (
+                <Text as="p" tone="subdued" variant="bodySm">
+                  Leave the key fields blank to keep the existing credentials and only update the other fields.
+                </Text>
+              ) : null}
+
+              <TextField
+                label="Public base URL (optional)"
+                autoComplete="off"
+                value={publicBaseUrl}
+                onChange={setPublicBaseUrl}
+                placeholder="https://cdn.example.com"
+                helpText="CDN domain in front of the bucket for storefront URLs. Leave blank if frames are served directly from the bucket."
+              />
+            </FormLayout>
+          </PolarisForm>
+        </BlockStack>
+      </Modal.Section>
+    </Modal>
+  );
+}
+
+function StorageDeleteModal({
+  row,
+  onClose,
+  onToast,
+}: {
+  row: ShopStorageSummary;
+  onClose: () => void;
+  onToast: (t: { message: string; error?: boolean }) => void;
+}) {
+  const deleteFetcher = useFetcher<StorageActionData>();
+  const isDeleting = deleteFetcher.state !== "idle";
+
+  useEffect(() => {
+    if (deleteFetcher.state === "idle" && deleteFetcher.data) {
+      if (deleteFetcher.data.ok) {
+        onToast({
+          message: deleteFetcher.data.promotedStorageId
+            ? `${providerLabel(row.provider)} deleted; another provider promoted to default.`
+            : `${providerLabel(row.provider)} deleted.`,
+        });
+        onClose();
+      } else if (deleteFetcher.data.message) {
+        onToast({ message: deleteFetcher.data.message, error: true });
+      }
+    }
+  }, [deleteFetcher.state, deleteFetcher.data, row.provider, onClose, onToast]);
+
+  const handleDelete = useCallback(() => {
+    const fd = new FormData();
+    fd.set("intent", "deleteStorage");
+    fd.set("storageId", row.id);
+    deleteFetcher.submit(fd, { method: "post", action: "/api/sdl3d/storage" });
+  }, [deleteFetcher, row.id]);
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Delete ${providerLabel(row.provider)}?`}
+      primaryAction={{
+        content: "Delete",
+        destructive: true,
+        onAction: handleDelete,
+        loading: isDeleting,
+      }}
+      secondaryActions={[{ content: "Cancel", onAction: onClose }]}
+    >
+      <Modal.Section>
+        <BlockStack gap="200">
+          {row.isDefault ? (
+            <Banner tone="warning">
+              This is the default provider. Deleting it will promote another configured provider to default automatically.
+            </Banner>
           ) : null}
-
-          <div>
-            <label className="sdl-label" htmlFor="storage-public-url">Public base URL (optional)</label>
-            <input
-              id="storage-public-url"
-              className="sdl-input"
-              name="publicBaseUrl"
-              placeholder="https://cdn.example.com"
-              value={publicBaseUrl}
-              onChange={(e) => setPublicBaseUrl(e.target.value)}
-            />
-            <div className="sdl-text-muted" style={{ fontSize: 12, marginTop: 4 }}>
-              CDN domain in front of the bucket, used to build storefront-facing URLs. Leave blank if frames are served directly from the bucket.
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <button
-              type="submit"
-              className="sdl-btn sdl-btn--primary"
-              disabled={!canSubmit || isSaving || !hasEncryptionKey}
-            >
-              {isSaving ? "Saving…" : isEdit ? "Update credentials" : "Save credentials"}
-            </button>
-
-            <button
-              type="button"
-              className="sdl-btn"
-              disabled={!canTest || isTesting}
-              onClick={() => {
-                const fd = new FormData();
-                fd.set("intent", "testConnection");
-                if (isEdit) fd.set("storageId", row!.id);
-                if (provider) fd.set("provider", provider);
-                if (endpoint) fd.set("endpoint", endpoint);
-                if (region) fd.set("region", region);
-                if (bucket) fd.set("bucket", bucket);
-                if (publicBaseUrl) fd.set("publicBaseUrl", publicBaseUrl);
-                if (accessKey) fd.set("accessKey", accessKey);
-                if (secretKey) fd.set("secretKey", secretKey);
-                testFetcher.submit(fd, { method: "post", action: "/api/sdl3d/storage" });
-              }}
-            >
-              {isTesting ? "Testing…" : "Test connection"}
-            </button>
-          </div>
-
-          {saveFetcher.data?.message && !saveFetcher.data.ok ? (
-            <div className="sdl-subtle-card" style={{ borderColor: "#dc2626" }}>
-              {saveFetcher.data.message}
-            </div>
-          ) : null}
-
-          {testFetcher.data?.ok ? (
-            <div className="sdl-subtle-card">Connection successful — bucket reachable.</div>
-          ) : testFetcher.data?.message ? (
-            <div className="sdl-subtle-card" style={{ borderColor: "#dc2626" }}>
-              {testFetcher.data.message}
-            </div>
-          ) : null}
-        </div>
-      </saveFetcher.Form>
-    </section>
+          <Text as="p">
+            Existing captures stamped against this row will keep their reference, but new uploads will need a different provider.
+          </Text>
+          <Text as="p" tone="subdued" variant="bodySm">
+            Bucket and its contents are not touched — the merchant remains in control of their object storage.
+          </Text>
+        </BlockStack>
+      </Modal.Section>
+    </Modal>
   );
 }
 
@@ -543,15 +629,29 @@ export function ErrorBoundary() {
   const error = useRouteError();
   const message = isRouteErrorResponse(error)
     ? `${error.status} — ${error.statusText || "Something went wrong"}`
-    : error instanceof Error ? error.message : "An unexpected error occurred.";
+    : error instanceof Error
+      ? error.message
+      : "An unexpected error occurred.";
 
   return (
-    <div className="sdl-editor" data-theme="light">
-      <div style={{ maxWidth: 600, margin: "60px auto", padding: 24, textAlign: "center" }}>
-        <h2>Storage error</h2>
-        <p>{message}</p>
-        <a href="/app/sdl3d/storage" className="sdl-btn sdl-btn--primary">Reload</a>
-      </div>
-    </div>
+    <Frame>
+      <Page title="Storage error">
+        <Layout>
+          <Layout.Section>
+            <Banner tone="critical" title="Storage page failed to load">
+              <Text as="p">{message}</Text>
+            </Banner>
+          </Layout.Section>
+          <Layout.Section>
+            <InlineStack gap="200">
+              <Button url="/app/sdl3d/storage" variant="primary">
+                Reload
+              </Button>
+              <Button url="/app">Dashboard</Button>
+            </InlineStack>
+          </Layout.Section>
+        </Layout>
+      </Page>
+    </Frame>
   );
 }
