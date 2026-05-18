@@ -1,15 +1,54 @@
-import { useState, useEffect } from "react";
-import { useLoaderData, useFetcher, useRouteError, isRouteErrorResponse } from "react-router";
+/**
+ * Settings page — first Polaris migration target (Slice 5C PR #1).
+ *
+ * Lands the Polaris primitives the rest of 5C reuses: Page / Layout / Card /
+ * TextField / Button / Form / Toast / Frame / DescriptionList / ChoiceList /
+ * ResourceList / Badge.
+ *
+ * UX upgrades over the previous hand-rolled version:
+ * 1. App info section becomes a DescriptionList (denser, matches Shopify
+ *    admin's own settings-summary pattern).
+ * 2. Appearance toggle becomes a ChoiceList (Light/Dark) with a live status
+ *    summary. "System" option deferred until darkModeChoice column lands.
+ * 3. Metafield definitions list becomes a ResourceList with Badge tones for
+ *    status, replacing the stacked-pill cards.
+ * 4. Save / setup feedback moves from inline divs to Polaris Toast for
+ *    non-blocking, dismissible confirmations.
+ */
+import { useCallback, useEffect, useState } from "react";
+import {
+  useLoaderData,
+  useFetcher,
+  useRouteError,
+  isRouteErrorResponse,
+} from "react-router";
+import {
+  Badge,
+  BlockStack,
+  Box,
+  Button,
+  Card,
+  ChoiceList,
+  DescriptionList,
+  EmptyState,
+  Form as PolarisForm,
+  FormLayout,
+  Frame,
+  InlineStack,
+  Layout,
+  Page,
+  ResourceItem,
+  ResourceList,
+  Text,
+  TextField,
+  Toast,
+} from "@shopify/polaris";
+
 import shopify from "../shopify.server";
 import { getSdl3dDefinitions } from "../lib/sdl3d-metafields.server";
 import { ensureShop } from "../lib/sdl3d-graphql.server";
 import { apiVersion } from "../shopify.server";
 import prisma from "../db.server";
-import "../styles/editor.css";
-
-// Action removed — mutations go through API routes:
-//   /api/sdl3d/onboarding  (resetOnboarding)
-//   /api/sdl3d/settings    (ensureMetafields)
 
 export async function loader({ request }: { request: Request }) {
   const { admin, session } = await shopify.authenticate.admin(request);
@@ -39,231 +78,382 @@ export async function loader({ request }: { request: Request }) {
   };
 }
 
-export default function Sdl3dSettingsRoute() {
-  const loaderData = useLoaderData<typeof loader>();
-  const onboardingFetcher = useFetcher<{ ok?: boolean; resetOnboarding?: boolean }>();
-  const metafieldFetcher = useFetcher<{ ok?: boolean; results?: Array<{ key: string; status: string; message?: string }> }>();
+type MetafieldResult = {
+  key: string;
+  status: string;
+  message?: string;
+};
 
-  const logoFetcher = useFetcher<{ ok?: boolean; logoUrl?: string | null }>();
-  const darkModeFetcher = useFetcher<{ ok?: boolean; darkMode?: boolean }>();
-  const [logoInput, setLogoInput] = useState(loaderData.logoUrl);
-  const [darkMode, setDarkMode] = useState(loaderData.darkMode);
+type ActionData<T = Record<string, unknown>> = {
+  ok?: boolean;
+  message?: string;
+} & T;
+
+export default function Sdl3dSettingsRoute() {
+  const data = useLoaderData<typeof loader>();
+
+  const logoFetcher = useFetcher<ActionData<{ logoUrl?: string | null }>>();
+  const darkModeFetcher = useFetcher<ActionData<{ darkMode?: boolean }>>();
+  const metafieldFetcher = useFetcher<ActionData<{ results?: MetafieldResult[] }>>();
+  const onboardingFetcher = useFetcher<ActionData<{ resetOnboarding?: boolean }>>();
+
+  const [logoInput, setLogoInput] = useState(data.logoUrl);
+  const [themeChoice, setThemeChoice] = useState<("light" | "dark")[]>(
+    data.darkMode ? ["dark"] : ["light"],
+  );
+  const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(
+    null,
+  );
+
+  // Reflect loader-revalidated values back into local state when the user saves.
+  useEffect(() => {
+    if (
+      logoFetcher.state === "idle" &&
+      logoFetcher.data?.ok &&
+      logoFetcher.data.logoUrl !== undefined
+    ) {
+      setLogoInput(logoFetcher.data.logoUrl ?? "");
+      setToast({ message: "Logo saved." });
+    } else if (logoFetcher.state === "idle" && logoFetcher.data?.message && !logoFetcher.data.ok) {
+      setToast({ message: logoFetcher.data.message, error: true });
+    }
+  }, [logoFetcher.state, logoFetcher.data]);
 
   useEffect(() => {
-    if (logoFetcher.data?.ok && logoFetcher.data.logoUrl !== undefined) {
-      setLogoInput(logoFetcher.data.logoUrl ?? "");
+    if (
+      darkModeFetcher.state === "idle" &&
+      darkModeFetcher.data?.ok &&
+      darkModeFetcher.data.darkMode !== undefined
+    ) {
+      setToast({
+        message: darkModeFetcher.data.darkMode ? "Switched to Dark mode." : "Switched to Light mode.",
+      });
     }
-  }, [logoFetcher.data]);
+  }, [darkModeFetcher.state, darkModeFetcher.data]);
 
-  const onboardingData = onboardingFetcher.data;
-  const metafieldData = metafieldFetcher.data;
+  useEffect(() => {
+    if (metafieldFetcher.state === "idle" && metafieldFetcher.data?.ok) {
+      setToast({ message: "Metafield setup complete." });
+    }
+  }, [metafieldFetcher.state, metafieldFetcher.data]);
+
+  useEffect(() => {
+    if (onboardingFetcher.state === "idle" && onboardingFetcher.data?.resetOnboarding) {
+      setToast({ message: "Onboarding wizard reset. Visit Home to restart." });
+    }
+  }, [onboardingFetcher.state, onboardingFetcher.data]);
+
+  const handleLogoSubmit = useCallback(() => {
+    const fd = new FormData();
+    fd.set("intent", "saveLogo");
+    fd.set("logoUrl", logoInput);
+    logoFetcher.submit(fd, { method: "post", action: "/api/sdl3d/settings" });
+  }, [logoFetcher, logoInput]);
+
+  const handleThemeChange = useCallback(
+    (selected: string[]) => {
+      const next = selected[0] === "dark" ? "dark" : "light";
+      setThemeChoice([next]);
+      const fd = new FormData();
+      fd.set("intent", "saveDarkMode");
+      fd.set("darkMode", String(next === "dark"));
+      darkModeFetcher.submit(fd, { method: "post", action: "/api/sdl3d/settings" });
+    },
+    [darkModeFetcher],
+  );
+
+  const handleMetafieldSetup = useCallback(() => {
+    const fd = new FormData();
+    fd.set("intent", "ensureMetafields");
+    metafieldFetcher.submit(fd, { method: "post", action: "/api/sdl3d/settings" });
+  }, [metafieldFetcher]);
+
+  const handleResetOnboarding = useCallback(() => {
+    const fd = new FormData();
+    fd.set("intent", "resetOnboarding");
+    onboardingFetcher.submit(fd, { method: "post", action: "/api/sdl3d/onboarding" });
+  }, [onboardingFetcher]);
+
+  const isSavingLogo = logoFetcher.state !== "idle";
+  const isSavingTheme = darkModeFetcher.state !== "idle";
+  const isRunningSetup = metafieldFetcher.state !== "idle";
+  const isResettingOnboarding = onboardingFetcher.state !== "idle";
+
+  const metafieldResults = metafieldFetcher.data?.results ?? [];
 
   return (
-    <div className="sdl-editor sdl-editor--page" data-theme={darkMode ? "dark" : "light"}>
-      <div className="sdl-editor__inner">
-        <div style={{ marginBottom: 20 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Settings</h1>
-          <p className="sdl-text-muted" style={{ margin: "4px 0 0" }}>
-            App configuration, metafield setup, and debug information.
-          </p>
-        </div>
-
-        <section className="sdl-card">
-          <div className="sdl-card__header">
-            <div>
-              <div className="sdl-card__title">App info</div>
-              <div className="sdl-card__subtitle">Current app and environment details.</div>
-            </div>
-          </div>
-          <div style={{ display: "grid", gap: 8 }}>
-            <div className="sdl-subtle-card">
-              <strong>Shop:</strong> {loaderData.shop}
-            </div>
-            <div className="sdl-subtle-card">
-              <strong>Shopify API version:</strong> {loaderData.apiVersion}
-            </div>
-            <div className="sdl-subtle-card">
-              <strong>Product configs:</strong> {loaderData.configCount}
-            </div>
-            <div className="sdl-subtle-card">
-              <strong>Presets:</strong> {loaderData.presetCount}
-            </div>
-            <div className="sdl-subtle-card">
-              <strong>Sync runs:</strong> {loaderData.syncRunCount}
-            </div>
-          </div>
-        </section>
-
-        <section className="sdl-card">
-          <div className="sdl-card__header">
-            <div>
-              <div className="sdl-card__title">Company logo</div>
-              <div className="sdl-card__subtitle">
-                Used as the loading poster while 3D models load. Paste any public image URL.
-              </div>
-            </div>
-          </div>
-          <logoFetcher.Form method="post" action="/api/sdl3d/settings">
-            <input type="hidden" name="intent" value="saveLogo" />
-            <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-              <div style={{ flex: 1 }}>
-                <label className="sdl-label">Logo URL</label>
-                <input
-                  type="url"
-                  name="logoUrl"
-                  className="sdl-input"
-                  value={logoInput}
-                  onChange={(e) => setLogoInput(e.target.value)}
-                  placeholder="https://cdn.shopify.com/…/logo.png"
-                  style={{ width: "100%" }}
+    <Frame>
+      <Page
+        title="Settings"
+        subtitle="App configuration, metafield setup, and debug information."
+      >
+        <Layout>
+          {/* App info — DescriptionList replaces the five stacked subtle cards. */}
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="200">
+                <Text as="h2" variant="headingMd">App info</Text>
+                <Text as="p" tone="subdued">
+                  Current app and environment details.
+                </Text>
+                <DescriptionList
+                  items={[
+                    { term: "Shop", description: data.shop },
+                    { term: "Shopify API version", description: data.apiVersion },
+                    { term: "Product configs", description: String(data.configCount) },
+                    { term: "Presets", description: String(data.presetCount) },
+                    { term: "Sync runs", description: String(data.syncRunCount) },
+                  ]}
                 />
-              </div>
-              <button type="submit" className="sdl-btn sdl-btn--primary" disabled={logoFetcher.state !== "idle"}>
-                {logoFetcher.state !== "idle" ? "Saving…" : "Save"}
-              </button>
-            </div>
-            {logoInput ? (
-              <div style={{ marginTop: 12 }}>
-                <img
-                  src={logoInput}
-                  alt="Logo preview"
-                  style={{ maxHeight: 60, maxWidth: 200, borderRadius: 8, background: "#f1f5f9", padding: 4 }}
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+
+          {/* Company logo. URL input only for now — DropZone w/ Shopify staged
+              upload is a deferred follow-up to avoid metafield-storage bloat. */}
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">Company logo</Text>
+                <Text as="p" tone="subdued">
+                  Used as the loading poster while 3D models load. Paste any public image URL.
+                </Text>
+                <PolarisForm onSubmit={handleLogoSubmit}>
+                  <FormLayout>
+                    <TextField
+                      label="Logo URL"
+                      labelHidden
+                      type="url"
+                      value={logoInput}
+                      onChange={setLogoInput}
+                      placeholder="https://cdn.shopify.com/…/logo.png"
+                      autoComplete="off"
+                    />
+                    <InlineStack gap="300" align="start" blockAlign="center">
+                      <Button
+                        submit
+                        variant="primary"
+                        loading={isSavingLogo}
+                        disabled={isSavingLogo}
+                      >
+                        Save
+                      </Button>
+                      {logoInput ? (
+                        <Box
+                          padding="200"
+                          background="bg-surface-secondary"
+                          borderRadius="200"
+                        >
+                          <img
+                            src={logoInput}
+                            alt="Logo preview"
+                            style={{ maxHeight: 40, maxWidth: 160, display: "block" }}
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = "none";
+                            }}
+                          />
+                        </Box>
+                      ) : null}
+                    </InlineStack>
+                  </FormLayout>
+                </PolarisForm>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+
+          {/* Appearance — ChoiceList replaces the bespoke toggle button.
+              Light/Dark only for now; System is a follow-up requiring a new
+              darkModeChoice column. */}
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">Appearance</Text>
+                <Text as="p" tone="subdued">
+                  Choose the color theme for the app interface.
+                </Text>
+                <ChoiceList
+                  title="Theme"
+                  titleHidden
+                  choices={[
+                    { label: "Light", value: "light" },
+                    { label: "Dark", value: "dark" },
+                  ]}
+                  selected={themeChoice}
+                  onChange={handleThemeChange}
+                  disabled={isSavingTheme}
                 />
-              </div>
-            ) : null}
-          </logoFetcher.Form>
-          {logoFetcher.data?.ok ? (
-            <div className="sdl-subtle-card" style={{ marginTop: 12 }}>Logo saved.</div>
-          ) : null}
-        </section>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
 
-        <section className="sdl-card">
-          <div className="sdl-card__header">
-            <div>
-              <div className="sdl-card__title">Appearance</div>
-              <div className="sdl-card__subtitle">Choose your preferred color theme for the app.</div>
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <button
-              type="button"
-              className={`sdl-btn ${darkMode ? "sdl-btn--primary" : "sdl-btn--secondary"}`}
-              onClick={() => {
-                const next = !darkMode;
-                setDarkMode(next);
-                const fd = new FormData();
-                fd.set("intent", "saveDarkMode");
-                fd.set("darkMode", String(next));
-                darkModeFetcher.submit(fd, { method: "post", action: "/api/sdl3d/settings" });
-              }}
-            >
-              {darkMode ? "Switch to Light mode" : "Switch to Dark mode"}
-            </button>
-            <span className="sdl-text-muted" style={{ fontSize: 13 }}>
-              Currently: <strong>{darkMode ? "Dark" : "Light"}</strong>
-            </span>
-            {darkModeFetcher.state !== "idle" && (
-              <span className="sdl-text-muted" style={{ fontSize: 12 }}>Saving...</span>
-            )}
-          </div>
-        </section>
+          {/* Onboarding — keeps the existing reset flow, just Polaris button. */}
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">Onboarding</Text>
+                <Text as="p" tone="subdued">
+                  Walk through the getting-started guide again.
+                </Text>
+                <InlineStack>
+                  <Button
+                    onClick={handleResetOnboarding}
+                    loading={isResettingOnboarding}
+                    disabled={isResettingOnboarding}
+                  >
+                    Restart onboarding wizard
+                  </Button>
+                </InlineStack>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
 
-        <section className="sdl-card">
-          <div className="sdl-card__header">
-            <div>
-              <div className="sdl-card__title">Onboarding</div>
-              <div className="sdl-card__subtitle">
-                Walk through the getting-started guide again.
-              </div>
-            </div>
-          </div>
-          <onboardingFetcher.Form method="post" action="/api/sdl3d/onboarding">
-            <input type="hidden" name="intent" value="resetOnboarding" />
-            <button type="submit" className="sdl-btn sdl-btn--secondary" disabled={onboardingFetcher.state !== "idle"}>
-              {onboardingFetcher.state !== "idle" ? "Resetting…" : "Restart onboarding wizard"}
-            </button>
-          </onboardingFetcher.Form>
-          {onboardingData?.resetOnboarding ? (
-            <div className="sdl-subtle-card" style={{ marginTop: 12 }}>
-              Onboarding reset. <a href="/app" style={{ color: "#2563eb" }}>Go to Home</a> to start the wizard.
-            </div>
-          ) : null}
-        </section>
+          {/* Metafield definitions — ResourceList with status Badges. */}
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">Metafield definitions</Text>
+                <Text as="p" tone="subdued">
+                  SDL 3D uses product metafields under the <code>sdl_3d</code> namespace. Run setup to create or verify definitions.
+                </Text>
+                <InlineStack>
+                  <Button
+                    variant="primary"
+                    onClick={handleMetafieldSetup}
+                    loading={isRunningSetup}
+                    disabled={isRunningSetup}
+                  >
+                    Create / verify metafield definitions
+                  </Button>
+                </InlineStack>
 
-        <section className="sdl-card">
-          <div className="sdl-card__header">
-            <div>
-              <div className="sdl-card__title">Metafield definitions</div>
-              <div className="sdl-card__subtitle">
-                SDL 3D uses product metafields under the <code>sdl_3d</code> namespace. Run setup to create or verify definitions.
-              </div>
-            </div>
-          </div>
+                {metafieldResults.length > 0 ? (
+                  <BlockStack gap="200">
+                    <Text as="h3" variant="headingSm">
+                      Setup results
+                    </Text>
+                    <ResourceList
+                      resourceName={{ singular: "result", plural: "results" }}
+                      items={metafieldResults}
+                      renderItem={(item) => (
+                        <ResourceItem
+                          id={item.key}
+                          onClick={() => undefined}
+                          accessibilityLabel={`${item.key}: ${item.status}`}
+                        >
+                          <InlineStack gap="200" blockAlign="center" wrap={false}>
+                            <Text as="span" variant="bodyMd" fontWeight="semibold">
+                              <code>{item.key}</code>
+                            </Text>
+                            <Badge tone={badgeToneForStatus(item.status)}>
+                              {item.status}
+                            </Badge>
+                            {item.message ? (
+                              <Text as="span" tone="subdued">
+                                {item.message}
+                              </Text>
+                            ) : null}
+                          </InlineStack>
+                        </ResourceItem>
+                      )}
+                    />
+                  </BlockStack>
+                ) : null}
 
-          <metafieldFetcher.Form method="post" action="/api/sdl3d/settings">
-            <input type="hidden" name="intent" value="ensureMetafields" />
-            <button type="submit" className="sdl-btn sdl-btn--primary sdl-mb-3" disabled={metafieldFetcher.state !== "idle"}>
-              {metafieldFetcher.state !== "idle" ? "Running setup…" : "Create / verify metafield definitions"}
-            </button>
-          </metafieldFetcher.Form>
+                <BlockStack gap="200">
+                  <Text as="h3" variant="headingSm">
+                    Current definitions ({data.definitions.length})
+                  </Text>
+                  {data.definitions.length > 0 ? (
+                    <ResourceList
+                      resourceName={{ singular: "definition", plural: "definitions" }}
+                      items={data.definitions}
+                      renderItem={(def) => (
+                        <ResourceItem
+                          id={def.id}
+                          onClick={() => undefined}
+                          accessibilityLabel={`${def.namespace}.${def.key}`}
+                        >
+                          <InlineStack gap="200" blockAlign="center" wrap={false}>
+                            <Text as="span" variant="bodyMd">
+                              <code>{def.namespace}.{def.key}</code>
+                            </Text>
+                            <Text as="span" tone="subdued">
+                              {def.name}
+                            </Text>
+                          </InlineStack>
+                        </ResourceItem>
+                      )}
+                    />
+                  ) : (
+                    <EmptyState
+                      heading="No definitions found yet"
+                      action={{
+                        content: "Run setup",
+                        onAction: handleMetafieldSetup,
+                        loading: isRunningSetup,
+                      }}
+                      image=""
+                    >
+                      <Text as="p">
+                        SDL 3D metafield definitions haven't been created in this shop yet. Run setup above to create them.
+                      </Text>
+                    </EmptyState>
+                  )}
+                </BlockStack>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+        </Layout>
+      </Page>
 
-          {metafieldData?.results?.length ? (
-            <div className="sdl-mb-3">
-              <div className="sdl-label" style={{ marginBottom: 8 }}>Setup results</div>
-              <div style={{ display: "grid", gap: 6 }}>
-                {metafieldData.results.map((r) => (
-                  <div key={r.key} className="sdl-subtle-card">
-                    <strong>{r.key}</strong>
-                    <span className={`sdl-badge sdl-badge--${r.status === "created" || r.status === "exists" ? "success" : "warning"}`} style={{ marginLeft: 8 }}>
-                      {r.status}
-                    </span>
-                    {r.message ? <span className="sdl-text-muted" style={{ marginLeft: 8 }}>{r.message}</span> : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <div>
-            <div className="sdl-label" style={{ marginBottom: 8 }}>Current definitions ({loaderData.definitions.length})</div>
-            {loaderData.definitions.length > 0 ? (
-              <div style={{ display: "grid", gap: 6 }}>
-                {loaderData.definitions.map((d) => (
-                  <div key={d.id} className="sdl-subtle-card">
-                    <code style={{ fontSize: 13 }}>{d.namespace}.{d.key}</code>
-                    <span className="sdl-text-muted" style={{ marginLeft: 8 }}>{d.name}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="sdl-text-muted">
-                No SDL 3D metafield definitions found. Run setup above to create them.
-              </div>
-            )}
-          </div>
-        </section>
-      </div>
-    </div>
+      {toast ? (
+        <Toast
+          content={toast.message}
+          error={toast.error}
+          onDismiss={() => setToast(null)}
+          duration={3500}
+        />
+      ) : null}
+    </Frame>
   );
+}
+
+function badgeToneForStatus(
+  status: string,
+): "success" | "info" | "warning" | "critical" {
+  if (status === "created" || status === "exists") return "success";
+  if (status === "updated") return "info";
+  if (status === "error" || status === "failed") return "critical";
+  return "warning";
 }
 
 export function ErrorBoundary() {
   const error = useRouteError();
   const message = isRouteErrorResponse(error)
     ? `${error.status} — ${error.statusText || "Something went wrong"}`
-    : error instanceof Error ? error.message : "An unexpected error occurred.";
+    : error instanceof Error
+      ? error.message
+      : "An unexpected error occurred.";
 
   return (
-    <div className="sdl-editor" data-theme="light">
-      <div style={{ maxWidth: 600, margin: "60px auto", padding: 24, textAlign: "center" }}>
-        <h2>Settings error</h2>
-        <p>{message}</p>
-        <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-          <a href="/app/sdl3d/settings" className="sdl-btn sdl-btn--primary">Reload</a>
-          <a href="/app" className="sdl-btn">Dashboard</a>
-        </div>
-      </div>
-    </div>
+    <Frame>
+      <Page title="Settings error">
+        <Layout>
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="300">
+                <Text as="p">{message}</Text>
+                <InlineStack gap="200">
+                  <Button url="/app/sdl3d/settings" variant="primary">
+                    Reload
+                  </Button>
+                  <Button url="/app">Dashboard</Button>
+                </InlineStack>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+        </Layout>
+      </Page>
+    </Frame>
   );
 }
