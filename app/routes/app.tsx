@@ -27,9 +27,14 @@ export default function App() {
         <s-link href="/app/sdl3d/storage">Storage</s-link>
         <s-link href="/app/sdl3d/settings">Settings</s-link>
       </s-app-nav>
-      <PolarisAppProvider i18n={enTranslations}>
-        <Outlet />
-      </PolarisAppProvider>
+      {/* BISECT (not for permanent merge): PolarisAppProvider temporarily
+          removed to test whether it's contributing to the lingering #418 /
+          #423 hydration errors. CSS import + Polaris dep stay so the
+          stylesheet still loads. If errors clear without this wrapper, the
+          fix is to render PolarisAppProvider client-only (useEffect + state)
+          on the next commit. If errors persist, they're pre-existing
+          AppBridge SSR mismatch and we accept them as a known issue. */}
+      <Outlet />
     </AppProvider>
   );
 }
