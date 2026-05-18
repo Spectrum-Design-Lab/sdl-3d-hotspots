@@ -20,19 +20,12 @@ export default function App() {
 
   return (
     <AppProvider embedded apiKey={apiKey}>
-      {/* AppBridge upgrades <s-app-nav> and <s-link> into shadow-DOM web components
-          before React hydrates the page, which produces a DOM mismatch React surfaces
-          as minified errors #418 (hydration failed) and #423 (recovered by client-
-          rendering the whole root). suppressHydrationWarning on each web component
-          tells React to skip hydration checks for that element specifically — the
-          element's lightDOM children still hydrate normally, only the upgrade-
-          induced mismatch is suppressed. */}
-      <s-app-nav suppressHydrationWarning>
-        <s-link href="/app" suppressHydrationWarning>Home</s-link>
-        <s-link href="/app/sdl3d/editor" suppressHydrationWarning>Editor</s-link>
-        <s-link href="/app/sdl3d/presets" suppressHydrationWarning>Presets</s-link>
-        <s-link href="/app/sdl3d/storage" suppressHydrationWarning>Storage</s-link>
-        <s-link href="/app/sdl3d/settings" suppressHydrationWarning>Settings</s-link>
+      <s-app-nav>
+        <s-link href="/app">Home</s-link>
+        <s-link href="/app/sdl3d/editor">Editor</s-link>
+        <s-link href="/app/sdl3d/presets">Presets</s-link>
+        <s-link href="/app/sdl3d/storage">Storage</s-link>
+        <s-link href="/app/sdl3d/settings">Settings</s-link>
       </s-app-nav>
       <PolarisAppProvider i18n={enTranslations}>
         <Outlet />
