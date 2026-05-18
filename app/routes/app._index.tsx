@@ -104,7 +104,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // Resolve from Shopify when either (a) we've never cached this GID, or
   // (b) we cached the title but the image data is pre-5C-fix (null). Caching
   // image data means subsequent loads skip this fetch entirely.
+  //
+  // Filter out malformed GIDs first — Shopify's GraphQL rejects the whole
+  // batch if any single id is invalid (e.g. test rows with placeholder
+  // ids like "<real-id>"), and one bad row would otherwise leave every other
+  // product unresolved.
+  const VALID_PRODUCT_GID = /^gid:\/\/shopify\/Product\/\d+$/;
+  for (const gid of productGids) {
+    if (!VALID_PRODUCT_GID.test(gid)) missingGids.add(gid);
+  }
   const needsResolve = productGids.filter((gid) => {
+    if (!VALID_PRODUCT_GID.test(gid)) return false;
     const cached = cacheMap.get(gid);
     return !cached || cached.imageUrl === null;
   });
