@@ -179,17 +179,12 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
 }
 
 /* ── Compact bottom strip ── */
+/* PR #5c: container for the Polaris Banner that replaces the bespoke
+   two-span status strip. Banner owns its own background, border, and
+   spacing — the wrapper just pins it to the bottom of the editor
+   flex column and keeps the existing space allocation. */
 .sdl-editor__bottombar {
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sdl-space-3);
-  padding: 6px var(--sdl-space-3);
-  background: var(--panel);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--sdl-radius-lg);
-  font-size: 12px;
 }
 
 
@@ -2350,7 +2345,34 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   flex: 1;
 }
 
-/* ── Inspector accordions ── */
+/* ── Inspector Polaris-Card collapsible header (PR #5c) ──
+   InspectorSection renders <Card><button> + <Collapsible>. The button
+   needs to fill the card's padding region, drop default browser button
+   styling, and pick up a focus ring consistent with Polaris's. */
+.sdl-inspector-section__trigger {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: var(--p-space-300, 12px) var(--p-space-400, 16px);
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  display: block;
+}
+
+.sdl-inspector-section__trigger:focus-visible {
+  outline: var(--p-focus-ring-outline, 2px solid #005bd3);
+  outline-offset: -2px;
+  border-radius: var(--p-border-radius-300, 12px);
+}
+
+.sdl-inspector-section__trigger:hover {
+  background: var(--p-color-bg-surface-hover, rgba(0, 0, 0, 0.04));
+}
+
+/* ── Inspector accordions (legacy — kept for non-migrated callers) ── */
 .sdl-acc {
   border: 1px solid var(--border-soft);
   border-radius: var(--sdl-radius-md);

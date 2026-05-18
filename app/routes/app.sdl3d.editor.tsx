@@ -1,6 +1,19 @@
 import { useBlocker, useFetcher, useLoaderData, useRevalidator, useRouteError, isRouteErrorResponse } from "react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Badge, Button } from "@shopify/polaris";
+import {
+  Badge,
+  Banner,
+  BlockStack,
+  Box,
+  Button,
+  Card,
+  Checkbox,
+  Collapsible,
+  Icon,
+  InlineStack,
+  Text,
+} from "@shopify/polaris";
+import { ChevronDownIcon, ChevronUpIcon } from "@shopify/polaris-icons";
 import "../styles/editor.css";
 
 import prisma from "../db.server";
@@ -1466,20 +1479,35 @@ export default function Sdl3dEditorRoute() {
 
           <aside className="sdl-editor__inspector">
             {loaderData.selectedProduct ? (
-              <section className="sdl-card">
-                <div className="sdl-card__header">
-                  <div>
-                    <div className="sdl-card__title">Inspector</div>
-                  </div>
-                </div>
-                <details
-                  className="sdl-acc"
+              <BlockStack gap="300">
+                {/* Slice 5C PR #5c UX win — surface the storefront-visibility
+                    toggle as its own top card. It's the single most-toggled
+                    control in the editor; merchants shouldn't have to expand
+                    Media and scroll past file pickers to flip it. */}
+                <Card>
+                  <BlockStack gap="200">
+                    <Text as="h3" variant="headingSm">
+                      Storefront visibility
+                    </Text>
+                    <Checkbox
+                      label="Enabled on storefront"
+                      helpText={
+                        enabled
+                          ? "Viewer renders on the product page once published."
+                          : "Viewer is hidden on the product page even after publishing."
+                      }
+                      checked={enabled}
+                      onChange={(checked) => setEnabled(checked)}
+                    />
+                  </BlockStack>
+                </Card>
+
+                <InspectorSection
+                  id="inspector-media"
+                  title="Media"
                   open={rightTab === "upload"}
-                  onToggle={(e) => {
-                    if (e.currentTarget.open && rightTab !== "upload") setRightTab("upload");
-                  }}
+                  onToggle={() => setRightTab(rightTab === "upload" ? "viewer" : "upload")}
                 >
-                  <summary className="sdl-acc__summary">Media</summary>
                   <div className="sdl-inspector-content">
                     {viewerType === "MODEL_3D" ? (
                       <>
@@ -1615,92 +1643,76 @@ export default function Sdl3dEditorRoute() {
                       </>
                     )}
 
-                    <div className="sdl-subtle-card" style={{ marginTop: 12 }}>
-                      <label className="sdl-label--inline">
-                        <input
-                          type="checkbox"
-                          checked={enabled}
-                          onChange={(e) => setEnabled(e.target.checked)}
-                        />
-                        Enabled on storefront
-                      </label>
-                    </div>
                   </div>
-                </details>
+                </InspectorSection>
 
-                <details
-                  className="sdl-acc"
+                <InspectorSection
+                  id="inspector-viewer"
+                  title="Viewer"
                   open={rightTab === "viewer"}
-                  onToggle={(e) => {
-                    if (e.currentTarget.open && rightTab !== "viewer") setRightTab("viewer");
-                  }}
+                  onToggle={() => setRightTab(rightTab === "viewer" ? "upload" : "viewer")}
                 >
-                  <summary className="sdl-acc__summary">Viewer</summary>
                   <Sdl3dViewerSettingsEditor
                     valueJson={viewerSettingsJson}
                     onChangeJson={setViewerSettingsJson}
                   />
-                </details>
+                </InspectorSection>
 
-                <details
-                  className="sdl-acc"
+                <InspectorSection
+                  id="inspector-hotspots"
+                  title="Hotspots"
                   open={rightTab === "hotspots"}
-                  onToggle={(e) => {
-                    if (e.currentTarget.open && rightTab !== "hotspots") setRightTab("hotspots");
-                  }}
+                  onToggle={() => setRightTab(rightTab === "hotspots" ? "upload" : "hotspots")}
                 >
-                  <summary className="sdl-acc__summary">Hotspots</summary>
-                  <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-                    <button
-                      type="button"
-                      className="sdl-btn sdl-btn--sm"
+                  <InlineStack gap="100" blockAlign="center">
+                    <Button
+                      size="slim"
                       disabled={!canUndo}
                       onClick={handleUndo}
-                      title="Undo (Ctrl+Z)"
+                      accessibilityLabel="Undo (Ctrl+Z)"
                     >
                       Undo
-                    </button>
-                    <button
-                      type="button"
-                      className="sdl-btn sdl-btn--sm"
+                    </Button>
+                    <Button
+                      size="slim"
                       disabled={!canRedo}
                       onClick={handleRedo}
-                      title="Redo (Ctrl+Shift+Z)"
+                      accessibilityLabel="Redo (Ctrl+Shift+Z)"
                     >
                       Redo
-                    </button>
-                  </div>
-                  {viewerType === "IMAGE_360" ? (
-                    <Sdl3dHotspot360Editor
-                      hotspots={hotspots360}
-                      selectedHotspotId={selectedHotspotId}
-                      frameCount={loaderData.config.frameCount}
-                      currentFrame={currentFrame360}
-                      onChange={setHotspots360}
-                      onSelectHotspot={handlePreviewHotspotSelect}
-                      onSaveAsPreset={handleSave360HotspotsAsPreset}
-                      onApplyPreset={() => setShowPresetBrowser(true)}
-                    />
-                  ) : (
-                    <Sdl3dHotspotEditor
-                      hotspots={hotspots}
-                      selectedHotspotId={selectedHotspotId}
-                      onChange={setHotspots}
-                      onSelectHotspot={handlePreviewHotspotSelect}
-                      onSaveAsPreset={handleSaveHotspotsAsPreset}
-                      onApplyPreset={() => setShowPresetBrowser(true)}
-                    />
-                  )}
-                </details>
+                    </Button>
+                  </InlineStack>
+                  <Box paddingBlockStart="200">
+                    {viewerType === "IMAGE_360" ? (
+                      <Sdl3dHotspot360Editor
+                        hotspots={hotspots360}
+                        selectedHotspotId={selectedHotspotId}
+                        frameCount={loaderData.config.frameCount}
+                        currentFrame={currentFrame360}
+                        onChange={setHotspots360}
+                        onSelectHotspot={handlePreviewHotspotSelect}
+                        onSaveAsPreset={handleSave360HotspotsAsPreset}
+                        onApplyPreset={() => setShowPresetBrowser(true)}
+                      />
+                    ) : (
+                      <Sdl3dHotspotEditor
+                        hotspots={hotspots}
+                        selectedHotspotId={selectedHotspotId}
+                        onChange={setHotspots}
+                        onSelectHotspot={handlePreviewHotspotSelect}
+                        onSaveAsPreset={handleSaveHotspotsAsPreset}
+                        onApplyPreset={() => setShowPresetBrowser(true)}
+                      />
+                    )}
+                  </Box>
+                </InspectorSection>
 
-                <details
-                  className="sdl-acc"
+                <InspectorSection
+                  id="inspector-publish"
+                  title="Publish"
                   open={rightTab === "advanced"}
-                  onToggle={(e) => {
-                    if (e.currentTarget.open && rightTab !== "advanced") setRightTab("advanced");
-                  }}
+                  onToggle={() => setRightTab(rightTab === "advanced" ? "upload" : "advanced")}
                 >
-                  <summary className="sdl-acc__summary">Publish</summary>
                   <Sdl3dViewerSettingsEditor
                     valueJson={viewerSettingsJson}
                     onChangeJson={setViewerSettingsJson}
@@ -1739,40 +1751,31 @@ export default function Sdl3dEditorRoute() {
                       </div>
                     </div>
                   </details>
-                </details>
-              </section>
+                </InspectorSection>
+              </BlockStack>
             ) : (
-              <section className="sdl-card">
-                <div className="sdl-card__header">
-                  <div>
-                    <div className="sdl-card__title">Editor panel</div>
-                    <div className="sdl-card__subtitle">Tabs appear here once a product is selected.</div>
-                  </div>
-                </div>
-                <div className="sdl-empty-state">
-                  Upload controls, viewer settings, and hotspots will appear here.
-                </div>
-              </section>
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="h3" variant="headingSm">
+                    Editor panel
+                  </Text>
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Upload controls, viewer settings, and hotspots will appear here once a product is selected.
+                  </Text>
+                </BlockStack>
+              </Card>
             )}
           </aside>
         </div>
 
         {loaderData.selectedProduct ? (
           <div className="sdl-editor__bottombar">
-            <span className="sdl-text-muted">
-              {validation.errors.length === 0
-                ? validation.warnings.length === 0
-                  ? "No issues."
-                  : `${validation.warnings.length} warning${validation.warnings.length === 1 ? "" : "s"}.`
-                : `${validation.errors.length} error${validation.errors.length === 1 ? "" : "s"}${validation.warnings.length ? `, ${validation.warnings.length} warning${validation.warnings.length === 1 ? "" : "s"}` : ""}.`}
-            </span>
-            <span className="sdl-text-muted">
-              {publishDisabled
-                ? isDirty
-                  ? "Save changes before publishing."
-                  : "Fix validation errors before publishing."
-                : "Ready to publish."}
-            </span>
+            <InspectorStatusBanner
+              validation={validation}
+              isDirty={isDirty}
+              publishDisabled={publishDisabled}
+              onJumpTo={(tab) => setRightTab(tab)}
+            />
           </div>
         ) : null}
       </div>
@@ -1903,6 +1906,175 @@ export default function Sdl3dEditorRoute() {
         );
       })()}
     </div>
+  );
+}
+
+/**
+ * Maps a validation message to the inspector tab that owns the field. Returns
+ * null for messages that don't have a single obvious home (rare — currently
+ * everything maps). Slice 5C PR #5c.
+ */
+function categorizeValidationMessage(msg: string): RightTab | null {
+  const lower = msg.toLowerCase();
+  if (lower.includes("model file") || lower.includes("image frames") || lower.includes("frames are required")) {
+    return "upload";
+  }
+  if (lower.startsWith("hotspot ") || /^hotspot \d/.test(lower)) {
+    return "hotspots";
+  }
+  if (lower.includes("camera ") || lower.includes("polar angle") || lower.includes("background color") || lower.includes("viewer settings json")) {
+    return "viewer";
+  }
+  return null;
+}
+
+function tabLabel(tab: RightTab): string {
+  switch (tab) {
+    case "upload":
+      return "Media";
+    case "viewer":
+      return "Viewer";
+    case "hotspots":
+      return "Hotspots";
+    case "advanced":
+      return "Publish";
+  }
+}
+
+/**
+ * Sticky bottom-bar status banner for the editor. Replaces the old two-span
+ * `.sdl-editor__bottombar`. Slice 5C PR #5c.
+ *
+ * UX win: validation issues are itemized inline (was a single count). Each
+ * error/warning gets a "Jump to <section>" deep-link that opens the
+ * inspector panel that owns the field, so merchants can act on the message
+ * without scanning the inspector.
+ */
+function InspectorStatusBanner({
+  validation,
+  isDirty,
+  publishDisabled,
+  onJumpTo,
+}: {
+  validation: { errors: string[]; warnings: string[]; isPublishReady: boolean };
+  isDirty: boolean;
+  publishDisabled: boolean;
+  onJumpTo: (tab: RightTab) => void;
+}) {
+  const hasErrors = validation.errors.length > 0;
+  const hasWarnings = validation.warnings.length > 0;
+
+  if (!hasErrors && !hasWarnings) {
+    return (
+      <Banner
+        tone={publishDisabled ? "info" : "success"}
+        title={
+          publishDisabled
+            ? isDirty
+              ? "Save changes before publishing"
+              : "Almost ready to publish"
+            : "Ready to publish"
+        }
+      >
+        <Text as="p" variant="bodySm">
+          {publishDisabled
+            ? isDirty
+              ? "You have unsaved changes. Save the draft, then publish."
+              : "No issues detected. Click Publish in the top bar to push to the storefront."
+            : "No issues detected. Click Publish in the top bar to push to the storefront."}
+        </Text>
+      </Banner>
+    );
+  }
+
+  return (
+    <Banner
+      tone={hasErrors ? "critical" : "warning"}
+      title={
+        hasErrors
+          ? `Resolve ${validation.errors.length} issue${validation.errors.length === 1 ? "" : "s"} before publishing${hasWarnings ? ` (and ${validation.warnings.length} warning${validation.warnings.length === 1 ? "" : "s"})` : ""}`
+          : `${validation.warnings.length} warning${validation.warnings.length === 1 ? "" : "s"}`
+      }
+    >
+      <BlockStack gap="100">
+        {validation.errors.map((err) => {
+          const tab = categorizeValidationMessage(err);
+          return (
+            <InlineStack key={`err-${err}`} gap="200" align="space-between" blockAlign="center" wrap={false}>
+              <Text as="span" variant="bodySm">
+                {err}
+              </Text>
+              {tab ? (
+                <Button variant="plain" size="micro" onClick={() => onJumpTo(tab)}>
+                  Jump to {tabLabel(tab)}
+                </Button>
+              ) : null}
+            </InlineStack>
+          );
+        })}
+        {validation.warnings.map((warn) => {
+          const tab = categorizeValidationMessage(warn);
+          return (
+            <InlineStack key={`warn-${warn}`} gap="200" align="space-between" blockAlign="center" wrap={false}>
+              <Text as="span" variant="bodySm" tone="subdued">
+                {warn}
+              </Text>
+              {tab ? (
+                <Button variant="plain" size="micro" onClick={() => onJumpTo(tab)}>
+                  Jump to {tabLabel(tab)}
+                </Button>
+              ) : null}
+            </InlineStack>
+          );
+        })}
+      </BlockStack>
+    </Banner>
+  );
+}
+
+/**
+ * One row of the right-column inspector. Renders a Polaris Card with a
+ * clickable header that toggles its body via Collapsible. Slice 5C PR #5c.
+ *
+ * The chevron + button-as-header pattern is needed because Polaris doesn't
+ * ship a built-in collapsible Card. `aria-controls`/`aria-expanded` are
+ * wired so screen readers announce the section state correctly.
+ */
+function InspectorSection({
+  id,
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  id: string;
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card padding="0">
+      <button
+        type="button"
+        className="sdl-inspector-section__trigger"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={onToggle}
+      >
+        <InlineStack align="space-between" blockAlign="center" wrap={false}>
+          <Text as="h3" variant="headingSm">
+            {title}
+          </Text>
+          <Icon source={open ? ChevronUpIcon : ChevronDownIcon} tone="subdued" />
+        </InlineStack>
+      </button>
+      <Collapsible id={id} open={open} transition={{ duration: "150ms", timingFunction: "ease-in-out" }}>
+        <Box paddingInline="400" paddingBlockEnd="400">
+          {children}
+        </Box>
+      </Collapsible>
+    </Card>
   );
 }
 
