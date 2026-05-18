@@ -372,6 +372,27 @@ PR #1 lands; after that, treat as load-bearing.
   locales is a separate slice.
 - **Storefront-rendered viewer** — Theme App Extension stays on its own
   bespoke CSS. Polaris is admin-only.
+- **Dashboard config deletion** — let merchants remove orphaned
+  `ProductConfig` rows (especially those tagged "Deleted on Shopify" after
+  the title-resolve flow) so they can start fresh on a product. Probable
+  shape: a per-row "Remove" action surfaced when a row is flagged
+  `productMissing`, plus a bulk "Delete all orphaned configs" action in
+  the dashboard's ResourceList header. New API intent on
+  `/api/sdl3d/onboarding` or a new `/api/sdl3d/configs` route. Slice 6
+  candidate. Requested by user 2026-05-18 after PR #4's resolve fix
+  exposed orphaned test rows on staging.
+- **Reuse existing bucket folders for 360° sequences** — when a merchant
+  has already uploaded a frame set to their object-storage bucket
+  (via CLI, another shop's instance, or manually), let them point a
+  product at that folder instead of re-uploading through the capture
+  pipeline. Requires: (a) new `api.sdl3d.storage.tsx` intent
+  `listBucketFolders(prefix)` returning a tree of frame-bearing
+  prefixes; (b) editor inspector UI (under "Media") with a folder
+  picker Modal that browses the default ShopStorage row; (c) a
+  "use selected folder" path that writes the resulting frame URLs
+  into `ProductConfig.imageSequenceJson` + `frameCount` without
+  enqueuing a `processCapture` job. Slice 6 candidate. Requested by
+  user 2026-05-18.
 
 ## Pre-5C reference screenshots
 
