@@ -17,10 +17,13 @@ import prisma from "../db.server";
 import { encrypt } from "../lib/storage-encryption.server";
 import {
   buildBackend,
+  listFrameBearingFolders,
+  loadDefaultStorageForShop,
   loadStorageForShopById,
   STORAGE_PROVIDERS,
   type StorageProvider,
 } from "../lib/storage.server";
+import { defaultViewerSettings } from "../lib/sdl3d-shared";
 
 function json(data: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -298,6 +301,144 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ ok: true, storageId, promotedStorageId: replacement?.id ?? null });
     }
 
+    if (intent === "listBucketFolders") {
+      return handleListBucketFolders(shop.id, formData);
+    }
+
+    if (intent === "useBucketFolder") {
+      return handleUseBucketFolder(shop.id, formData);
+    }
+
     return json({ ok: false, message: "Unknown storage intent." }, 400);
+  });
+}
+
+async function handleListBucketFolders(shopId: string, formData: FormData) {
+  const prefix = String(formData.get("prefix") || "").trim();
+
+  const backend = await loadDefaultStorageForShop(shopId);
+  if (!backend) {
+    return json(
+      {
+        ok: false,
+        message: "No default storage configured. Open Settings → Storage first.",
+        needsStorageSetup: true,
+      },
+      400,
+    );
+  }
+  if (!backend.publicBaseUrl) {
+    return json(
+      {
+        ok: false,
+        message:
+          "Default storage row has no public base URL. Set one under Settings → Storage so the storefront viewer can load frames.",
+      },
+      400,
+    );
+  }
+
+  let folders: Awaited<ReturnType<typeof listFrameBearingFolders>>;
+  try {
+    folders = await listFrameBearingFolders(backend, prefix);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to list bucket folders.";
+    console.error("[sdl3d/storage] listBucketFolders failed", { shopId, prefix, message });
+    return json({ ok: false, message: `Bucket list failed: ${message}` }, 502);
+  }
+
+  const publicBase = backend.publicBaseUrl.replace(/\/+$/, "");
+  const summaries = folders.folders.map((f) => ({
+    prefix: f.prefix,
+    name: f.name,
+    frameCount: f.frameKeys.length,
+    totalBytes: f.totalBytes,
+    previewUrl: `${publicBase}/${f.frameKeys[0]}`,
+    frameKeys: f.frameKeys,
+  }));
+
+  return json({ ok: true, folders: summaries, truncated: folders.truncated });
+}
+
+async function handleUseBucketFolder(shopId: string, formData: FormData) {
+  const productGid = String(formData.get("productGid") || "").trim();
+  const prefix = String(formData.get("prefix") || "").trim();
+  const frameKeysRaw = String(formData.get("frameKeys") || "[]");
+
+  if (!productGid) return json({ ok: false, message: "Missing productGid." }, 400);
+  if (!prefix) return json({ ok: false, message: "Missing folder prefix." }, 400);
+
+  let frameKeys: string[];
+  try {
+    const parsed = JSON.parse(frameKeysRaw);
+    if (!Array.isArray(parsed) || !parsed.every((k) => typeof k === "string")) {
+      throw new Error("frameKeys must be a JSON array of strings.");
+    }
+    frameKeys = parsed;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Invalid frameKeys.";
+    return json({ ok: false, message }, 400);
+  }
+  if (frameKeys.length === 0) {
+    return json({ ok: false, message: "No frames to import." }, 400);
+  }
+
+  const backend = await loadDefaultStorageForShop(shopId);
+  if (!backend) {
+    return json(
+      { ok: false, message: "No default storage configured.", needsStorageSetup: true },
+      400,
+    );
+  }
+  if (!backend.publicBaseUrl) {
+    return json(
+      {
+        ok: false,
+        message:
+          "Default storage row has no public base URL. Set one under Settings → Storage first.",
+      },
+      400,
+    );
+  }
+
+  const publicBase = backend.publicBaseUrl.replace(/\/+$/, "");
+  const frames = frameKeys.map((key, index) => ({
+    index,
+    imageUrl: `${publicBase}/${key}`,
+  }));
+  const imageSequenceJson = JSON.stringify(frames);
+
+  const config = await prisma.productConfig.upsert({
+    where: {
+      shopId_shopifyProductGid: { shopId, shopifyProductGid: productGid },
+    },
+    update: {
+      viewerType: "IMAGE_360",
+      imageSequenceJson,
+      imageSequencePrefix: prefix,
+      imageSequenceSource: "BUCKET_FOLDER",
+      frameCount: frames.length,
+      status: "DRAFT",
+    },
+    create: {
+      shopId,
+      shopifyProductGid: productGid,
+      enabled: false,
+      sourceMode: "APP",
+      status: "DRAFT",
+      viewerType: "IMAGE_360",
+      viewerSettingsJson: JSON.stringify(defaultViewerSettings),
+      imageSequenceJson,
+      imageSequencePrefix: prefix,
+      imageSequenceSource: "BUCKET_FOLDER",
+      frameCount: frames.length,
+    },
+  });
+
+  return json({
+    ok: true,
+    productConfigId: config.id,
+    frameCount: frames.length,
+    message: `Imported ${frames.length} frames from ${prefix}.`,
   });
 }

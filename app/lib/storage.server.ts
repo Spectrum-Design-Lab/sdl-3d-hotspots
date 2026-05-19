@@ -56,8 +56,13 @@ export type PutObjectOptions = {
  *  by captureId so it's safe to mark immutable. */
 export const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
+export type StorageObject = {
+  key: string;
+  size: number;
+};
+
 export type ListObjectsResult = {
-  keys: string[];
+  objects: StorageObject[];
   isTruncated: boolean;
   nextContinuationToken?: string;
 };
@@ -165,11 +170,88 @@ export class S3CompatibleBackend implements StorageBackend {
       }),
     );
     return {
-      keys: (result.Contents ?? []).map((o) => o.Key ?? "").filter(Boolean),
+      objects: (result.Contents ?? [])
+        .map((o) => ({ key: o.Key ?? "", size: o.Size ?? 0 }))
+        .filter((o) => o.key.length > 0),
       isTruncated: Boolean(result.IsTruncated),
       nextContinuationToken: result.NextContinuationToken,
     };
   }
+}
+
+const FRAME_IMAGE_RE = /\.(jpe?g|png|webp)$/i;
+const DEFAULT_MIN_FRAMES = 24;
+const DEFAULT_MAX_PAGES = 10;
+
+export type FrameBearingFolder = {
+  prefix: string;
+  name: string;
+  frameKeys: string[];
+  totalBytes: number;
+};
+
+/**
+ * Walk a bucket prefix, group image keys by their parent folder, and return
+ * folders that look like frame sequences (≥ minFrames image files in one
+ * folder). Frame keys come back natural-numeric sorted so `frame_2.jpg`
+ * orders before `frame_10.jpg`.
+ *
+ * Paginated. Caps at maxPages (default 10 = 10k keys) to keep latency
+ * bounded on huge buckets — caller gets `truncated: true` so the UI can
+ * tell the merchant to narrow the prefix.
+ */
+export async function listFrameBearingFolders(
+  backend: StorageBackend,
+  prefix: string,
+  opts: { minFrames?: number; maxPages?: number } = {},
+): Promise<{ folders: FrameBearingFolder[]; truncated: boolean }> {
+  const minFrames = opts.minFrames ?? DEFAULT_MIN_FRAMES;
+  const maxPages = opts.maxPages ?? DEFAULT_MAX_PAGES;
+
+  const byFolder = new Map<string, { keys: string[]; bytes: number }>();
+  let token: string | undefined;
+  let pages = 0;
+  let truncated = false;
+
+  while (true) {
+    const page = await backend.listObjects(prefix, token);
+    pages += 1;
+    for (const obj of page.objects) {
+      if (!FRAME_IMAGE_RE.test(obj.key)) continue;
+      const slash = obj.key.lastIndexOf("/");
+      if (slash < 0) continue;
+      const parent = obj.key.substring(0, slash);
+      const entry = byFolder.get(parent) ?? { keys: [], bytes: 0 };
+      entry.keys.push(obj.key);
+      entry.bytes += obj.size;
+      byFolder.set(parent, entry);
+    }
+    if (!page.isTruncated || !page.nextContinuationToken) break;
+    if (pages >= maxPages) {
+      truncated = true;
+      break;
+    }
+    token = page.nextContinuationToken;
+  }
+
+  const folders: FrameBearingFolder[] = [];
+  for (const [folderPrefix, entry] of byFolder.entries()) {
+    if (entry.keys.length < minFrames) continue;
+    const sortedKeys = [...entry.keys].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true }),
+    );
+    const lastSlash = folderPrefix.lastIndexOf("/");
+    const name = lastSlash >= 0 ? folderPrefix.substring(lastSlash + 1) : folderPrefix;
+    folders.push({
+      prefix: folderPrefix,
+      name,
+      frameKeys: sortedKeys,
+      totalBytes: entry.bytes,
+    });
+  }
+  folders.sort((a, b) => a.prefix.localeCompare(b.prefix));
+
+  return { folders, truncated };
 }
 
 export function buildBackend(creds: StorageCredentials): StorageBackend {

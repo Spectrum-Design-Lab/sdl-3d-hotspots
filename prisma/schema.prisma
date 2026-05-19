@@ -102,6 +102,7 @@ model ProductConfig {
 
   imageSequenceJson    String?
   imageSequencePrefix  String?
+  imageSequenceSource  String   @default("CAPTURE")
   frameCount           Int      @default(0)
 
   viewerSettingsJson   String

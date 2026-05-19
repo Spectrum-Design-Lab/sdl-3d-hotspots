@@ -56,6 +56,7 @@ import { FileBrowserModal } from "../components/FileBrowserModal";
 import { ProductBrowserModal } from "../components/ProductBrowserModal";
 import { PresetBrowserModal, type PresetSummary } from "../components/PresetBrowserModal";
 import { Sdl3dRawCaptureUploader } from "../components/Sdl3dRawCaptureUploader";
+import { Sdl3dBucketFolderPicker } from "../components/Sdl3dBucketFolderPicker";
 import type { Tone, RightTab } from "../components/Sdl3dEditorUI";
 
 
@@ -1548,6 +1549,15 @@ export default function Sdl3dEditorRoute() {
                             productGid={loaderData.productGid}
                             productConfigId={loaderData.config.id}
                             initialCapture={loaderData.latestCapture}
+                            onCompleted={() => revalidator.revalidate()}
+                          />
+                        )}
+
+                        {loaderData.productGid && (
+                          <Sdl3dBucketFolderPicker
+                            productGid={loaderData.productGid}
+                            hasExistingFrames={loaderData.config.frameCount > 0}
+                            existingFrameCount={loaderData.config.frameCount}
                             onCompleted={() => revalidator.revalidate()}
                           />
                         )}
