@@ -46,30 +46,6 @@
   --shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.08);
 }
 
-/* ── Dark Theme ── */
-.sdl-editor[data-theme="dark"] {
-  --page: #0b1220;
-  --page-alt: #111827;
-  --panel: #111827;
-  --panel-alt: #0f172a;
-  --border: #334155;
-  --border-soft: #253041;
-  --text: #e5e7eb;
-  --muted: #94a3b8;
-  --primary: #3b82f6;
-  --primary-text: #ffffff;
-  --primary-soft: #172554;
-  --success: #22c55e;
-  --success-soft: #052e1b;
-  --warning: #f59e0b;
-  --warning-soft: #3b1f06;
-  --danger: #ef4444;
-  --danger-soft: #450a0a;
-  --input: #0f172a;
-  --input-alt: #111827;
-  --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.45);
-}
 
 /* ── Shell (fixed height, no body scroll) ── */
 /* Lock the document so the editor owns the viewport. Scoped via :has() so
@@ -154,30 +130,6 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   flex-wrap: wrap;
 }
 
-.sdl-topbar-field {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 13px;
-}
-
-.sdl-topbar-field__label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-
-.sdl-topbar-field__value {
-  font-weight: 700;
-  color: var(--text);
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ── Compact bottom strip ── */
 /* PR #5c: container for the Polaris Banner that replaces the bespoke
    two-span status strip. Banner owns its own background, border, and
@@ -231,198 +183,10 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   overflow-y: auto;
 }
 
-/* ── Card ── */
-.sdl-card {
-  background: var(--panel);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--sdl-radius-lg);
-  padding: var(--sdl-space-3) var(--sdl-space-4);
-  box-shadow: var(--shadow);
-}
 
-.sdl-card__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--sdl-space-3);
-  flex-wrap: wrap;
-  margin-bottom: var(--sdl-space-3);
-}
 
-.sdl-card__title {
-  font-size: var(--sdl-font-lg);
-  font-weight: 800;
-  color: var(--text);
-}
 
-.sdl-card__subtitle {
-  font-size: var(--sdl-font-sm);
-  color: var(--muted);
-  margin-top: 2px;
-}
 
-/* ── Inputs ── */
-.sdl-input {
-  width: 100%;
-  /* box-sizing: border-box keeps padding INSIDE the 100% width — without
-     this, .sdl-input fields inside grid columns overflow their container
-     because the 12px padding gets added on top of "100%". */
-  box-sizing: border-box;
-  padding: var(--sdl-space-3);
-  border-radius: var(--sdl-radius-md);
-  border: 1px solid var(--border);
-  background: var(--input);
-  color: var(--text);
-  font-size: var(--sdl-font-md);
-  font-family: inherit;
-  transition: border-color 0.15s;
-}
-
-.sdl-input:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-
-.sdl-input--mono {
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", monospace;
-}
-
-/* ── Buttons ── */
-.sdl-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sdl-space-2);
-  padding: 10px 14px;
-  border-radius: var(--sdl-radius-md);
-  font-weight: 700;
-  font-size: var(--sdl-font-md);
-  cursor: pointer;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  transition: opacity 0.15s, box-shadow 0.15s;
-}
-
-.sdl-btn:hover {
-  opacity: 0.9;
-}
-
-.sdl-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.sdl-btn--primary {
-  background: var(--primary);
-  color: var(--primary-text);
-  border-color: var(--primary);
-  box-shadow: var(--shadow);
-}
-
-.sdl-btn--success {
-  background: var(--success);
-  color: var(--primary-text);
-  border-color: var(--success);
-  box-shadow: var(--shadow);
-}
-
-.sdl-btn--warning {
-  background: var(--warning);
-  color: var(--primary-text);
-  border-color: var(--warning);
-}
-
-.sdl-btn--danger {
-  background: var(--danger);
-  color: var(--primary-text);
-  border-color: var(--danger);
-}
-
-.sdl-btn--ghost {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-}
-
-.sdl-btn--sm {
-  padding: 6px 10px;
-  font-size: var(--sdl-font-sm);
-}
-
-.sdl-btn--full {
-  width: 100%;
-}
-
-/* ── Badge ── */
-.sdl-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  border-radius: var(--sdl-radius-pill);
-  font-size: var(--sdl-font-xs);
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.sdl-badge--success {
-  background: var(--success-soft);
-  color: var(--success);
-  border: 1px solid var(--success);
-}
-
-.sdl-badge--warning {
-  background: var(--warning-soft);
-  color: var(--warning);
-  border: 1px solid var(--warning);
-}
-
-.sdl-badge--danger {
-  background: var(--danger-soft);
-  color: var(--danger);
-  border: 1px solid var(--danger);
-}
-
-.sdl-badge--info {
-  background: var(--primary-soft);
-  color: var(--primary);
-  border: 1px solid var(--primary);
-}
-
-.sdl-badge--neutral {
-  background: var(--panel-alt);
-  color: var(--muted);
-  border: 1px solid var(--border);
-}
-
-/* ── Tabs ── */
-.sdl-tabs {
-  display: flex;
-  gap: var(--sdl-space-2);
-  flex-wrap: wrap;
-  margin-bottom: var(--sdl-space-4);
-}
-
-.sdl-tab {
-  padding: 8px 14px;
-  border-radius: var(--sdl-radius-md);
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  font-weight: 700;
-  font-size: var(--sdl-font-sm);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.sdl-tab[aria-selected="true"],
-.sdl-tab--active {
-  border-color: var(--primary);
-  background: var(--primary-soft);
-  color: var(--primary);
-}
 
 /* ── Toast ── */
 .sdl-toast {
@@ -459,209 +223,17 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   to { transform: translateY(0); opacity: 1; }
 }
 
-/* ── Subtle Card (inner panels) ── */
-.sdl-subtle-card {
-  padding: var(--sdl-space-3) var(--sdl-space-4);
-  border-radius: var(--sdl-radius-md);
-  background: var(--panel-alt);
-  border: 1px solid var(--border-soft);
-}
 
-/* ── Product List Item ── */
-.sdl-product-item {
-  display: block;
-  text-decoration: none;
-  color: inherit;
-  border: 1px solid var(--border-soft);
-  background: var(--panel);
-  border-radius: var(--sdl-radius-md);
-  padding: var(--sdl-space-3);
-  transition: border-color 0.15s, background 0.15s;
-}
 
-.sdl-product-item:hover {
-  border-color: var(--primary);
-}
 
-.sdl-product-item--active {
-  border: 2px solid var(--primary);
-  background: var(--primary-soft);
-}
 
-.sdl-product-item__title {
-  font-weight: 800;
-  color: var(--text);
-  margin-bottom: 2px;
-}
 
-.sdl-product-item__meta {
-  font-size: var(--sdl-font-xs);
-  color: var(--muted);
-}
-
-/* ── Empty State ── */
-.sdl-empty-state {
-  padding: var(--sdl-space-5);
-  border-radius: var(--sdl-radius-lg);
-  background: var(--panel-alt);
-  border: 1px dashed var(--border);
-  color: var(--muted);
-  text-align: center;
-}
-
-/* ── Validation ── */
-.sdl-validation-list {
-  margin: 0;
-  padding-left: 18px;
-  color: var(--danger);
-}
-
-.sdl-validation-list li {
-  margin-bottom: var(--sdl-space-1);
-  font-size: var(--sdl-font-sm);
-}
-
-.sdl-validation-list--warning {
-  color: var(--warning);
-}
-
-/* ── Actions Grid ── */
-.sdl-actions-grid {
-  display: grid;
-  gap: 10px;
-}
-
-/* ── File Picker ── */
-.sdl-file-info {
-  margin-bottom: var(--sdl-space-3);
-  padding: var(--sdl-space-3);
-  border-radius: var(--sdl-radius-md);
-  background: var(--panel);
-  border: 1px solid var(--border-soft);
-}
-
-.sdl-file-info__name {
-  font-weight: 800;
-  color: var(--text);
-  margin-bottom: 2px;
-}
-
-.sdl-file-info__meta {
-  font-size: var(--sdl-font-xs);
-  color: var(--muted);
-}
-
-/* ── Utility ── */
-.sdl-flex {
-  display: flex;
-}
-
-.sdl-flex--wrap {
-  flex-wrap: wrap;
-}
-
-.sdl-flex--between {
-  justify-content: space-between;
-}
-
-.sdl-gap-2 { gap: var(--sdl-space-2); }
-.sdl-gap-3 { gap: var(--sdl-space-3); }
-
-.sdl-text-muted {
-  font-size: var(--sdl-font-sm);
-  color: var(--muted);
-}
-
-.sdl-text-success {
-  color: var(--success);
-  font-weight: 700;
-  font-size: var(--sdl-font-sm);
-}
-
-.sdl-mt-3 { margin-top: var(--sdl-space-3); }
-.sdl-mb-3 { margin-bottom: var(--sdl-space-3); }
 
 /* ── Label ── */
-.sdl-label {
-  display: block;
-  font-size: var(--sdl-font-sm);
-  font-weight: 800;
-  color: var(--text);
-  margin-bottom: 6px;
-}
 
-.sdl-label--inline {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 800;
-  color: var(--text);
-}
 
-/* ── Summary / Details ── */
-.sdl-summary {
-  cursor: pointer;
-  font-weight: 800;
-  color: var(--text);
-  margin-bottom: var(--sdl-space-3);
-}
 
-/* ── Inspector ── */
-.sdl-inspector-tabs {
-  display: flex;
-  gap: var(--sdl-space-2);
-  flex-wrap: wrap;
-  margin-bottom: var(--sdl-space-4);
-}
 
-.sdl-inspector-content {
-  display: grid;
-  gap: 18px;
-}
-
-/* ── File Section ── */
-.sdl-file-section__title {
-  font-weight: 800;
-  color: var(--text);
-  margin-bottom: 10px;
-}
-
-.sdl-file-actions {
-  display: flex;
-  gap: var(--sdl-space-2);
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-/* ── JSON Editor ── */
-.sdl-json-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--sdl-space-4);
-}
-
-.sdl-textarea {
-  width: 100%;
-  padding: var(--sdl-space-3);
-  border-radius: var(--sdl-radius-md);
-  border: 1px solid var(--border);
-  background: var(--input);
-  color: var(--text);
-  font-size: var(--sdl-font-md);
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", monospace;
-  min-height: 260px;
-  resize: vertical;
-}
-
-.sdl-textarea:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-
-.sdl-textarea--readonly {
-  background: var(--input-alt);
-}
 
 
 /* ── Preview Panel ── */
@@ -1003,56 +575,89 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   border-radius: var(--p-border-radius-200, 8px);
 }
 
+/* ── FileTriggerCard (PR #6) ──
+   Clickable file-picker row used by the editor inspector's Media
+   section. Native <button> styled with Polaris design tokens since
+   Polaris ships no equivalent (DropZone is for upload-only flows,
+   ResourceItem doesn't match the thumb-name-meta-action shape). */
 
-/* ── Collapsible Section ── */
-.sdl-collapsible summary {
-  cursor: pointer;
-  font-size: var(--sdl-font-xs);
-  font-weight: 700;
-  color: var(--muted);
-  padding: 6px 0;
-  user-select: none;
-}
-
-.sdl-collapsible summary:hover {
-  color: var(--text);
-}
-
-.sdl-collapsible[open] summary {
-  color: var(--text);
-  margin-bottom: var(--sdl-space-2);
-}
-
-/* ── Preview Controls ── */
-.sdl-preview-controls {
+.sdl-ft {
   display: flex;
   align-items: center;
-  gap: var(--sdl-space-2);
-}
-
-.sdl-preview-controls__bg {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.sdl-preview-controls__color-input {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--sdl-radius-sm);
+  gap: var(--p-space-300, 12px);
+  width: 100%;
+  padding: var(--p-space-200, 8px) var(--p-space-300, 12px);
+  border: 1px dashed var(--p-color-border, #c9cccf);
+  border-radius: var(--p-border-radius-200, 8px);
+  background: var(--p-color-bg-surface-secondary, #f6f6f7);
   cursor: pointer;
-  background: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.12s, background 0.12s;
 }
 
-.sdl-preview-controls__color-input::-webkit-color-swatch-wrapper {
-  padding: 1px;
+.sdl-ft:hover {
+  border-color: var(--p-color-border-emphasis, #005bd3);
+  background: var(--p-color-bg-surface-selected, #ebf5ff);
 }
 
-.sdl-preview-controls__color-input::-webkit-color-swatch {
-  border: none;
-  border-radius: 3px;
+.sdl-ft:focus-visible {
+  outline: var(--p-focus-ring-outline, 2px solid #005bd3);
+  outline-offset: 1px;
+}
+
+.sdl-ft__thumb {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--p-color-bg-surface, #fff);
+  border: 1px solid var(--p-color-border-secondary, #e1e3e5);
+  border-radius: var(--p-border-radius-200, 8px);
+  overflow: hidden;
+}
+
+.sdl-ft__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sdl-ft__emoji {
+  font-size: 20px;
+  opacity: 0.6;
+}
+
+.sdl-ft__label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sdl-ft__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--p-color-text, #303030);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sdl-ft__meta {
+  font-size: 11px;
+  color: var(--p-color-text-secondary, #616161);
+}
+
+.sdl-ft__action {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--p-color-text-emphasis, #005bd3);
+  flex-shrink: 0;
 }
 
 /* ── Main Panel Tabs (Edit / Preview) ── */
@@ -1735,143 +1340,6 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
 }
 
 
-/* ── File browser trigger button ── */
-.sdl-file-trigger {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px dashed var(--border, #dbe4ee);
-  border-radius: var(--sdl-radius-sm);
-  background: var(--panel-alt, #f8fafc);
-  cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
-  text-align: left;
-}
-
-.sdl-file-trigger:hover {
-  border-color: var(--primary, #2952d1);
-  background: var(--primary-soft, #eff6ff);
-}
-
-.sdl-file-trigger__thumb {
-  width: 40px;
-  height: 40px;
-  border-radius: 6px;
-  background: var(--panel, #fff);
-  border: 1px solid var(--border-soft, #e5e7eb);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.sdl-file-trigger__thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.sdl-file-trigger__label {
-  flex: 1;
-  min-width: 0;
-}
-
-.sdl-file-trigger__name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text, #0f172a);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sdl-file-trigger__meta {
-  font-size: 11px;
-  color: var(--muted, #64748b);
-}
-
-.sdl-file-trigger__action {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--primary, #2952d1);
-  flex-shrink: 0;
-}
-
-/* ── Step navigator (sidebar) ── */
-.sdl-steps-card {
-  position: sticky;
-  top: 0;
-}
-
-.sdl-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.sdl-step {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: var(--sdl-radius-md);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  text-align: left;
-  transition: background 0.12s, border-color 0.12s;
-}
-
-.sdl-step:hover {
-  background: var(--panel-alt);
-}
-
-.sdl-step--active {
-  background: var(--primary-soft, color-mix(in srgb, var(--primary) 12%, var(--panel)));
-  border-color: var(--primary);
-}
-
-.sdl-step__marker {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  font-size: 12px;
-  font-weight: 800;
-  flex-shrink: 0;
-}
-
-.sdl-step__marker--done {
-  background: var(--success, #10b981);
-  color: #fff;
-}
-
-.sdl-step__marker--todo {
-  background: var(--panel-alt);
-  color: var(--muted);
-  border: 1px solid var(--border-soft);
-}
-
-.sdl-step__marker--warn {
-  background: var(--warning, #f59e0b);
-  color: #fff;
-}
-
-.sdl-step__label {
-  flex: 1;
-}
 
 /* ── Inspector Polaris-Card collapsible header (PR #5c) ──
    InspectorSection renders <Card><button> + <Collapsible>. The button
@@ -1898,50 +1366,5 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
 
 .sdl-inspector-section__trigger:hover {
   background: var(--p-color-bg-surface-hover, rgba(0, 0, 0, 0.04));
-}
-
-/* ── Inspector accordions (legacy — kept for non-migrated callers) ── */
-.sdl-acc {
-  border: 1px solid var(--border-soft);
-  border-radius: var(--sdl-radius-md);
-  margin-bottom: 8px;
-  background: var(--panel);
-  overflow: hidden;
-}
-
-.sdl-acc[open] {
-  border-color: var(--primary);
-}
-
-.sdl-acc__summary {
-  cursor: pointer;
-  padding: 10px 12px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text);
-  list-style: none;
-  user-select: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sdl-acc__summary::-webkit-details-marker {
-  display: none;
-}
-
-.sdl-acc__summary::before {
-  content: "▸";
-  font-size: 10px;
-  color: var(--muted);
-  transition: transform 0.12s;
-}
-
-.sdl-acc[open] > .sdl-acc__summary::before {
-  transform: rotate(90deg);
-}
-
-.sdl-acc > *:not(summary) {
-  padding: 0 12px 12px;
 }
 

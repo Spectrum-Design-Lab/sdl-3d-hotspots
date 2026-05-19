@@ -320,7 +320,6 @@ export default function Sdl3dEditorRoute() {
   const [rightTab, setRightTab] = useState<RightTab>("upload");
   const [mainTab, setMainTab] = useState<"edit" | "preview">("edit");
   const [previewBg, setPreviewBg] = useState<string | null>(null);
-  const isDarkMode = loaderData.darkMode;
   const [toastMessage, setToastMessage] = useState(loaderData.flash || "");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [saveStatusNow, setSaveStatusNow] = useState(Date.now());
@@ -1226,7 +1225,7 @@ export default function Sdl3dEditorRoute() {
 
 
   return (
-    <div className="sdl-editor" data-theme={isDarkMode ? "dark" : "light"}>
+    <div className="sdl-editor">
       <div className="sdl-editor__inner">
         {toastMessage ? (
           <div className={`sdl-toast ${toastTone === "success" ? "sdl-toast--success" : "sdl-toast--error"}`}>
@@ -1236,14 +1235,14 @@ export default function Sdl3dEditorRoute() {
               </div>
               <div style={{ fontSize: 14, fontWeight: 700 }}>{toastMessage}</div>
             </div>
-            <button
-              type="button"
+            <Button
+              variant="plain"
+              size="micro"
               onClick={() => setToastMessage("")}
-              className="sdl-btn sdl-btn--ghost sdl-btn--sm"
-              style={{ padding: 0, lineHeight: 1 }}
+              accessibilityLabel="Dismiss notification"
             >
               ✕
-            </button>
+            </Button>
           </div>
         ) : null}
 
@@ -1259,23 +1258,16 @@ export default function Sdl3dEditorRoute() {
             <Button onClick={() => setShowProductBrowser(true)} size="slim">
               Browse product
             </Button>
-            <span className="sdl-topbar-field">
-              <span className="sdl-topbar-field__label">Product</span>
-              <span className="sdl-topbar-field__value">
-                {loaderData.selectedProduct?.title ?? "—"}
-              </span>
-            </span>
+            <TopbarField label="Product" value={loaderData.selectedProduct?.title ?? "—"} />
             {loaderData.selectedProduct ? (
               <>
                 <Badge tone={readyTone === "danger" ? "critical" : "success"}>
                   {validation.isPublishReady ? "ready" : "blocked"}
                 </Badge>
-                <span className="sdl-topbar-field">
-                  <span className="sdl-topbar-field__label">Mode</span>
-                  <span className="sdl-topbar-field__value">
-                    {viewerType === "IMAGE_360" ? "360° Spin" : "3D Model"}
-                  </span>
-                </span>
+                <TopbarField
+                  label="Mode"
+                  value={viewerType === "IMAGE_360" ? "360° Spin" : "3D Model"}
+                />
                 <Badge tone={saveStateTone}>{saveStateLabel}</Badge>
               </>
             ) : null}
@@ -1324,8 +1316,9 @@ export default function Sdl3dEditorRoute() {
           <main className="sdl-main-panel">
             {loaderData.selectedProduct ? (
               <>
-                <section className="sdl-card">
-                  <div className="sdl-card__header">
+                <Card padding="300">
+                  <Box paddingBlockEnd="300">
+                  <InlineStack align="space-between" blockAlign="start" gap="300" wrap>
                     <div className="sdl-main-tabs">
                       <button
                         type="button"
@@ -1360,29 +1353,26 @@ export default function Sdl3dEditorRoute() {
                         </button>
                       </div>
                     ) : (
-                      <div className="sdl-preview-controls">
-                        <label className="sdl-preview-controls__bg">
-                          <span className="sdl-text-muted" style={{ fontSize: 11, fontWeight: 700 }}>BG</span>
-                          <input
-                            type="color"
-                            value={previewBg || "#ffffff"}
-                            onChange={(e) => setPreviewBg(e.target.value)}
-                            className="sdl-preview-controls__color-input"
-                          />
-                          {previewBg ? (
-                            <button
-                              type="button"
-                              className="sdl-btn sdl-btn--ghost sdl-btn--sm"
-                              onClick={() => setPreviewBg(null)}
-                              style={{ padding: "2px 6px", fontSize: 11 }}
-                            >
-                              Reset
-                            </button>
-                          ) : null}
-                        </label>
-                      </div>
+                      <InlineStack gap="200" blockAlign="center">
+                        <Text as="span" tone="subdued" variant="bodySm" fontWeight="semibold">
+                          BG
+                        </Text>
+                        <input
+                          type="color"
+                          value={previewBg || "#ffffff"}
+                          onChange={(e) => setPreviewBg(e.target.value)}
+                          aria-label="Preview background color"
+                          style={{ width: 32, height: 28, border: 0, padding: 0, cursor: "pointer", background: "transparent" }}
+                        />
+                        {previewBg ? (
+                          <Button size="micro" variant="plain" onClick={() => setPreviewBg(null)}>
+                            Reset
+                          </Button>
+                        ) : null}
+                      </InlineStack>
                     )}
-                  </div>
+                  </InlineStack>
+                  </Box>
 
                   {mainTab === "edit" ? (
                     viewerType === "IMAGE_360" ? (
@@ -1461,21 +1451,19 @@ export default function Sdl3dEditorRoute() {
                       backgroundOverride={previewBg}
                     />
                   )}
-                </section>
+                </Card>
               </>
             ) : (
-              <section className="sdl-card">
-                <div className="sdl-card__header">
-                  <div>
-                    <div className="sdl-card__title">Start by choosing a product</div>
-                    <div className="sdl-card__subtitle">The live preview will appear here once a product is selected.</div>
-                  </div>
-                </div>
-                <div className="sdl-empty-state">
-                  Search for a product on the left, then open it to configure the
-                  model, poster, viewer settings, and hotspots.
-                </div>
-              </section>
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="h3" variant="headingSm">
+                    Start by choosing a product
+                  </Text>
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    The live preview will appear here once a product is selected. Search for a product on the left, then open it to configure the model, poster, viewer settings, and hotspots.
+                  </Text>
+                </BlockStack>
+              </Card>
             )}
           </main>
 
@@ -1510,96 +1498,50 @@ export default function Sdl3dEditorRoute() {
                   open={rightTab === "upload"}
                   onToggle={() => setRightTab(rightTab === "upload" ? "viewer" : "upload")}
                 >
-                  <div className="sdl-inspector-content">
+                  <BlockStack gap="300">
                     {viewerType === "MODEL_3D" ? (
                       <>
-                        <div className="sdl-subtle-card">
-                          <div className="sdl-file-section__title">Model file</div>
-                          <button
-                            type="button"
-                            className="sdl-file-trigger"
-                            onClick={() => setShowModelBrowser(true)}
-                          >
-                            <div className="sdl-file-trigger__thumb">
-                              {selectedModelFile?.previewUrl ? (
-                                <img src={selectedModelFile.previewUrl} alt="" />
-                              ) : (
-                                <span style={{ fontSize: 18, opacity: 0.4 }}>&#128230;</span>
-                              )}
-                            </div>
-                            <div className="sdl-file-trigger__label">
-                              {selectedModelFile ? (
-                                <>
-                                  <div className="sdl-file-trigger__name">{selectedModelFile.name}</div>
-                                  <div className="sdl-file-trigger__meta">{selectedModelFile.typeName} &middot; {selectedModelFile.fileStatus}</div>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="sdl-file-trigger__name">No model selected</div>
-                                  <div className="sdl-file-trigger__meta">Click to browse or upload</div>
-                                </>
-                              )}
-                            </div>
-                            <div className="sdl-file-trigger__action">Browse</div>
-                          </button>
-                        </div>
-
-                        <div className="sdl-subtle-card">
-                          <div className="sdl-file-section__title">Poster file</div>
-                          <button
-                            type="button"
-                            className="sdl-file-trigger"
-                            onClick={() => setShowPosterBrowser(true)}
-                          >
-                            <div className="sdl-file-trigger__thumb">
-                              {selectedPosterFile?.previewUrl ? (
-                                <img src={selectedPosterFile.previewUrl} alt="" />
-                              ) : loaderData.productFeaturedImageUrl ? (
-                                <img src={loaderData.productFeaturedImageUrl} alt="" />
-                              ) : (
-                                <span style={{ fontSize: 18, opacity: 0.4 }}>&#128444;</span>
-                              )}
-                            </div>
-                            <div className="sdl-file-trigger__label">
-                              {selectedPosterFile ? (
-                                <>
-                                  <div className="sdl-file-trigger__name">{selectedPosterFile.name}</div>
-                                  <div className="sdl-file-trigger__meta">{selectedPosterFile.typeName} &middot; {selectedPosterFile.fileStatus}</div>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="sdl-file-trigger__name">No poster selected</div>
-                                  <div className="sdl-file-trigger__meta">{loaderData.productFeaturedImageUrl ? "Using product image as fallback" : "Click to browse or upload"}</div>
-                                </>
-                              )}
-                            </div>
-                            <div className="sdl-file-trigger__action">Browse</div>
-                          </button>
-                        </div>
+                        <FileTriggerCard
+                          title="Model file"
+                          name={selectedModelFile?.name ?? "No model selected"}
+                          meta={
+                            selectedModelFile
+                              ? `${selectedModelFile.typeName} · ${selectedModelFile.fileStatus}`
+                              : "Click to browse or upload"
+                          }
+                          thumbUrl={selectedModelFile?.previewUrl ?? null}
+                          fallbackEmoji="📦"
+                          onClick={() => setShowModelBrowser(true)}
+                        />
+                        <FileTriggerCard
+                          title="Poster file"
+                          name={selectedPosterFile?.name ?? "No poster selected"}
+                          meta={
+                            selectedPosterFile
+                              ? `${selectedPosterFile.typeName} · ${selectedPosterFile.fileStatus}`
+                              : loaderData.productFeaturedImageUrl
+                                ? "Using product image as fallback"
+                                : "Click to browse or upload"
+                          }
+                          thumbUrl={selectedPosterFile?.previewUrl ?? loaderData.productFeaturedImageUrl ?? null}
+                          fallbackEmoji="🖼"
+                          onClick={() => setShowPosterBrowser(true)}
+                        />
                       </>
                     ) : (
                       <>
-                        <div className="sdl-subtle-card">
-                          <div className="sdl-file-section__title">360° Image Sequence</div>
-                          <button
-                            type="button"
-                            className="sdl-file-trigger"
-                            onClick={() => setShowSequenceBrowser(true)}
-                          >
-                            <div className="sdl-file-trigger__thumb">
-                              <span style={{ fontSize: 18, opacity: 0.4 }}>&#128247;</span>
-                            </div>
-                            <div className="sdl-file-trigger__label">
-                              <div className="sdl-file-trigger__name">
-                                {loaderData.config.frameCount > 0
-                                  ? `${loaderData.config.frameCount} frames uploaded`
-                                  : "No frames uploaded"}
-                              </div>
-                              <div className="sdl-file-trigger__meta">Click to browse, upload images, or upload ZIP</div>
-                            </div>
-                            <div className="sdl-file-trigger__action">Browse</div>
-                          </button>
-                        </div>
+                        <FileTriggerCard
+                          title="360° Image Sequence"
+                          name={
+                            loaderData.config.frameCount > 0
+                              ? `${loaderData.config.frameCount} frames uploaded`
+                              : "No frames uploaded"
+                          }
+                          meta="Click to browse, upload images, or upload ZIP"
+                          thumbUrl={null}
+                          fallbackEmoji="📷"
+                          onClick={() => setShowSequenceBrowser(true)}
+                        />
 
                         {loaderData.productGid && (
                           <Sdl3dRawCaptureUploader
@@ -1610,42 +1552,23 @@ export default function Sdl3dEditorRoute() {
                           />
                         )}
 
-                        <div className="sdl-subtle-card">
-                          <div className="sdl-file-section__title">Poster file</div>
-                          <button
-                            type="button"
-                            className="sdl-file-trigger"
-                            onClick={() => setShowPosterBrowser(true)}
-                          >
-                            <div className="sdl-file-trigger__thumb">
-                              {selectedPosterFile?.previewUrl ? (
-                                <img src={selectedPosterFile.previewUrl} alt="" />
-                              ) : loaderData.productFeaturedImageUrl ? (
-                                <img src={loaderData.productFeaturedImageUrl} alt="" />
-                              ) : (
-                                <span style={{ fontSize: 18, opacity: 0.4 }}>&#128444;</span>
-                              )}
-                            </div>
-                            <div className="sdl-file-trigger__label">
-                              {selectedPosterFile ? (
-                                <>
-                                  <div className="sdl-file-trigger__name">{selectedPosterFile.name}</div>
-                                  <div className="sdl-file-trigger__meta">{selectedPosterFile.typeName} &middot; {selectedPosterFile.fileStatus}</div>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="sdl-file-trigger__name">No poster selected</div>
-                                  <div className="sdl-file-trigger__meta">{loaderData.productFeaturedImageUrl ? "Using product image as fallback" : "Click to browse or upload"}</div>
-                                </>
-                              )}
-                            </div>
-                            <div className="sdl-file-trigger__action">Browse</div>
-                          </button>
-                        </div>
+                        <FileTriggerCard
+                          title="Poster file"
+                          name={selectedPosterFile?.name ?? "No poster selected"}
+                          meta={
+                            selectedPosterFile
+                              ? `${selectedPosterFile.typeName} · ${selectedPosterFile.fileStatus}`
+                              : loaderData.productFeaturedImageUrl
+                                ? "Using product image as fallback"
+                                : "Click to browse or upload"
+                          }
+                          thumbUrl={selectedPosterFile?.previewUrl ?? loaderData.productFeaturedImageUrl ?? null}
+                          fallbackEmoji="🖼"
+                          onClick={() => setShowPosterBrowser(true)}
+                        />
                       </>
                     )}
-
-                  </div>
+                  </BlockStack>
                 </InspectorSection>
 
                 <InspectorSection
@@ -1720,39 +1643,16 @@ export default function Sdl3dEditorRoute() {
                     onChangeJson={setViewerSettingsJson}
                     advanced
                   />
-                  <details className="sdl-collapsible" style={{ marginTop: 12 }}>
-                    <summary>JSON download / edit / re-upload</summary>
-                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <button type="button" onClick={handleExportConfig} className="sdl-btn sdl-btn--sm" style={{ flex: 1 }}>
-                        Download JSON
-                      </button>
-                      <button type="button" onClick={handleImportConfig} className="sdl-btn sdl-btn--sm" style={{ flex: 1 }}>
-                        Re-upload JSON
-                      </button>
-                    </div>
-                    <div className="sdl-json-grid" style={{ marginTop: 12 }}>
-                      <div>
-                        <label className="sdl-label">Viewer settings JSON</label>
-                        <textarea
-                          className="sdl-textarea"
-                          value={viewerSettingsJson}
-                          onChange={(e) => setViewerSettingsJson(e.target.value)}
-                          rows={16}
-                        />
-                      </div>
-                      <div>
-                        <label className="sdl-label">
-                          {viewerType === "IMAGE_360" ? "360° Hotspots JSON" : "Hotspots JSON"}
-                        </label>
-                        <textarea
-                          className="sdl-textarea sdl-textarea--readonly"
-                          value={viewerType === "IMAGE_360" ? hotspotsJson360Memo : hotspotsJson}
-                          readOnly
-                          rows={16}
-                        />
-                      </div>
-                    </div>
-                  </details>
+                  <Box paddingBlockStart="300">
+                    <JsonAdvancedPanel
+                      viewerSettingsJson={viewerSettingsJson}
+                      onChangeViewerSettings={setViewerSettingsJson}
+                      hotspotsJson={viewerType === "IMAGE_360" ? hotspotsJson360Memo : hotspotsJson}
+                      hotspotsLabel={viewerType === "IMAGE_360" ? "360° Hotspots JSON" : "Hotspots JSON"}
+                      onExport={handleExportConfig}
+                      onImport={handleImportConfig}
+                    />
+                  </Box>
                 </InspectorSection>
               </BlockStack>
             ) : (
@@ -2023,6 +1923,136 @@ function InspectorStatusBanner({
 }
 
 /**
+ * JSON download / edit / re-upload panel — PR #6. Polaris Collapsible
+ * disclosure with Download + Re-upload Buttons and two TextField
+ * multilines (one editable, one readonly). Replaces the bespoke
+ * `<details className="sdl-collapsible">` + `.sdl-btn` + `.sdl-textarea`
+ * + `.sdl-label` + `.sdl-json-grid` block.
+ */
+function JsonAdvancedPanel({
+  viewerSettingsJson,
+  onChangeViewerSettings,
+  hotspotsJson,
+  hotspotsLabel,
+  onExport,
+  onImport,
+}: {
+  viewerSettingsJson: string;
+  onChangeViewerSettings: (next: string) => void;
+  hotspotsJson: string;
+  hotspotsLabel: string;
+  onExport: () => void;
+  onImport: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const id = "json-advanced-panel";
+  return (
+    <BlockStack gap="200">
+      <button
+        type="button"
+        className="sdl-inspector-section__trigger"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <InlineStack align="space-between" blockAlign="center" wrap={false}>
+          <Text as="span" variant="bodyMd" fontWeight="semibold">
+            JSON download / edit / re-upload
+          </Text>
+          <Icon source={open ? ChevronUpIcon : ChevronDownIcon} tone="subdued" />
+        </InlineStack>
+      </button>
+      <Collapsible id={id} open={open} transition={{ duration: "150ms", timingFunction: "ease-in-out" }}>
+        <BlockStack gap="300">
+          <InlineStack gap="200">
+            <Button onClick={onExport}>Download JSON</Button>
+            <Button onClick={onImport}>Re-upload JSON</Button>
+          </InlineStack>
+          <TextField
+            label="Viewer settings JSON"
+            value={viewerSettingsJson}
+            onChange={onChangeViewerSettings}
+            multiline={16}
+            autoComplete="off"
+          />
+          <TextField
+            label={hotspotsLabel}
+            value={hotspotsJson}
+            onChange={() => { /* readonly */ }}
+            readOnly
+            multiline={16}
+            autoComplete="off"
+          />
+        </BlockStack>
+      </Collapsible>
+    </BlockStack>
+  );
+}
+
+/**
+ * Tiny LABEL/VALUE pair for the editor top bar — PR #6. Replaces the
+ * bespoke `.sdl-topbar-field*` spans. Pure Polaris Text composition.
+ */
+function TopbarField({ label, value }: { label: string; value: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
+      <Text as="span" tone="subdued" variant="bodySm" fontWeight="semibold">
+        {label}
+      </Text>
+      <Text as="span" variant="bodyMd" fontWeight="semibold">
+        {value}
+      </Text>
+    </span>
+  );
+}
+
+/**
+ * Clickable file-picker card for the editor's Media inspector — PR #6.
+ * Renders a section title, a clickable button row with a thumbnail +
+ * name/meta + "Browse" affordance. Native `<button>` styled with
+ * Polaris design tokens since Polaris ships no equivalent.
+ */
+function FileTriggerCard({
+  title,
+  name,
+  meta,
+  thumbUrl,
+  fallbackEmoji,
+  onClick,
+}: {
+  title: string;
+  name: string;
+  meta: string;
+  thumbUrl: string | null;
+  fallbackEmoji: string;
+  onClick: () => void;
+}) {
+  return (
+    <Card>
+      <BlockStack gap="200">
+        <Text as="h4" variant="headingXs">
+          {title}
+        </Text>
+        <button type="button" className="sdl-ft" onClick={onClick}>
+          <span className="sdl-ft__thumb" aria-hidden>
+            {thumbUrl ? (
+              <img src={thumbUrl} alt="" />
+            ) : (
+              <span className="sdl-ft__emoji">{fallbackEmoji}</span>
+            )}
+          </span>
+          <span className="sdl-ft__label">
+            <span className="sdl-ft__name">{name}</span>
+            <span className="sdl-ft__meta">{meta}</span>
+          </span>
+          <span className="sdl-ft__action">Browse</span>
+        </button>
+      </BlockStack>
+    </Card>
+  );
+}
+
+/**
  * One row of the right-column inspector. Renders a Polaris Card with a
  * clickable header that toggles its body via Collapsible. Slice 5C PR #5c.
  *
@@ -2077,21 +2107,25 @@ export function ErrorBoundary() {
       : "An unexpected error occurred.";
 
   return (
-    <div className="sdl-editor" data-theme="light">
-      <div style={{ maxWidth: 600, margin: "60px auto", padding: 24, textAlign: "center" }}>
-        <div className="sdl-card">
-          <div className="sdl-card__header">
-            <div>
-              <div className="sdl-card__title">Editor error</div>
-              <div className="sdl-card__subtitle">{message}</div>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-            <a href="/app/sdl3d/editor" className="sdl-btn sdl-btn--primary">Reload editor</a>
-            <a href="/app" className="sdl-btn">Back to dashboard</a>
-          </div>
-        </div>
-      </div>
+    <div style={{ maxWidth: 600, margin: "60px auto", padding: 24 }}>
+      <Card>
+        <BlockStack gap="300">
+          <BlockStack gap="100">
+            <Text as="h2" variant="headingMd">
+              Editor error
+            </Text>
+            <Text as="p" tone="subdued" variant="bodySm">
+              {message}
+            </Text>
+          </BlockStack>
+          <InlineStack gap="200" align="center">
+            <Button variant="primary" url="/app/sdl3d/editor">
+              Reload editor
+            </Button>
+            <Button url="/app">Back to dashboard</Button>
+          </InlineStack>
+        </BlockStack>
+      </Card>
     </div>
   );
 }

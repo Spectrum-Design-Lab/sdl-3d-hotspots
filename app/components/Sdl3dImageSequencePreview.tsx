@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@shopify/polaris";
 import type { ImageSequenceFrame, Hotspot360 } from "../lib/sdl3d-shared";
 import { interpolateHotspotPosition, isHotspot360Visible } from "../lib/sdl3d-shared";
 
@@ -398,13 +399,13 @@ export function Sdl3dImageSequencePreview({
           }}
           className="sdl-360-preview__scrubber"
         />
-        <button
-          type="button"
-          className={`sdl-btn sdl-btn--sm ${autoRotate ? "sdl-btn--primary" : ""}`}
+        <Button
+          size="slim"
+          variant={autoRotate ? "primary" : "secondary"}
           onClick={() => setAutoRotate((prev) => !prev)}
         >
           {autoRotate ? "Stop" : "Auto-rotate"}
-        </button>
+        </Button>
       </div>
     </div>
   );
