@@ -1,6 +1,6 @@
 /**
  * API route for product config operations:
- *   saveDraft, publish, setViewerType
+ *   saveDraft, publish, setViewerType, deleteConfig, deleteOrphanedConfigs
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
@@ -9,9 +9,12 @@ export function loader(_args: LoaderFunctionArgs) {
 }
 import { withAdminAuth } from "../lib/admin-auth.server";
 import prisma from "../db.server";
-import type { AdminGraphqlClient } from "../lib/sdl3d-graphql.server";
+import { adminGraphql, type AdminGraphqlClient } from "../lib/sdl3d-graphql.server";
 import { publishConfigToMetafields } from "../lib/sdl3d-sync.server";
 import { defaultViewerSettings } from "../lib/sdl3d-shared";
+
+const VALID_PRODUCT_GID = /^gid:\/\/shopify\/Product\/\d+$/;
+const RESOLVE_BATCH_SIZE = 100;
 
 /* ───── helpers ───── */
 
@@ -53,8 +56,13 @@ export async function action({ request }: ActionFunctionArgs) {
   return withAdminAuth(request, async ({ admin, session, shop }) => {
     const formData = await request.formData();
     const intent = String(formData.get("intent") || "");
-    const productGid = String(formData.get("productGid") || "");
 
+    // Bulk intent has no productGid; handle before the per-product check.
+    if (intent === "deleteOrphanedConfigs") {
+      return handleDeleteOrphanedConfigs(admin, shop);
+    }
+
+    const productGid = String(formData.get("productGid") || "");
     if (!productGid) {
       return error("Missing product GID.");
     }
@@ -66,6 +74,8 @@ export async function action({ request }: ActionFunctionArgs) {
         return handleSaveDraft(shop, productGid, formData);
       case "setViewerType":
         return handleSetViewerType(shop, productGid, formData);
+      case "deleteConfig":
+        return handleDeleteConfig(shop, productGid);
       default:
         return error("Unknown config intent.");
     }
@@ -192,5 +202,99 @@ async function handleSaveDraft(shop: { id: string }, productGid: string, formDat
     return json({ ok: true, autoSaved: true, message: "Draft autosaved." });
   }
   return ok("Draft saved.");
+}
+
+async function handleDeleteConfig(shop: { id: string }, productGid: string) {
+  const config = await prisma.productConfig.findUnique({
+    where: {
+      shopId_shopifyProductGid: { shopId: shop.id, shopifyProductGid: productGid },
+    },
+    select: { id: true, status: true },
+  });
+  if (!config) {
+    return json({ ok: false, message: "Config not found." }, 404);
+  }
+
+  // Hotspots and Captures cascade per the schema's onDelete: Cascade.
+  await prisma.productConfig.delete({ where: { id: config.id } });
+
+  return json({
+    ok: true,
+    productGid,
+    wasPublished: config.status === "PUBLISHED",
+    message: "Removed.",
+  });
+}
+
+async function handleDeleteOrphanedConfigs(
+  admin: AdminGraphqlClient,
+  shop: { id: string },
+) {
+  const configs = await prisma.productConfig.findMany({
+    where: { shopId: shop.id },
+    select: { id: true, shopifyProductGid: true },
+  });
+  if (configs.length === 0) {
+    return json({ ok: true, deletedCount: 0, message: "Nothing to delete." });
+  }
+
+  const malformed: string[] = [];
+  const validGids: string[] = [];
+  for (const c of configs) {
+    if (VALID_PRODUCT_GID.test(c.shopifyProductGid)) {
+      validGids.push(c.shopifyProductGid);
+    } else {
+      malformed.push(c.shopifyProductGid);
+    }
+  }
+
+  const missing = new Set<string>(malformed);
+
+  for (let i = 0; i < validGids.length; i += RESOLVE_BATCH_SIZE) {
+    const batch = validGids.slice(i, i + RESOLVE_BATCH_SIZE);
+    try {
+      const data = await adminGraphql<{
+        nodes: Array<{ __typename: string; id: string } | null>;
+      }>(
+        admin,
+        `query ResolveProductExistence($ids: [ID!]!) {
+          nodes(ids: $ids) { __typename ... on Product { id } }
+        }`,
+        { ids: batch },
+      );
+      const resolved = new Set<string>();
+      for (const node of data.nodes) {
+        if (node && node.__typename === "Product" && "id" in node) {
+          resolved.add(node.id);
+        }
+      }
+      for (const gid of batch) {
+        if (!resolved.has(gid)) missing.add(gid);
+      }
+    } catch (err) {
+      console.error("[sdl3d/config] deleteOrphanedConfigs resolve failed", err);
+      return json(
+        {
+          ok: false,
+          message: "Couldn't verify product existence with Shopify. Try again.",
+        },
+        502,
+      );
+    }
+  }
+
+  if (missing.size === 0) {
+    return json({ ok: true, deletedCount: 0, message: "No orphaned configs found." });
+  }
+
+  const result = await prisma.productConfig.deleteMany({
+    where: { shopId: shop.id, shopifyProductGid: { in: Array.from(missing) } },
+  });
+
+  return json({
+    ok: true,
+    deletedCount: result.count,
+    message: `Removed ${result.count} orphaned config${result.count === 1 ? "" : "s"}.`,
+  });
 }
 

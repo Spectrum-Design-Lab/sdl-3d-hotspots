@@ -15,7 +15,7 @@
  */
 import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
 import { useLoaderData, useFetcher, useRouteError, isRouteErrorResponse } from "react-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import {
   Badge,
@@ -37,6 +37,7 @@ import {
   ResourceList,
   Text,
   Thumbnail,
+  Toast,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -482,6 +483,93 @@ function Dashboard({ data }: { data: DashData }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
+  const deleteOneFetcher = useFetcher<{
+    ok: boolean;
+    message?: string;
+    productGid?: string;
+    wasPublished?: boolean;
+  }>();
+  const deleteBulkFetcher = useFetcher<{
+    ok: boolean;
+    message?: string;
+    deletedCount?: number;
+  }>();
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [toast, setToast] = useState<{ message: string; isError?: boolean } | null>(null);
+
+  // Look up titles for the "Removed X" toast — fetcher only returns the GID.
+  const titleByGid = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of configs) m.set(c.shopifyProductGid, c.productTitle);
+    return m;
+  }, [configs]);
+
+  const orphanedCount = useMemo(
+    () => configs.filter((c) => c.productMissing).length,
+    [configs],
+  );
+
+  const handleRemove = useCallback(
+    (config: DashConfig) => {
+      deleteOneFetcher.submit(
+        { intent: "deleteConfig", productGid: config.shopifyProductGid },
+        { method: "post", action: "/api/sdl3d/config" },
+      );
+    },
+    [deleteOneFetcher],
+  );
+
+  const handleBulkDelete = useCallback(() => {
+    deleteBulkFetcher.submit(
+      { intent: "deleteOrphanedConfigs" },
+      { method: "post", action: "/api/sdl3d/config" },
+    );
+  }, [deleteBulkFetcher]);
+
+  // Surface fetcher results once per response (ref-guarded to avoid the
+  // useRevalidator dep trap — see feedback_react_router_revalidator.md).
+  const seenDeleteOneRef = useRef<unknown>(null);
+  useEffect(() => {
+    if (deleteOneFetcher.state !== "idle" || !deleteOneFetcher.data) return;
+    if (seenDeleteOneRef.current === deleteOneFetcher.data) return;
+    seenDeleteOneRef.current = deleteOneFetcher.data;
+    const res = deleteOneFetcher.data;
+    if (res.ok && res.productGid) {
+      const title = titleByGid.get(res.productGid) ?? "config";
+      const hint = res.wasPublished
+        ? " Republish from metafield to restore."
+        : "";
+      setToast({ message: `Removed ${title}.${hint}` });
+    } else if (!res.ok) {
+      setToast({ message: res.message ?? "Remove failed.", isError: true });
+    }
+  }, [deleteOneFetcher.state, deleteOneFetcher.data, titleByGid]);
+
+  const seenDeleteBulkRef = useRef<unknown>(null);
+  useEffect(() => {
+    if (deleteBulkFetcher.state !== "idle" || !deleteBulkFetcher.data) return;
+    if (seenDeleteBulkRef.current === deleteBulkFetcher.data) return;
+    seenDeleteBulkRef.current = deleteBulkFetcher.data;
+    const res = deleteBulkFetcher.data;
+    if (res.ok) {
+      setBulkModalOpen(false);
+      const count = res.deletedCount ?? 0;
+      if (count === 0) {
+        setToast({ message: "No orphaned configs found — they may have been un-deleted on Shopify." });
+      } else if (orphanedCount && count < orphanedCount) {
+        setToast({
+          message: `Removed ${count} of ${orphanedCount} marked for deletion. Others may have been un-deleted on Shopify.`,
+        });
+      } else {
+        setToast({ message: res.message ?? `Removed ${count} orphaned config${count === 1 ? "" : "s"}.` });
+      }
+    } else {
+      setToast({ message: res.message ?? "Bulk delete failed.", isError: true });
+    }
+  }, [deleteBulkFetcher.state, deleteBulkFetcher.data, orphanedCount]);
+
+  const isBulkBusy = deleteBulkFetcher.state !== "idle";
+
   const filteredConfigs = useMemo(() => {
     let result = configs;
     if (statusFilter !== "all") {
@@ -514,6 +602,17 @@ function Dashboard({ data }: { data: DashData }) {
           content: "Open Editor",
           url: "/app/sdl3d/editor",
         }}
+        secondaryActions={
+          orphanedCount > 0
+            ? [
+                {
+                  content: `Delete orphaned (${orphanedCount})`,
+                  destructive: true,
+                  onAction: () => setBulkModalOpen(true),
+                },
+              ]
+            : undefined
+        }
       >
         <Layout>
           {/* Stats */}
@@ -596,7 +695,11 @@ function Dashboard({ data }: { data: DashData }) {
                   resourceName={{ singular: "product", plural: "products" }}
                   items={filteredConfigs}
                   renderItem={(config) => (
-                    <ProductResourceRow key={config.id} config={config} />
+                    <ProductResourceRow
+                      key={config.id}
+                      config={config}
+                      onRemove={handleRemove}
+                    />
                   )}
                 />
               )}
@@ -644,6 +747,48 @@ function Dashboard({ data }: { data: DashData }) {
           </Layout.Section>
         </Layout>
       </Page>
+
+      <Modal
+        open={bulkModalOpen}
+        onClose={() => (isBulkBusy ? undefined : setBulkModalOpen(false))}
+        title={`Delete ${orphanedCount} orphaned config${orphanedCount === 1 ? "" : "s"}?`}
+        primaryAction={{
+          content: "Delete",
+          destructive: true,
+          loading: isBulkBusy,
+          onAction: handleBulkDelete,
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            disabled: isBulkBusy,
+            onAction: () => setBulkModalOpen(false),
+          },
+        ]}
+      >
+        <Modal.Section>
+          <BlockStack gap="200">
+            <Text as="p">
+              These products were deleted on Shopify but still have configs in
+              this app. Their hotspots and capture history will be deleted.
+            </Text>
+            <Text as="p" tone="subdued" variant="bodySm">
+              Published metafields on Shopify aren't touched — if a config was
+              published before its product was deleted, the metafield data
+              still lives on Shopify.
+            </Text>
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
+
+      {toast ? (
+        <Toast
+          content={toast.message}
+          error={toast.isError}
+          onDismiss={() => setToast(null)}
+          duration={toast.isError ? 6000 : 4000}
+        />
+      ) : null}
     </Frame>
   );
 }
@@ -663,7 +808,13 @@ function StatCard({ value, label }: { value: number; label: string }) {
   );
 }
 
-function ProductResourceRow({ config }: { config: DashConfig }) {
+function ProductResourceRow({
+  config,
+  onRemove,
+}: {
+  config: DashConfig;
+  onRemove: (config: DashConfig) => void;
+}) {
   const editorUrl = `/app/sdl3d/editor?product=${encodeURIComponent(config.shopifyProductGid)}`;
 
   const statusTone: "success" | "info" =
@@ -680,12 +831,26 @@ function ProductResourceRow({ config }: { config: DashConfig }) {
     />
   );
 
+  // Per-row Remove is gated to productMissing rows only — Decision #6 in the
+  // Slice 6 plan. Live configs are protected from accidental deletion from
+  // the dashboard surface.
+  const shortcutActions = config.productMissing
+    ? [
+        {
+          content: "Remove",
+          accessibilityLabel: `Remove ${config.productTitle}`,
+          onAction: () => onRemove(config),
+        },
+      ]
+    : undefined;
+
   return (
     <ResourceItem
       id={config.id}
       url={editorUrl}
       accessibilityLabel={`Open ${config.productTitle} in editor`}
       media={thumbnail}
+      shortcutActions={shortcutActions}
     >
       <BlockStack gap="100">
         <InlineStack gap="200" blockAlign="center" wrap={false}>
