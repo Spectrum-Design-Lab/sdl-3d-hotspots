@@ -82,6 +82,12 @@ type Props = {
   onCompleted: () => void;
   /** Optional path/link target for the storage settings page. */
   storageSettingsHref?: string;
+  /**
+   * Optional storage row id override. When set, the capture uploads to this
+   * specific bucket instead of the shop's default. Editor-state only —
+   * never persisted across reloads. Slice 6 PR #3.
+   */
+  storageId?: string;
   /** Optional initial capture state (e.g. an in-flight job from a previous session). */
   initialCapture?: {
     id: string;
@@ -142,6 +148,7 @@ export function Sdl3dRawCaptureUploader({
   productConfigId,
   onCompleted,
   storageSettingsHref = "/app/sdl3d/storage",
+  storageId,
   initialCapture = null,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -307,6 +314,7 @@ export function Sdl3dRawCaptureUploader({
         signForm.set("productGid", productGid);
         signForm.set("productConfigId", productConfigId);
         signForm.set("rawSizeBytes", String(sizeBytes));
+        if (storageId) signForm.set("storageId", storageId);
         const signRes = await fetch("/api/sdl3d/captures", {
           method: "POST",
           body: signForm,

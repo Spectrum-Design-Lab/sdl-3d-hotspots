@@ -12,6 +12,7 @@ import {
   Icon,
   InlineStack,
   Modal,
+  Select,
   Text,
   TextField,
 } from "@shopify/polaris";
@@ -30,6 +31,7 @@ import {
 } from "../lib/sdl3d-files.server";
 import { resolveImageSequenceUrls } from "../lib/sdl3d-image-sequence.server";
 import { hasSyncableSdl3dMetafields, pullMetafieldsToDraft } from "../lib/sdl3d-sync.server";
+import { listStoragesForShop, type ShopStorageSummary } from "../lib/storage.server";
 import { notify } from "../lib/notify.server";
 
 import {
@@ -84,6 +86,7 @@ export async function loader({ request }: { request: Request }) {
     initialConfig,
     modelFileResult,
     posterFileResult,
+    availableStorages,
   ] = await Promise.all([
     // Search products (GraphQL)
     adminGraphql<{ products: { nodes: ProductResult[] } }>(
@@ -129,6 +132,9 @@ export async function loader({ request }: { request: Request }) {
     // File lists (GraphQL)
     listShopifyFiles(admin, "MODEL3D"),
     listShopifyFiles(admin, "IMAGE"),
+
+    // Storage rows (DB) — Slice 6 PR #3 top-bar selector
+    listStoragesForShop(shop.id),
   ]);
 
   const products = searchResult;
@@ -306,6 +312,7 @@ export async function loader({ request }: { request: Request }) {
         frameCountTarget: config.captures[0].frameCountTarget,
       }
       : null,
+    availableStorages: availableStorages as ShopStorageSummary[],
   };
 }
 
@@ -324,6 +331,24 @@ export default function Sdl3dEditorRoute() {
   const [toastMessage, setToastMessage] = useState(loaderData.flash || "");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [saveStatusNow, setSaveStatusNow] = useState(Date.now());
+
+  // Slice 6 PR #3: top-bar storage selector. Initialized to the shop's default
+  // row; subsequent captures + folder-picker calls use whichever row is
+  // currently selected. Override is editor-state only — never persisted.
+  const defaultStorageId = useMemo(
+    () =>
+      loaderData.availableStorages.find((s) => s.isDefault)?.id ??
+      loaderData.availableStorages[0]?.id ??
+      "",
+    [loaderData.availableStorages],
+  );
+  const [selectedStorageId, setSelectedStorageId] = useState(defaultStorageId);
+  const storageOverrideActive =
+    !!selectedStorageId && selectedStorageId !== defaultStorageId;
+  const activeStorageRow = useMemo(
+    () => loaderData.availableStorages.find((s) => s.id === selectedStorageId) ?? null,
+    [loaderData.availableStorages, selectedStorageId],
+  );
 
   const saveFetcher = useFetcher<{
     ok?: boolean;
@@ -1269,6 +1294,23 @@ export default function Sdl3dEditorRoute() {
                   label="Mode"
                   value={viewerType === "IMAGE_360" ? "360° Spin" : "3D Model"}
                 />
+                {loaderData.availableStorages.length > 1 ? (
+                  <>
+                    <Select
+                      label="Storage"
+                      labelInline
+                      options={loaderData.availableStorages.map((s) => ({
+                        label: `${s.provider}: ${s.bucket}`,
+                        value: s.id,
+                      }))}
+                      value={selectedStorageId}
+                      onChange={setSelectedStorageId}
+                    />
+                    <Badge tone={storageOverrideActive ? "attention" : undefined}>
+                      {storageOverrideActive ? "override" : "default"}
+                    </Badge>
+                  </>
+                ) : null}
                 <Badge tone={saveStateTone}>{saveStateLabel}</Badge>
               </>
             ) : null}
@@ -1549,6 +1591,7 @@ export default function Sdl3dEditorRoute() {
                             productGid={loaderData.productGid}
                             productConfigId={loaderData.config.id}
                             initialCapture={loaderData.latestCapture}
+                            storageId={selectedStorageId || undefined}
                             onCompleted={() => revalidator.revalidate()}
                           />
                         )}
@@ -1558,6 +1601,7 @@ export default function Sdl3dEditorRoute() {
                             productGid={loaderData.productGid}
                             hasExistingFrames={loaderData.config.frameCount > 0}
                             existingFrameCount={loaderData.config.frameCount}
+                            storageId={selectedStorageId || undefined}
                             onCompleted={() => revalidator.revalidate()}
                           />
                         )}

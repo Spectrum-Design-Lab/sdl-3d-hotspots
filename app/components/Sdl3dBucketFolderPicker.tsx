@@ -53,6 +53,12 @@ type Props = {
   productGid: string;
   hasExistingFrames: boolean;
   existingFrameCount: number;
+  /**
+   * Optional storage row id override. When set, the picker lists folders from
+   * this bucket and imports happen against it. Defaults to the shop's
+   * default row. Slice 6 PR #3.
+   */
+  storageId?: string;
   onCompleted: (frameCount: number) => void;
 };
 
@@ -67,6 +73,7 @@ export function Sdl3dBucketFolderPicker({
   productGid,
   hasExistingFrames,
   existingFrameCount,
+  storageId,
   onCompleted,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -75,25 +82,26 @@ export function Sdl3dBucketFolderPicker({
 
   const openPicker = useCallback(() => {
     setOpen(true);
-    listFetcher.submit(
-      { intent: "listBucketFolders", prefix: "" },
-      { method: "post", action: "/api/sdl3d/storage" },
-    );
-  }, [listFetcher]);
+    const fd: Record<string, string> = {
+      intent: "listBucketFolders",
+      prefix: "",
+    };
+    if (storageId) fd.storageId = storageId;
+    listFetcher.submit(fd, { method: "post", action: "/api/sdl3d/storage" });
+  }, [listFetcher, storageId]);
 
   const handleUseFolder = useCallback(
     (folder: BucketFolder) => {
-      useFetcherOne.submit(
-        {
-          intent: "useBucketFolder",
-          productGid,
-          prefix: folder.prefix,
-          frameKeys: JSON.stringify(folder.frameKeys),
-        },
-        { method: "post", action: "/api/sdl3d/storage" },
-      );
+      const fd: Record<string, string> = {
+        intent: "useBucketFolder",
+        productGid,
+        prefix: folder.prefix,
+        frameKeys: JSON.stringify(folder.frameKeys),
+      };
+      if (storageId) fd.storageId = storageId;
+      useFetcherOne.submit(fd, { method: "post", action: "/api/sdl3d/storage" });
     },
-    [productGid, useFetcherOne],
+    [productGid, storageId, useFetcherOne],
   );
 
   // Ref-guarded so we only react once per fetcher response — useFetcher

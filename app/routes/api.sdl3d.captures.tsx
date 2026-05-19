@@ -143,15 +143,37 @@ async function handleSignRawUpload(
   const productGid = String(formData.get("productGid") || "").trim();
   const rawSizeBytesRaw = String(formData.get("rawSizeBytes") || "").trim();
   const frameCountTargetRaw = String(formData.get("frameCountTarget") || "").trim();
+  const overrideStorageId = String(formData.get("storageId") || "").trim() || null;
 
   if (!productGid) {
     return json({ ok: false, message: "Missing productGid." }, 400);
   }
 
-  // Resolve the shop's default storage row up front so we can stamp the
-  // Capture with its id — the worker reads from that specific bucket later,
-  // even if the merchant flips the default mid-job.
-  const storageId = await getDefaultStorageRowId(auth.shop.id);
+  // Slice 6 PR #3: if the editor sent a storage override, validate it belongs
+  // to this shop and use it. Otherwise fall back to the shop's default row.
+  // Either way the resolved id is stamped on the Capture so the worker reads
+  // from that specific bucket even if the merchant flips the default later.
+  let storageId: string | null;
+  if (overrideStorageId) {
+    const overrideRow = await prisma.shopStorage.findFirst({
+      where: { id: overrideStorageId, shopId: auth.shop.id },
+      select: { id: true },
+    });
+    if (!overrideRow) {
+      return json(
+        {
+          ok: false,
+          message: "Selected storage row not found. Refresh the editor and try again.",
+          needsStorageSetup: true,
+        },
+        404,
+      );
+    }
+    storageId = overrideRow.id;
+  } else {
+    storageId = await getDefaultStorageRowId(auth.shop.id);
+  }
+
   if (!storageId) {
     return json(
       {

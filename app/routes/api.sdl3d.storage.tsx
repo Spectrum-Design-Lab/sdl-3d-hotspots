@@ -313,15 +313,23 @@ export async function action({ request }: ActionFunctionArgs) {
   });
 }
 
+async function resolveBackend(shopId: string, formData: FormData) {
+  const overrideStorageId = String(formData.get("storageId") || "").trim() || null;
+  if (overrideStorageId) {
+    return loadStorageForShopById(shopId, overrideStorageId);
+  }
+  return loadDefaultStorageForShop(shopId);
+}
+
 async function handleListBucketFolders(shopId: string, formData: FormData) {
   const prefix = String(formData.get("prefix") || "").trim();
 
-  const backend = await loadDefaultStorageForShop(shopId);
+  const backend = await resolveBackend(shopId, formData);
   if (!backend) {
     return json(
       {
         ok: false,
-        message: "No default storage configured. Open Settings → Storage first.",
+        message: "Storage row not found. Open Settings → Storage first.",
         needsStorageSetup: true,
       },
       400,
@@ -383,10 +391,10 @@ async function handleUseBucketFolder(shopId: string, formData: FormData) {
     return json({ ok: false, message: "No frames to import." }, 400);
   }
 
-  const backend = await loadDefaultStorageForShop(shopId);
+  const backend = await resolveBackend(shopId, formData);
   if (!backend) {
     return json(
-      { ok: false, message: "No default storage configured.", needsStorageSetup: true },
+      { ok: false, message: "Storage row not found.", needsStorageSetup: true },
       400,
     );
   }
@@ -395,7 +403,7 @@ async function handleUseBucketFolder(shopId: string, formData: FormData) {
       {
         ok: false,
         message:
-          "Default storage row has no public base URL. Set one under Settings → Storage first.",
+          "Selected storage row has no public base URL. Set one under Settings → Storage first.",
       },
       400,
     );
