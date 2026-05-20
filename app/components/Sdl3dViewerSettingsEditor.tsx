@@ -20,6 +20,7 @@
 import {
   BlockStack,
   Checkbox,
+  InlineStack,
   Select,
   Text,
   TextField,
@@ -220,14 +221,38 @@ export function Sdl3dViewerSettingsEditor({
           onChange={(value) => update({ exposure: Number(value || 0) })}
           autoComplete="off"
         />
-        <TextField
-          label="Background color"
-          value={settings.backgroundColor ?? ""}
-          onChange={(value) => updateNullableString("backgroundColor", value)}
-          placeholder="#0b1020"
-          error={fieldErrors.backgroundColor}
-          autoComplete="off"
-        />
+        {/* Slice 7 PR #2: background color now lives here (was a floating
+            preview-mode control). Pairs the TextField with a native swatch
+            input so merchants can pick visually without leaving the form. */}
+        <InlineStack gap="200" blockAlign="end" wrap={false}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <TextField
+              label="Background color"
+              value={settings.backgroundColor ?? ""}
+              onChange={(value) => updateNullableString("backgroundColor", value)}
+              placeholder="#0b1020"
+              error={fieldErrors.backgroundColor}
+              autoComplete="off"
+            />
+          </div>
+          <input
+            type="color"
+            value={settings.backgroundColor && /^#[0-9a-f]{6}$/i.test(settings.backgroundColor)
+              ? settings.backgroundColor
+              : "#0b1020"}
+            onChange={(e) => updateNullableString("backgroundColor", e.target.value)}
+            aria-label="Background color swatch"
+            style={{
+              width: 36,
+              height: 36,
+              border: "1px solid var(--p-color-border)",
+              borderRadius: "var(--p-border-radius-200)",
+              padding: 2,
+              cursor: "pointer",
+              background: "transparent",
+            }}
+          />
+        </InlineStack>
         <Select
           label="Hotspot style"
           options={HOTSPOT_STYLE_OPTIONS}

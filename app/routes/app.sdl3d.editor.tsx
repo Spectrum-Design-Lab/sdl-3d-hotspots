@@ -46,7 +46,6 @@ import {
 import { Sdl3dEditorPreview } from "../components/Sdl3dEditorPreview";
 import { Sdl3dViewerSettingsEditor } from "../components/Sdl3dViewerSettingsEditor";
 import { Sdl3dEditorSidebar, type Step, type StepId } from "../components/Sdl3dEditorSidebar";
-import { StorefrontPreview } from "../components/StorefrontPreview";
 import { Sdl3dImageSequencePreview } from "../components/Sdl3dImageSequencePreview";
 import {
   Sdl3dHotspot360Editor,
@@ -326,8 +325,10 @@ export default function Sdl3dEditorRoute() {
 
   const revalidator = useRevalidator();
   const [rightTab, setRightTab] = useState<RightTab>("upload");
-  const [mainTab, setMainTab] = useState<"edit" | "preview">("edit");
-  const [previewBg, setPreviewBg] = useState<string | null>(null);
+  // Slice 7 PR #2: Edit/Preview tabs removed — canvas is always editable.
+  // Background colour control moved into the Viewer inspector tab where it
+  // belongs and now persists via viewerSettings.backgroundColor (which both
+  // preview components already read).
   const [toastMessage, setToastMessage] = useState(loaderData.flash || "");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [saveStatusNow, setSaveStatusNow] = useState(Date.now());
@@ -1372,24 +1373,9 @@ export default function Sdl3dEditorRoute() {
               <>
                 <Card padding="300">
                   <Box paddingBlockEnd="300">
-                  <InlineStack align="space-between" blockAlign="start" gap="300" wrap>
-                    <div className="sdl-main-tabs">
-                      <button
-                        type="button"
-                        className={`sdl-main-tab ${mainTab === "edit" ? "sdl-main-tab--active" : ""}`}
-                        onClick={() => setMainTab("edit")}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className={`sdl-main-tab ${mainTab === "preview" ? "sdl-main-tab--active" : ""}`}
-                        onClick={() => setMainTab("preview")}
-                      >
-                        Preview
-                      </button>
-                    </div>
-                    {mainTab === "edit" ? (
+                    <InlineStack align="end" blockAlign="center" gap="300" wrap>
+                      {/* Viewer-type toggle stays here until PR #3 moves it
+                          into the Media inspector section. */}
                       <div className="sdl-viewer-type-toggle">
                         <button
                           type="button"
@@ -1406,103 +1392,57 @@ export default function Sdl3dEditorRoute() {
                           360° Images
                         </button>
                       </div>
-                    ) : (
-                      <InlineStack gap="200" blockAlign="center">
-                        <Text as="span" tone="subdued" variant="bodySm" fontWeight="semibold">
-                          BG
-                        </Text>
-                        <input
-                          type="color"
-                          value={previewBg || "#ffffff"}
-                          onChange={(e) => setPreviewBg(e.target.value)}
-                          aria-label="Preview background color"
-                          style={{ width: 32, height: 28, border: 0, padding: 0, cursor: "pointer", background: "transparent" }}
-                        />
-                        {previewBg ? (
-                          <Button size="micro" variant="plain" onClick={() => setPreviewBg(null)}>
-                            Reset
-                          </Button>
-                        ) : null}
-                      </InlineStack>
-                    )}
-                  </InlineStack>
+                    </InlineStack>
                   </Box>
 
-                  {mainTab === "edit" ? (
-                    viewerType === "IMAGE_360" ? (
-                        <Sdl3dImageSequencePreview
-                          frames={loaderData.imageSequenceFrames}
-                          hotspots={hotspots360}
-                          selectedHotspotId={selectedHotspotId}
-                          viewerSettingsJson={viewerSettingsJson}
-                          onSelectHotspot={handlePreviewHotspotSelect}
-                          onPlaceHotspot={(frame, x, y) => {
-                            if (selectedHotspotId) {
-                              // Update keyframe on selected hotspot
-                              setHotspots360((prev) =>
-                                prev.map((h) => {
-                                  if (h.id !== selectedHotspotId) return h;
-                                  const existing = h.keyframes.findIndex((kf) => kf.frame === frame);
-                                  const newKeyframes = existing >= 0
-                                    ? h.keyframes.map((kf, i) => i === existing ? { frame, x, y } : kf)
-                                    : [...h.keyframes, { frame, x, y }];
-                                  newKeyframes.sort((a, b) => a.frame - b.frame);
-                                  return { ...h, keyframes: newKeyframes };
-                                }),
-                              );
-                            }
-                          }}
-                          onDragHotspot={(hotspotId, frame, x, y) => {
-                            setHotspots360((prev) =>
-                              prev.map((h) => {
-                                if (h.id !== hotspotId) return h;
-                                const existing = h.keyframes.findIndex((kf) => kf.frame === frame);
-                                const newKeyframes = existing >= 0
-                                  ? h.keyframes.map((kf, i) => i === existing ? { frame, x, y } : kf)
-                                  : [...h.keyframes, { frame, x, y }];
-                                newKeyframes.sort((a, b) => a.frame - b.frame);
-                                return { ...h, keyframes: newKeyframes };
-                              }),
-                            );
-                          }}
-                          captureMode={selectedHotspotId ? "placeHotspot" : "none"}
-                        />
-                      ) : (
-                        <Sdl3dEditorPreview
-                          modelSourceUrl={loaderData.resolvedAssets.modelSourceUrl}
-                          posterUrl={loaderData.resolvedAssets.posterUrl}
-                          viewerSettingsJson={viewerSettingsJson}
-                          hotspots={hotspots}
-                          selectedHotspotId={selectedHotspotId}
-                          onAddHotspot={handleAddPreviewHotspot}
-                          onUpdateHotspot={updateHotspot}
-                          onSelectHotspot={handlePreviewHotspotSelect}
-                          onReplaceViewerSettingsJson={setViewerSettingsJson}
-                        />
-                      )
-                  ) : !enabled ? (
-                    <div
-                      style={{ background: "#ffffff", minHeight: 48, padding: 12, borderRadius: 6 }}
-                    />
-                  ) : viewerType === "IMAGE_360" ? (
+                  {viewerType === "IMAGE_360" ? (
                     <Sdl3dImageSequencePreview
                       frames={loaderData.imageSequenceFrames}
                       hotspots={hotspots360}
-                      selectedHotspotId={null}
+                      selectedHotspotId={selectedHotspotId}
                       viewerSettingsJson={viewerSettingsJson}
-                      onSelectHotspot={() => {}}
-                      onPlaceHotspot={() => {}}
-                      onDragHotspot={() => {}}
-                      captureMode="none"
+                      onSelectHotspot={handlePreviewHotspotSelect}
+                      onPlaceHotspot={(frame, x, y) => {
+                        if (selectedHotspotId) {
+                          setHotspots360((prev) =>
+                            prev.map((h) => {
+                              if (h.id !== selectedHotspotId) return h;
+                              const existing = h.keyframes.findIndex((kf) => kf.frame === frame);
+                              const newKeyframes = existing >= 0
+                                ? h.keyframes.map((kf, i) => i === existing ? { frame, x, y } : kf)
+                                : [...h.keyframes, { frame, x, y }];
+                              newKeyframes.sort((a, b) => a.frame - b.frame);
+                              return { ...h, keyframes: newKeyframes };
+                            }),
+                          );
+                        }
+                      }}
+                      onDragHotspot={(hotspotId, frame, x, y) => {
+                        setHotspots360((prev) =>
+                          prev.map((h) => {
+                            if (h.id !== hotspotId) return h;
+                            const existing = h.keyframes.findIndex((kf) => kf.frame === frame);
+                            const newKeyframes = existing >= 0
+                              ? h.keyframes.map((kf, i) => i === existing ? { frame, x, y } : kf)
+                              : [...h.keyframes, { frame, x, y }];
+                            newKeyframes.sort((a, b) => a.frame - b.frame);
+                            return { ...h, keyframes: newKeyframes };
+                          }),
+                        );
+                      }}
+                      captureMode={selectedHotspotId ? "placeHotspot" : "none"}
                     />
                   ) : (
-                    <StorefrontPreview
+                    <Sdl3dEditorPreview
                       modelSourceUrl={loaderData.resolvedAssets.modelSourceUrl}
                       posterUrl={loaderData.resolvedAssets.posterUrl}
                       viewerSettingsJson={viewerSettingsJson}
                       hotspots={hotspots}
-                      enabled={enabled}
-                      backgroundOverride={previewBg}
+                      selectedHotspotId={selectedHotspotId}
+                      onAddHotspot={handleAddPreviewHotspot}
+                      onUpdateHotspot={updateHotspot}
+                      onSelectHotspot={handlePreviewHotspotSelect}
+                      onReplaceViewerSettingsJson={setViewerSettingsJson}
                     />
                   )}
                 </Card>
