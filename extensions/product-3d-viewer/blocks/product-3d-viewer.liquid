@@ -99,10 +99,24 @@
     <div class="sdl3d-block__body">
   {% endif %}
 
+  {% comment %}
+    Slice 8 PR #1 — diagnostic strings are merchant-facing helpers that
+    only render inside the Theme Customizer (`request.design_mode`).
+    On the live storefront, an un-configured viewer collapses to a
+    zero-height block (`.sdl3d-block` has no min-height) so customers
+    never see "viewer is not enabled" or "only on product templates"
+    text. The merchant editing their theme still sees the diagnostic
+    in design mode, preserving the "why is nothing showing?" answer
+    they need at install time.
+  {% endcomment %}
   {% if product == blank %}
-    <div class="sdl3d-block__message">This block is only available on product templates.</div>
+    {% if request.design_mode %}
+      <div class="sdl3d-block__message">This block is only available on product templates.</div>
+    {% endif %}
   {% elsif viewer_enabled != true %}
-    <div class="sdl3d-block__message">3D viewer is not enabled for this product.</div>
+    {% if request.design_mode %}
+      <div class="sdl3d-block__message">3D viewer is not enabled for this product.</div>
+    {% endif %}
   {% elsif source_mode == 'app' %}
     {%- comment -%} App-managed mode: JS fetches config from app proxy {%- endcomment -%}
     <div
