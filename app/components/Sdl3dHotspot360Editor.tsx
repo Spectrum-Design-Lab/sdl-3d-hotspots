@@ -22,7 +22,12 @@ import {
   Text,
   TextField,
 } from "@shopify/polaris";
-import type { Hotspot360, Hotspot360Keyframe } from "../lib/sdl3d-shared";
+import {
+  frameToDisplay,
+  frameFromDisplay,
+  type Hotspot360,
+  type Hotspot360Keyframe,
+} from "../lib/sdl3d-shared";
 
 interface Sdl3dHotspot360EditorProps {
   hotspots: Hotspot360[];
@@ -311,17 +316,24 @@ export function Sdl3dHotspot360Editor({
                       multiline={2}
                       autoComplete="off"
                     />
+                    {/* PR #5 — display 1-indexed; storage stays 0-indexed.
+                        Empty string is a mid-edit state (merchant cleared
+                        the field to retype), not a value: skip the write
+                        so we don't snap to 0. */}
                     <InlineStack gap="200" wrap={false}>
                       <Box width="100%">
                         <TextField
                           label="Visible from frame"
                           type="number"
-                          min={0}
-                          max={Math.max(0, frameCount - 1)}
-                          value={String(hotspot.visibleFrameStart)}
-                          onChange={(value) =>
-                            updateHotspot(hotspot.id, { visibleFrameStart: Number(value) })
-                          }
+                          min={1}
+                          max={Math.max(1, frameCount)}
+                          value={String(frameToDisplay(hotspot.visibleFrameStart))}
+                          onChange={(value) => {
+                            if (value === "") return;
+                            const stored = frameFromDisplay(Number(value), frameCount);
+                            if (!Number.isFinite(stored)) return;
+                            updateHotspot(hotspot.id, { visibleFrameStart: stored });
+                          }}
                           autoComplete="off"
                         />
                       </Box>
@@ -329,12 +341,15 @@ export function Sdl3dHotspot360Editor({
                         <TextField
                           label="Visible to frame"
                           type="number"
-                          min={0}
-                          max={Math.max(0, frameCount - 1)}
-                          value={String(hotspot.visibleFrameEnd)}
-                          onChange={(value) =>
-                            updateHotspot(hotspot.id, { visibleFrameEnd: Number(value) })
-                          }
+                          min={1}
+                          max={Math.max(1, frameCount)}
+                          value={String(frameToDisplay(hotspot.visibleFrameEnd))}
+                          onChange={(value) => {
+                            if (value === "") return;
+                            const stored = frameFromDisplay(Number(value), frameCount);
+                            if (!Number.isFinite(stored)) return;
+                            updateHotspot(hotspot.id, { visibleFrameEnd: stored });
+                          }}
                           autoComplete="off"
                         />
                       </Box>
@@ -380,7 +395,7 @@ export function Sdl3dHotspot360Editor({
                           size="slim"
                           onClick={() => addKeyframe(hotspot.id, currentFrame, 50, 50)}
                         >
-                          {`+ Add at frame ${currentFrame}`}
+                          {`+ Add at frame ${frameToDisplay(currentFrame)}`}
                         </Button>
                       </InlineStack>
                       {hotspot.keyframes.length === 0 ? (
@@ -398,7 +413,7 @@ export function Sdl3dHotspot360Editor({
                             >
                               <InlineStack gap="200" blockAlign="center">
                                 <Text as="span" variant="bodySm" fontWeight="semibold">
-                                  {`Frame ${kf.frame}`}
+                                  {`Frame ${frameToDisplay(kf.frame)}`}
                                 </Text>
                                 <Text as="span" tone="subdued" variant="bodySm">
                                   {`x: ${kf.x.toFixed(1)}% y: ${kf.y.toFixed(1)}%`}

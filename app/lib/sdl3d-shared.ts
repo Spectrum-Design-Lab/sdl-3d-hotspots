@@ -73,6 +73,28 @@ export function isHotspot360Visible(
 }
 
 /**
+ * Frame-index display helpers (Slice 7 PR #5). Storage stays 0-indexed
+ * everywhere; the merchant-facing UI is 1-indexed. Conversion happens at
+ * the form-field / label layer only — schema is untouched.
+ */
+export function frameToDisplay(stored: number): number {
+  return stored + 1;
+}
+
+/**
+ * Convert a typed display value back to storage, clamped to the valid
+ * 0-indexed range. Returns NaN when the input isn't a finite number so
+ * callers can treat "field cleared / mid-edit" as "no change" (per the
+ * Slice 7 PR #5 edge-case spec). Display 0 → storage 0; display
+ * frameCount+1 → storage frameCount-1.
+ */
+export function frameFromDisplay(display: number, frameCount: number): number {
+  if (!Number.isFinite(display)) return Number.NaN;
+  const max = Math.max(0, frameCount - 1);
+  return Math.max(0, Math.min(max, Math.round(display) - 1));
+}
+
+/**
  * Detect viewer type from file extension.
  * GLB/GLTF -> MODEL_3D, images -> IMAGE_360
  */
