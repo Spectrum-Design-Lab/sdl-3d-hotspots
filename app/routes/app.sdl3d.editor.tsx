@@ -1,4 +1,4 @@
-import { useBlocker, useFetcher, useLoaderData, useRevalidator, useRouteError, isRouteErrorResponse } from "react-router";
+import { useBlocker, useFetcher, useLoaderData, useNavigate, useRevalidator, useRouteError, isRouteErrorResponse } from "react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
@@ -365,6 +365,18 @@ export default function Sdl3dEditorRoute() {
     message?: string;
     reload?: boolean;
   }>();
+  // Slice 8 PR #2 — "Delete this config" reuses the dashboard's
+  // intent=deleteConfig (clears the DB row + cascaded hotspots/captures;
+  // metafields are intentionally left intact so the merchant can recover
+  // a published config by pulling from metafield).
+  const navigate = useNavigate();
+  const deleteConfigFetcher = useFetcher<{
+    ok?: boolean;
+    message?: string;
+    productGid?: string;
+    wasPublished?: boolean;
+  }>();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const initialHotspots = parseInitialHotspots(
     loaderData.config.hotspotsJson || "[]",
   );
@@ -585,6 +597,27 @@ export default function Sdl3dEditorRoute() {
       revalidator.revalidate();
     }
   }, [actionFetcher.state, actionFetcher.data, revalidator]);
+
+  // Delete-config response — on success, navigate back to the dashboard
+  // since the editor's loaded state no longer matches the DB. Same
+  // ref-guard pattern as the actionFetcher effect (feedback_react_router_revalidator).
+  const handledDeleteDataRef = useRef<unknown>(null);
+  useEffect(() => {
+    if (deleteConfigFetcher.state !== "idle" || !deleteConfigFetcher.data) return;
+    if (handledDeleteDataRef.current === deleteConfigFetcher.data) return;
+    handledDeleteDataRef.current = deleteConfigFetcher.data;
+    const res = deleteConfigFetcher.data;
+    if (res.ok) {
+      // Dashboard doesn't support a flash URL param, so just navigate
+      // — the deleted product disappearing from the list is the
+      // visual confirmation. Surfacing a toast would need a session
+      // mechanism that's out of scope for this PR.
+      navigate("/app");
+    } else {
+      setToastMessage(res.message ?? "Delete failed.");
+      setShowDeleteConfirm(false);
+    }
+  }, [deleteConfigFetcher.state, deleteConfigFetcher.data, loaderData.selectedProduct, navigate]);
 
   const submitPublish = useCallback(() => {
     if (!loaderData.selectedProduct || !loaderData.config.id) return;
@@ -1657,6 +1690,34 @@ export default function Sdl3dEditorRoute() {
                       onImport={handleImportConfig}
                     />
                   </Box>
+
+                  {/* Slice 8 PR #2 — Danger zone at the bottom of the
+                      Publish inspector. Mirrors the dashboard's
+                      per-row delete button (intent=deleteConfig); on
+                      success, navigates back to /app since the editor
+                      no longer has a config to render. */}
+                  {loaderData.config.id ? (
+                    <Box paddingBlockStart="400" borderBlockStartWidth="025" borderColor="border">
+                      <BlockStack gap="200">
+                        <Text as="p" variant="bodySm" fontWeight="semibold">
+                          Danger zone
+                        </Text>
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          Removes this product's config, hotspots, and capture history. Metafields are kept so you can recover by pulling from metafield later.
+                        </Text>
+                        <InlineStack>
+                          <Button
+                            tone="critical"
+                            variant="primary"
+                            onClick={() => setShowDeleteConfirm(true)}
+                            disabled={deleteConfigFetcher.state !== "idle"}
+                          >
+                            Delete this config
+                          </Button>
+                        </InlineStack>
+                      </BlockStack>
+                    </Box>
+                  ) : null}
                 </InspectorSection>
               </BlockStack>
             ) : (
@@ -1797,6 +1858,51 @@ export default function Sdl3dEditorRoute() {
               autoFocus
               autoComplete="off"
             />
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
+
+      {/* Slice 8 PR #2 — Delete-config confirmation. Destructive primary
+          action with the product title spelled out so the merchant
+          knows exactly what's going. */}
+      <Modal
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        title="Delete this config?"
+        size="small"
+        primaryAction={{
+          content: "Delete config",
+          destructive: true,
+          loading: deleteConfigFetcher.state !== "idle",
+          disabled: deleteConfigFetcher.state !== "idle",
+          onAction: () => {
+            if (!loaderData.selectedProduct) return;
+            deleteConfigFetcher.submit(
+              { intent: "deleteConfig", productGid: loaderData.selectedProduct.id },
+              { method: "post", action: "/api/sdl3d/config" },
+            );
+          },
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            disabled: deleteConfigFetcher.state !== "idle",
+            onAction: () => setShowDeleteConfirm(false),
+          },
+        ]}
+      >
+        <Modal.Section>
+          <BlockStack gap="200">
+            <Text as="p">
+              {`This permanently removes the 3D viewer config for `}
+              <Text as="span" fontWeight="semibold">
+                {loaderData.selectedProduct?.title ?? "this product"}
+              </Text>
+              {`, along with all hotspots and capture history.`}
+            </Text>
+            <Text as="p" tone="subdued" variant="bodySm">
+              The published metafields stay on the product so the storefront viewer keeps rendering until you clear them. You can recover the config later by pulling from metafield.
+            </Text>
           </BlockStack>
         </Modal.Section>
       </Modal>
