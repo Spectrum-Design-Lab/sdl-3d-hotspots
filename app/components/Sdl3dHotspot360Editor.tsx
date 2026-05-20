@@ -28,6 +28,8 @@ import { ChevronDownIcon, ChevronUpIcon } from "@shopify/polaris-icons";
 import {
   frameToDisplay,
   frameFromDisplay,
+  coordToDisplay,
+  coordFromDisplay,
   type Hotspot360,
   type Hotspot360Keyframe,
 } from "../lib/sdl3d-shared";
@@ -123,6 +125,74 @@ function FrameField({
       onBlur={commit}
       autoComplete="off"
     />
+  );
+}
+
+/**
+ * Per-keyframe X/Y coordinate input (Slice 7 PR #7). Storage is a 0–100
+ * float; the merchant sees an integer in [0, 1000] with no `%` suffix.
+ * Same draft-state pattern as FrameField so the merchant can backspace
+ * the input to empty without it snapping back. Commits on blur via
+ * coordFromDisplay's clamp; empty on blur reverts to the last committed
+ * value. Sync-from-prop is guarded by isFocusedRef so drag-driven
+ * updates from the canvas don't overwrite mid-edit text.
+ */
+function CoordField({
+  axis,
+  storedValue,
+  onCommit,
+}: {
+  axis: "X" | "Y";
+  storedValue: number;
+  onCommit: (storedValue: number) => void;
+}) {
+  const displayValue = coordToDisplay(storedValue);
+  const [draft, setDraft] = useState<string>(String(displayValue));
+  const isFocusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isFocusedRef.current) setDraft(String(displayValue));
+  }, [displayValue]);
+
+  function commit() {
+    isFocusedRef.current = false;
+    if (draft === "") {
+      setDraft(String(displayValue));
+      return;
+    }
+    const parsed = Number(draft);
+    if (!Number.isFinite(parsed)) {
+      setDraft(String(displayValue));
+      return;
+    }
+    const next = coordFromDisplay(parsed);
+    if (!Number.isFinite(next)) {
+      setDraft(String(displayValue));
+      return;
+    }
+    onCommit(next);
+    setDraft(String(coordToDisplay(next)));
+  }
+
+  return (
+    <div style={{ width: 96 }}>
+      <TextField
+        label={`${axis} coordinate`}
+        labelHidden
+        type="number"
+        min={0}
+        max={1000}
+        step={1}
+        prefix={axis}
+        value={draft}
+        onChange={setDraft}
+        onFocus={() => {
+          isFocusedRef.current = true;
+        }}
+        onBlur={commit}
+        autoComplete="off"
+      />
+    </div>
   );
 }
 
@@ -458,7 +528,11 @@ export function Sdl3dHotspot360Editor({
                       </BlockStack>
                     </InlineStack>
 
-                    {/* Keyframes section */}
+                    {/* Keyframes section — PR #7 swaps the read-only
+                        `x: 45.2% y: 62.1%` readout for typed X/Y inputs
+                        in [0, 1000]. Drag updates the storage 0–100 float
+                        directly; CoordField re-syncs via isFocusedRef so
+                        drag-driven changes don't fight the typed draft. */}
                     <BlockStack gap="200">
                       <InlineStack align="space-between" blockAlign="center">
                         <Text as="span" variant="bodyMd" fontWeight="semibold">
@@ -477,28 +551,39 @@ export function Sdl3dHotspot360Editor({
                         </Text>
                       ) : (
                         <BlockStack gap="100">
+                          <Text as="p" tone="subdued" variant="bodySm">
+                            X / Y: 0 = top-left edge, 1000 = bottom-right edge.
+                          </Text>
                           {hotspot.keyframes.map((kf) => (
                             <InlineStack
                               key={kf.frame}
                               gap="200"
                               blockAlign="center"
                               align="space-between"
+                              wrap={false}
                             >
-                              <InlineStack gap="200" blockAlign="center">
-                                <Text as="span" variant="bodySm" fontWeight="semibold">
-                                  {`Frame ${frameToDisplay(kf.frame)}`}
-                                </Text>
-                                <Text as="span" tone="subdued" variant="bodySm">
-                                  {`x: ${kf.x.toFixed(1)}% y: ${kf.y.toFixed(1)}%`}
-                                </Text>
+                              <Text as="span" variant="bodySm" fontWeight="semibold">
+                                {`Frame ${frameToDisplay(kf.frame)}`}
+                              </Text>
+                              <InlineStack gap="100" blockAlign="center" wrap={false}>
+                                <CoordField
+                                  axis="X"
+                                  storedValue={kf.x}
+                                  onCommit={(x) => addKeyframe(hotspot.id, kf.frame, x, kf.y)}
+                                />
+                                <CoordField
+                                  axis="Y"
+                                  storedValue={kf.y}
+                                  onCommit={(y) => addKeyframe(hotspot.id, kf.frame, kf.x, y)}
+                                />
+                                <Button
+                                  size="micro"
+                                  variant="plain"
+                                  onClick={() => removeKeyframe(hotspot.id, kf.frame)}
+                                >
+                                  Remove
+                                </Button>
                               </InlineStack>
-                              <Button
-                                size="micro"
-                                variant="plain"
-                                onClick={() => removeKeyframe(hotspot.id, kf.frame)}
-                              >
-                                Remove
-                              </Button>
                             </InlineStack>
                           ))}
                         </BlockStack>

@@ -8,6 +8,8 @@ import {
   defaultViewerSettings,
   normalizeViewerTypeToDb,
   viewerTypeDbToWire,
+  coordToDisplay,
+  coordFromDisplay,
 } from "./sdl3d-shared";
 import type { Hotspot360 } from "./sdl3d-shared";
 
@@ -331,5 +333,52 @@ describe("defaultViewerSettings", () => {
     expect(defaultViewerSettings.exposure).toBe(1);
     expect(defaultViewerSettings.rotationMode).toBe("free");
     expect(defaultViewerSettings.hotspotStyle).toBe("card");
+  });
+});
+
+describe("coordToDisplay / coordFromDisplay (Slice 7 PR #7)", () => {
+  it("scales storage [0, 100] to display [0, 1000]", () => {
+    expect(coordToDisplay(0)).toBe(0);
+    expect(coordToDisplay(50)).toBe(500);
+    expect(coordToDisplay(100)).toBe(1000);
+  });
+
+  it("rounds fractional storage to nearest display integer", () => {
+    expect(coordToDisplay(51.2)).toBe(512);
+    expect(coordToDisplay(0.05)).toBe(1);
+    expect(coordToDisplay(99.95)).toBe(1000);
+  });
+
+  it("clamps out-of-range storage to [0, 1000]", () => {
+    expect(coordToDisplay(-5)).toBe(0);
+    expect(coordToDisplay(150)).toBe(1000);
+  });
+
+  it("treats non-finite storage as 0 (defensive — should never happen)", () => {
+    expect(coordToDisplay(Number.NaN)).toBe(0);
+    expect(coordToDisplay(Infinity)).toBe(0);
+    expect(coordToDisplay(-Infinity)).toBe(0);
+  });
+
+  it("scales display [0, 1000] to storage [0, 100]", () => {
+    expect(coordFromDisplay(0)).toBe(0);
+    expect(coordFromDisplay(500)).toBe(50);
+    expect(coordFromDisplay(1000)).toBe(100);
+  });
+
+  it("clamps out-of-range display to [0, 100]", () => {
+    expect(coordFromDisplay(-5)).toBe(0);
+    expect(coordFromDisplay(1500)).toBe(100);
+  });
+
+  it("returns NaN for non-finite display (mid-edit / cleared field)", () => {
+    expect(coordFromDisplay(Number.NaN)).toBeNaN();
+  });
+
+  it("round-trip is exact at boundary integers", () => {
+    for (const display of [0, 1, 250, 500, 999, 1000]) {
+      const stored = coordFromDisplay(display);
+      expect(coordToDisplay(stored)).toBe(display);
+    }
   });
 });

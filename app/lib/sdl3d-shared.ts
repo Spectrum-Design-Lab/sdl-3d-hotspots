@@ -133,6 +133,28 @@ export function frameFromDisplay(display: number, frameCount: number): number {
 }
 
 /**
+ * Keyframe X/Y coordinate display helpers (Slice 7 PR #5/PR #7). Storage
+ * stays as 0–100 floats (percentages without the %); the merchant-facing
+ * UI is an integer in [0, 1000], no unit suffix. The 10× multiplier gives
+ * 1001 stops instead of 101 — single-pixel-feeling precision without
+ * committing to resolution-dependent pixel coords.
+ */
+export function coordToDisplay(stored: number): number {
+  if (!Number.isFinite(stored)) return 0;
+  return Math.max(0, Math.min(1000, Math.round(stored * 10)));
+}
+
+/**
+ * Convert a typed coord (0–1000 integer) back to storage (0–100 float).
+ * NaN passes through unchanged so callers can short-circuit on
+ * cleared / mid-edit input — same pattern as frameFromDisplay.
+ */
+export function coordFromDisplay(display: number): number {
+  if (!Number.isFinite(display)) return Number.NaN;
+  return Math.max(0, Math.min(100, display / 10));
+}
+
+/**
  * Detect viewer type from file extension.
  * GLB/GLTF -> MODEL_3D, images -> IMAGE_360
  */
