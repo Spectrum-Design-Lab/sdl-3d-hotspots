@@ -82,6 +82,8 @@ export async function action({ request }: ActionFunctionArgs) {
         return handleDelete(shop, formData);
       case "rename":
         return handleRename(shop, formData);
+      case "updateHotspots":
+        return handleUpdateHotspots(shop, formData);
       default:
         return error("Unknown preset intent.");
     }
@@ -143,4 +145,56 @@ async function handleRename(shop: { id: string }, formData: FormData) {
     data: { name: newName },
   });
   return ok("Preset renamed.");
+}
+
+/**
+ * Slice 8 PR #3 — replace the editable hotspot fields (title/body/color)
+ * for a preset, sourced from the Presets-page Edit Modal. The caller
+ * submits ONE of hotspotsJson / hotspotsJson360 depending on the
+ * preset's viewerType. We validate it's a JSON array and update only
+ * that column; the other is untouched.
+ */
+async function handleUpdateHotspots(shop: { id: string }, formData: FormData) {
+  const presetId = String(formData.get("presetId") || "");
+  if (!presetId) return error("Missing preset ID.");
+
+  const hotspotsJson = formData.get("hotspotsJson");
+  const hotspotsJson360 = formData.get("hotspotsJson360");
+
+  if (hotspotsJson == null && hotspotsJson360 == null) {
+    return error("No hotspots payload provided.");
+  }
+
+  // Confirm the preset belongs to this shop before any write.
+  const existing = await prisma.preset.findFirst({
+    where: { id: presetId, shopId: shop.id },
+    select: { id: true },
+  });
+  if (!existing) return error("Preset not found.", 404);
+
+  const data: { hotspotsJson?: string; hotspotsJson360?: string } = {};
+  if (typeof hotspotsJson === "string") {
+    try {
+      const parsed = JSON.parse(hotspotsJson);
+      if (!Array.isArray(parsed)) return error("hotspotsJson must be a JSON array.");
+    } catch {
+      return error("hotspotsJson is not valid JSON.");
+    }
+    data.hotspotsJson = hotspotsJson;
+  }
+  if (typeof hotspotsJson360 === "string") {
+    try {
+      const parsed = JSON.parse(hotspotsJson360);
+      if (!Array.isArray(parsed)) return error("hotspotsJson360 must be a JSON array.");
+    } catch {
+      return error("hotspotsJson360 is not valid JSON.");
+    }
+    data.hotspotsJson360 = hotspotsJson360;
+  }
+
+  await prisma.preset.update({
+    where: { id: presetId },
+    data,
+  });
+  return ok("Preset updated.");
 }
