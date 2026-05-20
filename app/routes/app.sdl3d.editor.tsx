@@ -1474,11 +1474,6 @@ export default function Sdl3dEditorRoute() {
 
                     {viewerType === "MODEL_3D" ? (
                       <>
-                        <ModelInlineSearch
-                          files={allModelFiles}
-                          selectedGid={loaderData.config.modelFileShopifyGid}
-                          onSelect={(gid) => handleModelSelect([gid])}
-                        />
                         <FileTriggerCard
                           title="Model file"
                           name={selectedModelFile?.name ?? "No model selected"}
@@ -2084,106 +2079,6 @@ function InspectorSection({
         </Box>
       </Collapsible>
     </Card>
-  );
-}
-
-/**
- * Slice 7 PR #3a — inline 3D model search.
- *
- * TextField that types-to-filter the shop's loaded GLB files. Selecting a
- * result writes the GID without opening the full FileBrowserModal. The
- * Browse trigger below still exists for exploratory selection + uploads.
- *
- * Only filters what the loader returned (first page of MODEL3D files);
- * not a server-side search. For shops with > 50 models the merchant
- * still uses Browse for unfiltered access. Acceptable trade-off — the
- * inline path is for "I know the filename" cases.
- */
-function ModelInlineSearch({
-  files,
-  selectedGid,
-  onSelect,
-}: {
-  files: Array<{ id: string; name: string; previewUrl: string | null; fileStatus: string }>;
-  selectedGid: string;
-  onSelect: (gid: string) => void;
-}) {
-  const [query, setQuery] = useState("");
-
-  const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
-    return files
-      .filter((f) => f.name.toLowerCase().includes(q) && f.id !== selectedGid)
-      .slice(0, 6);
-  }, [files, query, selectedGid]);
-
-  return (
-    <BlockStack gap="200">
-      <TextField
-        label="Search models"
-        labelHidden
-        placeholder="Type to search loaded models…"
-        value={query}
-        onChange={setQuery}
-        autoComplete="off"
-        clearButton
-        onClearButtonClick={() => setQuery("")}
-      />
-      {matches.length > 0 ? (
-        <Box
-          background="bg-surface-secondary"
-          borderRadius="200"
-          padding="200"
-        >
-          <BlockStack gap="100">
-            {matches.map((file) => (
-              <button
-                key={file.id}
-                type="button"
-                onClick={() => {
-                  onSelect(file.id);
-                  setQuery("");
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "6px 8px",
-                  border: 0,
-                  background: "transparent",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  width: "100%",
-                  borderRadius: "var(--p-border-radius-100)",
-                }}
-              >
-                {file.previewUrl ? (
-                  <img
-                    src={file.previewUrl}
-                    alt=""
-                    style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4 }}
-                  />
-                ) : (
-                  <span style={{ width: 28, textAlign: "center" }}>📦</span>
-                )}
-                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {file.name}
-                </span>
-                <Text as="span" variant="bodySm" tone="subdued">
-                  {file.fileStatus}
-                </Text>
-              </button>
-            ))}
-          </BlockStack>
-        </Box>
-      ) : null}
-      {query.trim() && matches.length === 0 ? (
-        <Text as="p" variant="bodySm" tone="subdued">
-          No loaded models match. Click Browse below to search all files.
-        </Text>
-      ) : null}
-    </BlockStack>
   );
 }
 
