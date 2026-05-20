@@ -242,12 +242,17 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   border-radius: var(--sdl-radius-lg);
   overflow: hidden;
   background: #0b1020;
-  min-height: 480px;
+  /* Cap to viewport on small screens so the editor doesn't push the
+     bottom of the canvas off the visible area. Plain min-height of
+     480px overflowed on 14" laptops at 768px viewport height. */
+  min-height: min(480px, 60dvh);
 }
 
 .sdl-preview__viewer {
   width: 100%;
-  height: 520px;
+  /* 520px on desktops; clamped to 70% of viewport on smaller screens
+     so the model-viewer canvas stays fully visible. */
+  height: min(520px, 70dvh);
   background: #0b1020;
 }
 
@@ -257,7 +262,7 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 480px;
+  min-height: min(480px, 60dvh);
 }
 
 /* ── Floating Toolbar ── */
@@ -942,6 +947,11 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   position: relative;
   width: 100%;
   aspect-ratio: 4 / 3;
+  /* Without this, a wide editor column computes a 700–900px tall
+     viewport that overflows smaller laptop screens. Cap at 70% of
+     visible viewport height; `object-fit: contain` inside keeps the
+     image proportions, accepting wider letterbox for portrait products. */
+  max-height: 70dvh;
   overflow: hidden;
   cursor: grab;
 }
