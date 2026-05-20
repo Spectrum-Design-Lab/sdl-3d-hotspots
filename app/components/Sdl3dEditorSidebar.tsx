@@ -1,29 +1,18 @@
 /**
  * Editor's Setup wizard sidebar — Polaris migration (Slice 5C PR #5b).
- *
- * Renders the 5-step "Setup" navigator (Product / Media / Viewer / Hotspots
- * / Publish) inside the editor's left column. Clicking a step focuses the
- * relevant inspector tab in the parent route.
- *
- * UX upgrades:
- * - ProgressBar quantifies how close a product is to publish-ready (N of 5
- *   steps in "done" status). Merchants can scan completion at a glance.
- * - ActionList replaces the bespoke step buttons, giving keyboard nav,
- *   focus rings, and active-item styling for free.
- * - Polaris Icons replace the glyph strings (✓ / ○ / !) — CheckIcon,
- *   CircleIcon, AlertCircleIcon mapped from StepStatus.
- * - Validation blockers move from a muted in-card list to a Polaris Banner
- *   with tone="critical", which is the canonical pattern for blocking
- *   errors in Shopify admin.
- * - Empty state (no product selected) is now a proper Polaris EmptyState.
+ * Slice 7 PR #4: absorbs the bottom-strip "Ready to publish" banner — the
+ * Publish step now owns its own itemized issue list with deep-link actions
+ * into the inspector tab that owns each field.
  */
 import { useMemo } from "react";
 import {
   ActionList,
   BlockStack,
   Banner,
+  Button,
   Card,
   EmptyState,
+  InlineStack,
   ProgressBar,
   Text,
 } from "@shopify/polaris";
@@ -58,12 +47,6 @@ export interface SidebarLoaderData {
   };
 }
 
-export interface SidebarValidation {
-  isPublishReady: boolean;
-  errors: string[];
-  warnings: string[];
-}
-
 export type StepId = "product" | "media" | "viewer" | "hotspots" | "publish";
 export type StepStatus = "done" | "todo" | "warn";
 
@@ -73,13 +56,21 @@ export interface Step {
   status: StepStatus;
 }
 
+export interface ValidationIssue {
+  id: string;
+  kind: "error" | "warning";
+  message: string;
+  jumpLabel: string | null;
+  onJump: (() => void) | null;
+}
+
 interface Sdl3dEditorSidebarProps {
   loaderData: SidebarLoaderData;
-  validation: SidebarValidation;
   readyTone: Tone;
   steps: Step[];
   currentStep: StepId | null;
   onStepClick: (id: StepId) => void;
+  validationIssues: ValidationIssue[];
 }
 
 function iconForStatus(status: StepStatus) {
@@ -96,11 +87,15 @@ function iconForStatus(status: StepStatus) {
 
 export function Sdl3dEditorSidebar({
   loaderData,
-  validation,
   steps,
   currentStep,
   onStepClick,
+  validationIssues,
 }: Sdl3dEditorSidebarProps) {
+  const errorIssues = validationIssues.filter((i) => i.kind === "error");
+  const warningIssues = validationIssues.filter((i) => i.kind === "warning");
+  const hasErrors = errorIssues.length > 0;
+  const hasWarnings = warningIssues.length > 0;
   // Completion percentage drives the ProgressBar. We count steps in "done"
   // status only — "warn" and "todo" both register as incomplete.
   const completionPct = useMemo(() => {
@@ -170,17 +165,43 @@ export function Sdl3dEditorSidebar({
         </BlockStack>
       </Card>
 
-      {validation.errors.length > 0 ? (
-        <Banner tone="critical" title="Resolve before publish">
-          <ul style={{ paddingLeft: 18, margin: 0 }}>
-            {validation.errors.map((error) => (
-              <li key={error}>
-                <Text as="span" variant="bodySm">
-                  {error}
+      {/* PR #4: itemized publish blockers, scoped to the Publish step. Each
+          issue carries a deep-link button into the inspector tab that owns
+          the field. Replaces the middle-column bottom banner so merchants
+          read "what's left" in one place (here). */}
+      {hasErrors || hasWarnings ? (
+        <Banner
+          tone={hasErrors ? "critical" : "warning"}
+          title={
+            hasErrors
+              ? `Resolve ${errorIssues.length} issue${errorIssues.length === 1 ? "" : "s"} before publishing${hasWarnings ? ` (and ${warningIssues.length} warning${warningIssues.length === 1 ? "" : "s"})` : ""}`
+              : `${warningIssues.length} warning${warningIssues.length === 1 ? "" : "s"}`
+          }
+        >
+          <BlockStack gap="100">
+            {[...errorIssues, ...warningIssues].map((issue) => (
+              <InlineStack
+                key={issue.id}
+                gap="200"
+                align="space-between"
+                blockAlign="center"
+                wrap={false}
+              >
+                <Text
+                  as="span"
+                  variant="bodySm"
+                  tone={issue.kind === "warning" ? "subdued" : undefined}
+                >
+                  {issue.message}
                 </Text>
-              </li>
+                {issue.jumpLabel && issue.onJump ? (
+                  <Button variant="plain" size="micro" onClick={issue.onJump}>
+                    Jump to {issue.jumpLabel}
+                  </Button>
+                ) : null}
+              </InlineStack>
             ))}
-          </ul>
+          </BlockStack>
         </Banner>
       ) : null}
     </BlockStack>

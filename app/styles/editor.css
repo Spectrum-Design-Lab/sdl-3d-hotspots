@@ -130,16 +130,6 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   flex-wrap: wrap;
 }
 
-/* ── Compact bottom strip ── */
-/* PR #5c: container for the Polaris Banner that replaces the bespoke
-   two-span status strip. Banner owns its own background, border, and
-   spacing — the wrapper just pins it to the bottom of the editor
-   flex column and keeps the existing space allocation. */
-.sdl-editor__bottombar {
-  flex-shrink: 0;
-}
-
-
 /* ── Grid Layout (fills viewport, columns scroll internally) ── */
 .sdl-editor__grid {
   flex: 1;

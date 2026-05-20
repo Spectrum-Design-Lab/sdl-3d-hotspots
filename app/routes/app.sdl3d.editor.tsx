@@ -2,7 +2,6 @@ import { useBlocker, useFetcher, useLoaderData, useRevalidator, useRouteError, i
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
-  Banner,
   BlockStack,
   Box,
   Button,
@@ -46,7 +45,12 @@ import {
 } from "../components/Sdl3dHotspotEditor";
 import { Sdl3dEditorPreview } from "../components/Sdl3dEditorPreview";
 import { Sdl3dViewerSettingsEditor } from "../components/Sdl3dViewerSettingsEditor";
-import { Sdl3dEditorSidebar, type Step, type StepId } from "../components/Sdl3dEditorSidebar";
+import {
+  Sdl3dEditorSidebar,
+  type Step,
+  type StepId,
+  type ValidationIssue,
+} from "../components/Sdl3dEditorSidebar";
 import { Sdl3dImageSequencePreview } from "../components/Sdl3dImageSequencePreview";
 import {
   Sdl3dHotspot360Editor,
@@ -1255,6 +1259,33 @@ export default function Sdl3dEditorRoute() {
     }
   };
 
+  // PR #4 — itemized publish blockers feed the sidebar's Publish step.
+  // Each issue resolves the inspector tab that owns the field via the
+  // existing categorize → tabLabel pipeline, with the jump action wired
+  // straight to setRightTab (no intermediate handler in the sidebar).
+  const validationIssues: ValidationIssue[] = [
+    ...validation.errors.map<ValidationIssue>((message, i) => {
+      const tab = categorizeValidationMessage(message);
+      return {
+        id: `err-${i}-${message}`,
+        kind: "error",
+        message,
+        jumpLabel: tab ? tabLabel(tab) : null,
+        onJump: tab ? () => setRightTab(tab) : null,
+      };
+    }),
+    ...validation.warnings.map<ValidationIssue>((message, i) => {
+      const tab = categorizeValidationMessage(message);
+      return {
+        id: `warn-${i}-${message}`,
+        kind: "warning",
+        message,
+        jumpLabel: tab ? tabLabel(tab) : null,
+        onJump: tab ? () => setRightTab(tab) : null,
+      };
+    }),
+  ];
+
 
   return (
     <div className="sdl-editor">
@@ -1364,11 +1395,11 @@ export default function Sdl3dEditorRoute() {
           <aside className="sdl-editor__sidebar">
             <Sdl3dEditorSidebar
               loaderData={loaderData}
-              validation={validation}
               readyTone={readyTone}
               steps={steps}
               currentStep={currentStep}
               onStepClick={handleStepClick}
+              validationIssues={validationIssues}
             />
           </aside>
 
@@ -1643,16 +1674,6 @@ export default function Sdl3dEditorRoute() {
           </aside>
         </div>
 
-        {loaderData.selectedProduct ? (
-          <div className="sdl-editor__bottombar">
-            <InspectorStatusBanner
-              validation={validation}
-              isDirty={isDirty}
-              publishDisabled={publishDisabled}
-              onJumpTo={(tab) => setRightTab(tab)}
-            />
-          </div>
-        ) : null}
       </div>
 
       {/* ── File / Product Browser Modals ── */}
@@ -1813,97 +1834,6 @@ function tabLabel(tab: RightTab): string {
     case "advanced":
       return "Publish";
   }
-}
-
-/**
- * Sticky bottom-bar status banner for the editor. Replaces the old two-span
- * `.sdl-editor__bottombar`. Slice 5C PR #5c.
- *
- * UX win: validation issues are itemized inline (was a single count). Each
- * error/warning gets a "Jump to <section>" deep-link that opens the
- * inspector panel that owns the field, so merchants can act on the message
- * without scanning the inspector.
- */
-function InspectorStatusBanner({
-  validation,
-  isDirty,
-  publishDisabled,
-  onJumpTo,
-}: {
-  validation: { errors: string[]; warnings: string[]; isPublishReady: boolean };
-  isDirty: boolean;
-  publishDisabled: boolean;
-  onJumpTo: (tab: RightTab) => void;
-}) {
-  const hasErrors = validation.errors.length > 0;
-  const hasWarnings = validation.warnings.length > 0;
-
-  if (!hasErrors && !hasWarnings) {
-    return (
-      <Banner
-        tone={publishDisabled ? "info" : "success"}
-        title={
-          publishDisabled
-            ? isDirty
-              ? "Save changes before publishing"
-              : "Almost ready to publish"
-            : "Ready to publish"
-        }
-      >
-        <Text as="p" variant="bodySm">
-          {publishDisabled
-            ? isDirty
-              ? "You have unsaved changes. Save the draft, then publish."
-              : "No issues detected. Click Publish in the top bar to push to the storefront."
-            : "No issues detected. Click Publish in the top bar to push to the storefront."}
-        </Text>
-      </Banner>
-    );
-  }
-
-  return (
-    <Banner
-      tone={hasErrors ? "critical" : "warning"}
-      title={
-        hasErrors
-          ? `Resolve ${validation.errors.length} issue${validation.errors.length === 1 ? "" : "s"} before publishing${hasWarnings ? ` (and ${validation.warnings.length} warning${validation.warnings.length === 1 ? "" : "s"})` : ""}`
-          : `${validation.warnings.length} warning${validation.warnings.length === 1 ? "" : "s"}`
-      }
-    >
-      <BlockStack gap="100">
-        {validation.errors.map((err) => {
-          const tab = categorizeValidationMessage(err);
-          return (
-            <InlineStack key={`err-${err}`} gap="200" align="space-between" blockAlign="center" wrap={false}>
-              <Text as="span" variant="bodySm">
-                {err}
-              </Text>
-              {tab ? (
-                <Button variant="plain" size="micro" onClick={() => onJumpTo(tab)}>
-                  Jump to {tabLabel(tab)}
-                </Button>
-              ) : null}
-            </InlineStack>
-          );
-        })}
-        {validation.warnings.map((warn) => {
-          const tab = categorizeValidationMessage(warn);
-          return (
-            <InlineStack key={`warn-${warn}`} gap="200" align="space-between" blockAlign="center" wrap={false}>
-              <Text as="span" variant="bodySm" tone="subdued">
-                {warn}
-              </Text>
-              {tab ? (
-                <Button variant="plain" size="micro" onClick={() => onJumpTo(tab)}>
-                  Jump to {tabLabel(tab)}
-                </Button>
-              ) : null}
-            </InlineStack>
-          );
-        })}
-      </BlockStack>
-    </Banner>
-  );
 }
 
 /**
