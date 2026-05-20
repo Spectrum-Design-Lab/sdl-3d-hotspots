@@ -20,6 +20,7 @@ import {
   BlockStack,
   Box,
   Button,
+  ButtonGroup,
   Card,
   Collapsible,
   EmptyState,
@@ -241,7 +242,7 @@ export default function PresetsRoute() {
                   </EmptyState>
                 </Box>
               ) : (
-                <BlockStack gap="0">
+                <BlockStack>
                   <Box padding="300" borderBlockEndWidth="025" borderColor="border">
                     <InlineStack gap="200" blockAlign="center">
                       <Text as="span" variant="bodySm" fontWeight="medium">
