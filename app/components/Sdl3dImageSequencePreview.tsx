@@ -336,14 +336,20 @@ export function Sdl3dImageSequencePreview({
           </div>
         )}
 
-        {/* Render visible hotspots */}
+        {/* Render visible hotspots — PR #6 wrap-aware: pass frameCount so
+            hotspots with visibleFrameStart > visibleFrameEnd interpret the
+            range as "wraps around the seam" and interpolate across it. */}
         {hotspots
-          .filter((h) => isHotspot360Visible(h, currentFrame))
+          .filter((h) => isHotspot360Visible(h, currentFrame, frameCount))
           .map((hotspot) => {
+            const wraps = hotspot.visibleFrameStart > hotspot.visibleFrameEnd;
             const isDragTarget = isDraggingHotspot && hotspotDragRef.current?.hotspotId === hotspot.id;
             const pos = isDragTarget && dragPreviewPos
               ? dragPreviewPos
-              : interpolateHotspotPosition(hotspot.keyframes, currentFrame);
+              : interpolateHotspotPosition(hotspot.keyframes, currentFrame, {
+                  wrap: wraps,
+                  totalFrames: frameCount,
+                });
             if (!pos) return null;
 
             const isSelected = hotspot.id === selectedHotspotId;

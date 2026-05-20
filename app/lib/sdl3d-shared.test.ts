@@ -67,6 +67,67 @@ describe("interpolateHotspotPosition", () => {
     expect(result!.x).toBeCloseTo(27.5, 1);
     expect(result!.y).toBeCloseTo(37.5, 1);
   });
+
+  // Slice 7 PR #6 — wraparound
+  describe("with wrap option", () => {
+    const wrap = { wrap: true, totalFrames: 72 };
+    // Two keyframes spanning the wrap seam: kf at frame 5 (x=100) and
+    // kf at frame 70 (x=0). The wrap path goes 70 → 71 → 0 → 5 (span=7).
+    const wrapKfs = [
+      { frame: 5, x: 100, y: 100 },
+      { frame: 70, x: 0, y: 0 },
+    ];
+
+    it("returns last keyframe exactly at last.frame", () => {
+      expect(interpolateHotspotPosition(wrapKfs, 70, wrap)).toEqual({ x: 0, y: 0 });
+    });
+
+    it("returns first keyframe exactly at first.frame", () => {
+      expect(interpolateHotspotPosition(wrapKfs, 5, wrap)).toEqual({ x: 100, y: 100 });
+    });
+
+    it("interpolates 1/7 of the way past last on frame 71", () => {
+      const result = interpolateHotspotPosition(wrapKfs, 71, wrap);
+      expect(result).not.toBeNull();
+      expect(result!.x).toBeCloseTo(100 / 7, 2);
+      expect(result!.y).toBeCloseTo(100 / 7, 2);
+    });
+
+    it("interpolates across the seam — frame 0 is 2/7 along", () => {
+      const result = interpolateHotspotPosition(wrapKfs, 0, wrap);
+      expect(result).not.toBeNull();
+      expect(result!.x).toBeCloseTo((100 * 2) / 7, 2);
+      expect(result!.y).toBeCloseTo((100 * 2) / 7, 2);
+    });
+
+    it("interpolates across the seam — frame 3 is 5/7 along", () => {
+      const result = interpolateHotspotPosition(wrapKfs, 3, wrap);
+      expect(result).not.toBeNull();
+      expect(result!.x).toBeCloseTo((100 * 5) / 7, 2);
+      expect(result!.y).toBeCloseTo((100 * 5) / 7, 2);
+    });
+
+    it("single keyframe + wrap holds position across the range", () => {
+      const single = [{ frame: 50, x: 42, y: 42 }];
+      expect(interpolateHotspotPosition(single, 0, wrap)).toEqual({ x: 42, y: 42 });
+      expect(interpolateHotspotPosition(single, 50, wrap)).toEqual({ x: 42, y: 42 });
+      expect(interpolateHotspotPosition(single, 71, wrap)).toEqual({ x: 42, y: 42 });
+    });
+
+    it("no totalFrames falls through to linear behaviour", () => {
+      // Without totalFrames the wrap option is meaningless; existing
+      // clamp-before-first / clamp-after-last paths apply.
+      expect(interpolateHotspotPosition(wrapKfs, 0, { wrap: true })).toEqual({ x: 100, y: 100 });
+      expect(interpolateHotspotPosition(wrapKfs, 71, { wrap: true })).toEqual({ x: 0, y: 0 });
+    });
+
+    it("non-wrap call on the same keyframes regresses to clamp", () => {
+      // Existing callers without the option get the original behaviour
+      // verbatim — frame 0 clamps to first keyframe, frame 71 to last.
+      expect(interpolateHotspotPosition(wrapKfs, 0)).toEqual({ x: 100, y: 100 });
+      expect(interpolateHotspotPosition(wrapKfs, 71)).toEqual({ x: 0, y: 0 });
+    });
+  });
 });
 
 describe("isHotspot360Visible", () => {
@@ -98,6 +159,38 @@ describe("isHotspot360Visible", () => {
 
   it("not visible when visible=false", () => {
     expect(isHotspot360Visible({ ...hotspot, visible: false }, 10)).toBe(false);
+  });
+
+  // Slice 7 PR #6 — wraparound visibility
+  describe("with wraparound range (start > end)", () => {
+    const wrap: Hotspot360 = {
+      ...hotspot,
+      visibleFrameStart: 70,
+      visibleFrameEnd: 5,
+    };
+
+    it("visible past start when totalFrames known", () => {
+      expect(isHotspot360Visible(wrap, 70, 72)).toBe(true);
+      expect(isHotspot360Visible(wrap, 71, 72)).toBe(true);
+    });
+
+    it("visible before end when totalFrames known", () => {
+      expect(isHotspot360Visible(wrap, 0, 72)).toBe(true);
+      expect(isHotspot360Visible(wrap, 5, 72)).toBe(true);
+    });
+
+    it("not visible in the gap between end and start", () => {
+      expect(isHotspot360Visible(wrap, 6, 72)).toBe(false);
+      expect(isHotspot360Visible(wrap, 35, 72)).toBe(false);
+      expect(isHotspot360Visible(wrap, 69, 72)).toBe(false);
+    });
+
+    it("without totalFrames degrades to the linear check (returns false)", () => {
+      // Legacy callers that don't know about wrap continue to read the
+      // inverted range as "invalid" — same as before PR #6.
+      expect(isHotspot360Visible(wrap, 0)).toBe(false);
+      expect(isHotspot360Visible(wrap, 71)).toBe(false);
+    });
   });
 });
 

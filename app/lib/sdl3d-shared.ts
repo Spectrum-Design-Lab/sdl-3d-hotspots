@@ -22,19 +22,45 @@ function catmullRom(p0: number, p1: number, p2: number, p3: number, t: number): 
   );
 }
 
+/**
+ * Slice 7 PR #6 — wraparound option. When `wrap` is set on a sequence with
+ * `totalFrames` and the requested frame is outside the [first, last]
+ * keyframe span, interpolate linearly from last → first along the shorter
+ * wrap path (e.g. last=70, first=5, totalFrames=72 → wrap span of 7
+ * frames). Catmull-Rom inside the linear keyframe span is unchanged;
+ * wrap segments stay linear (smoothing the wrap is a v2 if merchants
+ * notice the kink).
+ */
 export function interpolateHotspotPosition(
   keyframes: Hotspot360Keyframe[],
   frame: number,
+  opts?: { wrap?: boolean; totalFrames?: number },
 ): { x: number; y: number } | null {
   if (!keyframes.length) return null;
 
   const sorted = [...keyframes].sort((a, b) => a.frame - b.frame);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const totalFrames = opts?.totalFrames ?? 0;
+  const wrapMode = opts?.wrap === true && totalFrames > 0;
+
+  // Wrap-mode interpolation across the seam: frame is past the last
+  // keyframe or before the first → blend last → first via the shorter path.
+  // Single-keyframe degenerate case falls through to the clamp paths below
+  // and returns that keyframe's position, matching the linear behaviour.
+  if (wrapMode && sorted.length >= 2 && (frame > last.frame || frame < first.frame)) {
+    const span = totalFrames - last.frame + first.frame;
+    const offset = frame > last.frame ? frame - last.frame : totalFrames - last.frame + frame;
+    const t = span > 0 ? offset / span : 0;
+    return {
+      x: last.x + (first.x - last.x) * t,
+      y: last.y + (first.y - last.y) * t,
+    };
+  }
 
   // Before first keyframe or after last — clamp
-  if (frame <= sorted[0].frame) return { x: sorted[0].x, y: sorted[0].y };
-  if (frame >= sorted[sorted.length - 1].frame) {
-    return { x: sorted[sorted.length - 1].x, y: sorted[sorted.length - 1].y };
-  }
+  if (frame <= first.frame) return { x: first.x, y: first.y };
+  if (frame >= last.frame) return { x: last.x, y: last.y };
 
   // Find bracketing segment
   for (let i = 0; i < sorted.length - 1; i++) {
@@ -61,15 +87,27 @@ export function interpolateHotspotPosition(
   return null;
 }
 
+/**
+ * Slice 7 PR #6 — wraparound visibility. When the merchant sets
+ * `visibleFrameStart > visibleFrameEnd` on a sequence we know the length
+ * of, interpret the range as "wraps around the seam" (e.g. 70 → 5 means
+ * visible at frames 70..71, 0..5 on a 72-frame sequence). Without
+ * `totalFrames` the wrap is unknowable and we fall through to the linear
+ * check, which returns false for inverted ranges — matches the original
+ * behaviour.
+ */
 export function isHotspot360Visible(
   hotspot: Hotspot360,
   frame: number,
+  totalFrames?: number,
 ): boolean {
-  return (
-    hotspot.visible !== false &&
-    frame >= hotspot.visibleFrameStart &&
-    frame <= hotspot.visibleFrameEnd
-  );
+  if (hotspot.visible === false) return false;
+  const start = hotspot.visibleFrameStart;
+  const end = hotspot.visibleFrameEnd;
+  if (start > end && (totalFrames ?? 0) > 0) {
+    return frame >= start || frame <= end;
+  }
+  return frame >= start && frame <= end;
 }
 
 /**

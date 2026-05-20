@@ -12,6 +12,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import {
+  Badge,
   BlockStack,
   Box,
   Button,
@@ -309,9 +310,29 @@ export function Sdl3dHotspot360Editor({
               }}
               style={{ flexDirection: "column", alignItems: "stretch" }}
             >
-              {/* Row header (always visible) */}
-              <InlineStack align="space-between" blockAlign="center" wrap={false} gap="200">
-                <InlineStack gap="200" blockAlign="center" wrap={false}>
+              {/* Row header (always visible). Native flex divs instead of
+                  Polaris InlineStack so we can set min-width: 0 on the left
+                  (lets the title truncate instead of pushing the chevron to
+                  a new line — Slice 7 follow-up to the row Delete→chevron
+                  swap) and flex-shrink: 0 on the right (keyframes count +
+                  optional "wraps around" Badge + chevron always inline). */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "var(--p-space-200, 8px)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--p-space-200, 8px)",
+                    minWidth: 0,
+                    flex: "1 1 auto",
+                  }}
+                >
                   <input
                     type="checkbox"
                     className="sdl-hs-row__check"
@@ -326,23 +347,33 @@ export function Sdl3dHotspot360Editor({
                   >
                     {hotspot.sortOrder}
                   </span>
-                  <Text as="span" variant="bodyMd" fontWeight="semibold">
-                    {hotspot.title}
-                  </Text>
-                </InlineStack>
-                <InlineStack gap="200" blockAlign="center">
+                  <span style={{ minWidth: 0, flex: "1 1 auto" }}>
+                    <Text as="span" variant="bodyMd" fontWeight="semibold" truncate>
+                      {hotspot.title}
+                    </Text>
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--p-space-200, 8px)",
+                    flexShrink: 0,
+                  }}
+                >
+                  {hotspot.visibleFrameStart > hotspot.visibleFrameEnd ? (
+                    <Badge tone="info">Wraps around</Badge>
+                  ) : null}
                   <Text as="span" tone="subdued" variant="bodySm">
                     {`${hotspot.keyframes.length} keyframe${hotspot.keyframes.length === 1 ? "" : "s"}`}
                   </Text>
-                  {/* Expand affordance — the whole row is already clickable
-                      (toggles `expandedId` above); the chevron is the visual
-                      cue. Delete moved to bulk-only via the checkbox toolbar. */}
+                  {/* Expand affordance — whole row is already clickable. */}
                   <Icon
                     source={isExpanded ? ChevronUpIcon : ChevronDownIcon}
                     tone="subdued"
                   />
-                </InlineStack>
-              </InlineStack>
+                </div>
+              </div>
 
               {/* Expanded form */}
               <Collapsible

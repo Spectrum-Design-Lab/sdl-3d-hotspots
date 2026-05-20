@@ -1,4 +1,11 @@
-/* SDL 3D Hotspots — 360° Image Sequence Viewer */
+/* SDL 3D Hotspots — 360° Image Sequence Viewer
+ *
+ * IMPORTANT — parallel of app/lib/sdl3d-shared.ts. Both copies of `interp`
+ * and the visibility check need to evolve together. When `wrap` is true
+ * and `totalFrames` is supplied, the function blends last → first along
+ * the shorter wrap path (Slice 7 PR #6); without those args it behaves
+ * identically to the original linear/Catmull-Rom logic.
+ */
 (function () {
   var S = window._sdl3d;
   if (!S) return;
@@ -8,19 +15,35 @@
     return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);
   }
 
-  function interp(kf, frame) {
+  function interp(kf, frame, wrap, totalFrames) {
     if (!kf || !kf.length) return null;
     var sorted = kf.slice().sort(function (a, b) { return a.frame - b.frame; });
     var last = sorted.length - 1;
-    if (frame <= sorted[0].frame) return sorted[0];
-    if (frame >= sorted[last].frame) return sorted[last];
+    var first = sorted[0];
+    var lastKf = sorted[last];
+    var wrapMode = wrap === true && (totalFrames || 0) > 0;
+
+    if (wrapMode && sorted.length >= 2 && (frame > lastKf.frame || frame < first.frame)) {
+      var span = totalFrames - lastKf.frame + first.frame;
+      var offset = frame > lastKf.frame
+        ? frame - lastKf.frame
+        : totalFrames - lastKf.frame + frame;
+      var t = span > 0 ? offset / span : 0;
+      return {
+        x: lastKf.x + (first.x - lastKf.x) * t,
+        y: lastKf.y + (first.y - lastKf.y) * t,
+      };
+    }
+
+    if (frame <= first.frame) return first;
+    if (frame >= lastKf.frame) return lastKf;
     for (var j = 0; j < last; j++) {
       var a = sorted[j], b = sorted[j + 1];
       if (frame >= a.frame && frame <= b.frame) {
-        var t = (frame - a.frame) / (b.frame - a.frame);
-        if (sorted.length < 3) return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+        var t2 = (frame - a.frame) / (b.frame - a.frame);
+        if (sorted.length < 3) return { x: a.x + (b.x - a.x) * t2, y: a.y + (b.y - a.y) * t2 };
         var p0 = sorted[Math.max(j - 1, 0)], p3 = sorted[Math.min(j + 2, last)];
-        return { x: cr(p0.x, a.x, b.x, p3.x, t), y: cr(p0.y, a.y, b.y, p3.y, t) };
+        return { x: cr(p0.x, a.x, b.x, p3.x, t2), y: cr(p0.y, a.y, b.y, p3.y, t2) };
       }
     }
     return null;
@@ -162,10 +185,13 @@
 
     function updateHotspots() {
       hotspotEls.forEach(function (item) {
-        var p = interp(item.h.keyframes, cf);
-        var visible = item.h.visible !== false
-          && cf >= item.h.visibleFrameStart
-          && cf <= item.h.visibleFrameEnd;
+        var wraps = item.h.visibleFrameStart > item.h.visibleFrameEnd;
+        var p = interp(item.h.keyframes, cf, wraps, fc);
+        var visible = item.h.visible !== false && (
+          wraps
+            ? (cf >= item.h.visibleFrameStart || cf <= item.h.visibleFrameEnd)
+            : (cf >= item.h.visibleFrameStart && cf <= item.h.visibleFrameEnd)
+        );
         if (visible && p) {
           item.el.style.display = "";
           item.el.style.left = p.x + "%";
@@ -194,7 +220,18 @@
     var sbHost = R.closest(".sdl3d-block__body") || R.parentNode;
     if (mkSidebar) {
       var sb = mkSidebar(filteredForSidebar, function (h, i) {
-        var mid = Math.round(((h.visibleFrameStart || 0) + (h.visibleFrameEnd || 0)) / 2);
+        // PR #6 — wraparound-aware midpoint. For a wrap range (start > end)
+        // the midpoint goes through the seam: half-span past start, wrapped
+        // modulo total frames. Linear ranges keep the original average.
+        var s = h.visibleFrameStart || 0;
+        var e = h.visibleFrameEnd || 0;
+        var mid;
+        if (s > e && fc > 0) {
+          var span = fc - s + e;
+          mid = (s + Math.floor(span / 2)) % fc;
+        } else {
+          mid = Math.round((s + e) / 2);
+        }
         setFrame(mid);
         R.querySelectorAll(".sdl3d-360-hotspot.is-active").forEach(function (n) { n.classList.remove("is-active"); });
         if (hotspotEls[i]) hotspotEls[i].el.classList.add("is-active");
