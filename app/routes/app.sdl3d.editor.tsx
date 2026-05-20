@@ -1294,6 +1294,17 @@ export default function Sdl3dEditorRoute() {
                   label="Mode"
                   value={viewerType === "IMAGE_360" ? "360° Spin" : "3D Model"}
                 />
+                {/* Slice 7 PR #1 — moved from the inspector's first card.
+                    Single most-toggled control; belongs at the top where it's
+                    always one click away. Wired through the same `enabled`
+                    state the inspector toggle used, so autosave behavior is
+                    unchanged. */}
+                <Checkbox
+                  label="On storefront"
+                  labelHidden={false}
+                  checked={enabled}
+                  onChange={(checked) => setEnabled(checked)}
+                />
                 {loaderData.availableStorages.length > 1 ? (
                   <>
                     <Select
@@ -1513,28 +1524,8 @@ export default function Sdl3dEditorRoute() {
           <aside className="sdl-editor__inspector">
             {loaderData.selectedProduct ? (
               <BlockStack gap="300">
-                {/* Slice 5C PR #5c UX win — surface the storefront-visibility
-                    toggle as its own top card. It's the single most-toggled
-                    control in the editor; merchants shouldn't have to expand
-                    Media and scroll past file pickers to flip it. */}
-                <Card>
-                  <BlockStack gap="200">
-                    <Text as="h3" variant="headingSm">
-                      Storefront visibility
-                    </Text>
-                    <Checkbox
-                      label="Enabled on storefront"
-                      helpText={
-                        enabled
-                          ? "Viewer renders on the product page once published."
-                          : "Viewer is hidden on the product page even after publishing."
-                      }
-                      checked={enabled}
-                      onChange={(checked) => setEnabled(checked)}
-                    />
-                  </BlockStack>
-                </Card>
-
+                {/* Storefront-visibility toggle relocated to the topbar in
+                    Slice 7 PR #1; inspector starts with Media directly. */}
                 <InspectorSection
                   id="inspector-media"
                   title="Media"
