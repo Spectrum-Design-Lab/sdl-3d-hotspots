@@ -10,18 +10,20 @@
  * shared `.sdl-hs-row*` Polaris-token classes added in PR #5j, plus a
  * Polaris `Collapsible` for the per-row expanded detail.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BlockStack,
   Box,
   Button,
   ButtonGroup,
   Collapsible,
+  Icon,
   InlineStack,
   Select,
   Text,
   TextField,
 } from "@shopify/polaris";
+import { ChevronDownIcon, ChevronUpIcon } from "@shopify/polaris-icons";
 import {
   frameToDisplay,
   frameFromDisplay,
@@ -55,6 +57,72 @@ function blankHotspot360(index: number, frameCount: number): Hotspot360 {
     ctaLabel: null,
     ctaUrl: null,
   };
+}
+
+/**
+ * Numeric frame-index field with a local draft so the merchant can
+ * backspace past the last digit (e.g. `72` → `7` → empty → type `1`)
+ * without the input snapping back to the stored value mid-edit. Commits
+ * on blur via `frameFromDisplay`'s clamp; an empty value on blur reverts
+ * to the last committed value.
+ */
+function FrameField({
+  label,
+  storedValue,
+  frameCount,
+  onCommit,
+}: {
+  label: string;
+  storedValue: number;
+  frameCount: number;
+  onCommit: (storedValue: number) => void;
+}) {
+  const displayValue = frameToDisplay(storedValue);
+  const [draft, setDraft] = useState<string>(String(displayValue));
+  const isFocusedRef = useRef(false);
+
+  // Re-sync from props only when the user isn't editing (e.g. undo/redo or
+  // another row mutated state). Without the guard the typed draft would be
+  // overwritten on every parent rerender.
+  useEffect(() => {
+    if (!isFocusedRef.current) setDraft(String(displayValue));
+  }, [displayValue]);
+
+  function commit() {
+    isFocusedRef.current = false;
+    if (draft === "") {
+      setDraft(String(displayValue));
+      return;
+    }
+    const parsed = Number(draft);
+    if (!Number.isFinite(parsed)) {
+      setDraft(String(displayValue));
+      return;
+    }
+    const next = frameFromDisplay(parsed, frameCount);
+    if (!Number.isFinite(next)) {
+      setDraft(String(displayValue));
+      return;
+    }
+    onCommit(next);
+    setDraft(String(frameToDisplay(next)));
+  }
+
+  return (
+    <TextField
+      label={label}
+      type="number"
+      min={1}
+      max={Math.max(1, frameCount)}
+      value={draft}
+      onChange={setDraft}
+      onFocus={() => {
+        isFocusedRef.current = true;
+      }}
+      onBlur={commit}
+      autoComplete="off"
+    />
+  );
 }
 
 export function parseInitialHotspots360(json: string): Hotspot360[] {
@@ -122,13 +190,6 @@ export function Sdl3dHotspot360Editor({
     onChange([...hotspots, newHotspot]);
     onSelectHotspot(newHotspot.id);
     setExpandedId(newHotspot.id);
-  }
-
-  function removeHotspot(id: string) {
-    onChange(hotspots.filter((h) => h.id !== id));
-    if (selectedHotspotId === id) {
-      onSelectHotspot(null);
-    }
   }
 
   function updateHotspot(id: string, patch: Partial<Hotspot360>) {
@@ -271,22 +332,15 @@ export function Sdl3dHotspot360Editor({
                 </InlineStack>
                 <InlineStack gap="200" blockAlign="center">
                   <Text as="span" tone="subdued" variant="bodySm">
-                    {`${hotspot.keyframes.length} kf`}
+                    {`${hotspot.keyframes.length} keyframe${hotspot.keyframes.length === 1 ? "" : "s"}`}
                   </Text>
-                  {/* Wrap in a span so row-click selection doesn't fire when
-                      the Delete button is clicked. Polaris Button.onClick has
-                      no event arg, so the stopPropagation must live on a
-                      wrapping element. */}
-                  <span onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      size="micro"
-                      tone="critical"
-                      variant="plain"
-                      onClick={() => removeHotspot(hotspot.id)}
-                    >
-                      Delete
-                    </Button>
-                  </span>
+                  {/* Expand affordance — the whole row is already clickable
+                      (toggles `expandedId` above); the chevron is the visual
+                      cue. Delete moved to bulk-only via the checkbox toolbar. */}
+                  <Icon
+                    source={isExpanded ? ChevronUpIcon : ChevronDownIcon}
+                    tone="subdued"
+                  />
                 </InlineStack>
               </InlineStack>
 
@@ -316,41 +370,29 @@ export function Sdl3dHotspot360Editor({
                       multiline={2}
                       autoComplete="off"
                     />
-                    {/* PR #5 — display 1-indexed; storage stays 0-indexed.
-                        Empty string is a mid-edit state (merchant cleared
-                        the field to retype), not a value: skip the write
-                        so we don't snap to 0. */}
+                    {/* Display 1-indexed; storage stays 0-indexed. FrameField
+                        keeps a local draft so backspacing the last digit
+                        doesn't snap back to the stored value — commit happens
+                        on blur via frameFromDisplay's clamp. */}
                     <InlineStack gap="200" wrap={false}>
                       <Box width="100%">
-                        <TextField
+                        <FrameField
                           label="Visible from frame"
-                          type="number"
-                          min={1}
-                          max={Math.max(1, frameCount)}
-                          value={String(frameToDisplay(hotspot.visibleFrameStart))}
-                          onChange={(value) => {
-                            if (value === "") return;
-                            const stored = frameFromDisplay(Number(value), frameCount);
-                            if (!Number.isFinite(stored)) return;
-                            updateHotspot(hotspot.id, { visibleFrameStart: stored });
-                          }}
-                          autoComplete="off"
+                          storedValue={hotspot.visibleFrameStart}
+                          frameCount={frameCount}
+                          onCommit={(stored) =>
+                            updateHotspot(hotspot.id, { visibleFrameStart: stored })
+                          }
                         />
                       </Box>
                       <Box width="100%">
-                        <TextField
+                        <FrameField
                           label="Visible to frame"
-                          type="number"
-                          min={1}
-                          max={Math.max(1, frameCount)}
-                          value={String(frameToDisplay(hotspot.visibleFrameEnd))}
-                          onChange={(value) => {
-                            if (value === "") return;
-                            const stored = frameFromDisplay(Number(value), frameCount);
-                            if (!Number.isFinite(stored)) return;
-                            updateHotspot(hotspot.id, { visibleFrameEnd: stored });
-                          }}
-                          autoComplete="off"
+                          storedValue={hotspot.visibleFrameEnd}
+                          frameCount={frameCount}
+                          onCommit={(stored) =>
+                            updateHotspot(hotspot.id, { visibleFrameEnd: stored })
+                          }
                         />
                       </Box>
                     </InlineStack>
