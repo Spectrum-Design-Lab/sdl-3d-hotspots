@@ -57,8 +57,7 @@ import { useUndoRedo } from "../components/useUndoRedo";
 import { FileBrowserModal } from "../components/FileBrowserModal";
 import { ProductBrowserModal } from "../components/ProductBrowserModal";
 import { PresetBrowserModal, type PresetSummary } from "../components/PresetBrowserModal";
-import { Sdl3dRawCaptureUploader } from "../components/Sdl3dRawCaptureUploader";
-import { Sdl3dBucketFolderPicker } from "../components/Sdl3dBucketFolderPicker";
+import { Sdl3dMediaSourceModal } from "../components/Sdl3dMediaSourceModal";
 import type { Tone, RightTab } from "../components/Sdl3dEditorUI";
 
 
@@ -398,6 +397,11 @@ export default function Sdl3dEditorRoute() {
   const [showModelBrowser, setShowModelBrowser] = useState(false);
   const [showPosterBrowser, setShowPosterBrowser] = useState(false);
   const [showSequenceBrowser, setShowSequenceBrowser] = useState(false);
+  // Slice 7 PR #3b — unified 360° source Modal. The FileTriggerCard opens
+  // this; the legacy `showSequenceBrowser` (FileBrowserModal mode=sequence)
+  // is now only triggered from inside this Modal's "Browse Shopify Files"
+  // tab via the onOpenShopifyFilesBrowser callback.
+  const [showMediaSourceModal, setShowMediaSourceModal] = useState(false);
   const [showPresetBrowser, setShowPresetBrowser] = useState(false);
   const [showPresetSaveDialog, setShowPresetSaveDialog] = useState(false);
   const [presetSaveHotspots3d, setPresetSaveHotspots3d] = useState<EditableHotspot[]>([]);
@@ -1503,6 +1507,11 @@ export default function Sdl3dEditorRoute() {
                       </>
                     ) : (
                       <>
+                        {/* Slice 7 PR #3b — three sources collapsed into
+                            one entry point. The FileTriggerCard opens
+                            Sdl3dMediaSourceModal which has tabs for the
+                            CDN upload, Shopify Files browse, and CDN
+                            folder reuse paths. */}
                         <FileTriggerCard
                           title="360° Image Sequence"
                           name={
@@ -1510,31 +1519,11 @@ export default function Sdl3dEditorRoute() {
                               ? `${loaderData.config.frameCount} frames uploaded`
                               : "No frames uploaded"
                           }
-                          meta="Click to browse, upload images, or upload ZIP"
+                          meta="Click to upload or browse"
                           thumbUrl={null}
                           fallbackEmoji="📷"
-                          onClick={() => setShowSequenceBrowser(true)}
+                          onClick={() => setShowMediaSourceModal(true)}
                         />
-
-                        {loaderData.productGid && (
-                          <Sdl3dRawCaptureUploader
-                            productGid={loaderData.productGid}
-                            productConfigId={loaderData.config.id}
-                            initialCapture={loaderData.latestCapture}
-                            storageId={selectedStorageId || undefined}
-                            onCompleted={() => revalidator.revalidate()}
-                          />
-                        )}
-
-                        {loaderData.productGid && (
-                          <Sdl3dBucketFolderPicker
-                            productGid={loaderData.productGid}
-                            hasExistingFrames={loaderData.config.frameCount > 0}
-                            existingFrameCount={loaderData.config.frameCount}
-                            storageId={selectedStorageId || undefined}
-                            onCompleted={() => revalidator.revalidate()}
-                          />
-                        )}
 
                         <FileTriggerCard
                           title="Poster file"
@@ -1715,6 +1704,17 @@ export default function Sdl3dEditorRoute() {
             busy={isActionBusy}
             onZipUpload={handleZipUploadFile}
             zipProcessing={zipProcessing}
+          />
+          <Sdl3dMediaSourceModal
+            open={showMediaSourceModal}
+            onClose={() => setShowMediaSourceModal(false)}
+            productGid={loaderData.selectedProduct.id}
+            productConfigId={loaderData.config.id}
+            frameCount={loaderData.config.frameCount}
+            storageId={selectedStorageId || undefined}
+            latestCapture={loaderData.latestCapture}
+            onCompleted={() => revalidator.revalidate()}
+            onOpenShopifyFilesBrowser={() => setShowSequenceBrowser(true)}
           />
         </>
       )}

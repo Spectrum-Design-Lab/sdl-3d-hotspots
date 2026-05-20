@@ -88,6 +88,12 @@ type Props = {
    * never persisted across reloads. Slice 6 PR #3.
    */
   storageId?: string;
+  /**
+   * When true, render the body without the outer Card + heading wrapper so
+   * the component can be embedded inside another container (e.g. the
+   * unified Sdl3dMediaSourceModal's Upload tab in Slice 7 PR #3b).
+   */
+  embedded?: boolean;
   /** Optional initial capture state (e.g. an in-flight job from a previous session). */
   initialCapture?: {
     id: string;
@@ -149,6 +155,7 @@ export function Sdl3dRawCaptureUploader({
   onCompleted,
   storageSettingsHref = "/app/sdl3d/storage",
   storageId,
+  embedded = false,
   initialCapture = null,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -438,19 +445,22 @@ export function Sdl3dRawCaptureUploader({
       ? Math.round((state.loaded / state.total) * 100)
       : null;
 
-  return (
-    <Card>
-      <BlockStack gap="200">
-        <Text as="h3" variant="headingSm">
-          Raw captures (auto-process)
-        </Text>
-        <Text as="p" tone="subdued" variant="bodySm">
-          Upload a folder of raw turntable photos (or a .zip). The worker
-          samples them to 72 frames, converts to WebP, and writes the
-          resulting sequence to your bucket. Your bucket — never SDL&apos;s.
-        </Text>
+  const body = (
+    <BlockStack gap="200">
+      {!embedded ? (
+        <>
+          <Text as="h3" variant="headingSm">
+            Raw captures (auto-process)
+          </Text>
+          <Text as="p" tone="subdued" variant="bodySm">
+            Upload a folder of raw turntable photos (or a .zip). The worker
+            samples them to 72 frames, converts to WebP, and writes the
+            resulting sequence to your bucket. Your bucket — never SDL&apos;s.
+          </Text>
+        </>
+      ) : null}
 
-        <input
+      <input
           ref={inputRef}
           type="file"
           multiple
@@ -556,7 +566,8 @@ export function Sdl3dRawCaptureUploader({
             </Text>
           </Banner>
         ) : null}
-      </BlockStack>
-    </Card>
+    </BlockStack>
   );
+
+  return embedded ? body : <Card>{body}</Card>;
 }

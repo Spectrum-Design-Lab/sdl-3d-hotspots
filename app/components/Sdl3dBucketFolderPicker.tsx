@@ -1,14 +1,16 @@
 /**
  * Slice 6 PR #2 — Reuse existing bucket folders for 360°.
+ * Slice 7 PR #3b — refactored to be a body-only component that auto-fetches
+ * on mount. The unified Sdl3dMediaSourceModal owns the Modal chrome now.
  *
- * Modal picker that lists frame-bearing folders (≥24 image files) under the
- * shop's default storage bucket. Selecting one short-circuits the capture
- * pipeline and writes the resolved frame URLs directly into the product's
+ * Lists frame-bearing folders (≥24 image files) under the shop's selected
+ * storage bucket. Selecting one short-circuits the capture pipeline and
+ * writes the resolved frame URLs directly into the product's
  * imageSequenceJson.
  *
  * No `.server` imports — reachable from the editor route's JSX.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useFetcher } from "react-router";
 import {
   Badge,
@@ -18,7 +20,6 @@ import {
   Button,
   EmptyState,
   InlineStack,
-  Modal,
   ResourceItem,
   ResourceList,
   Spinner,
@@ -76,12 +77,10 @@ export function Sdl3dBucketFolderPicker({
   storageId,
   onCompleted,
 }: Props) {
-  const [open, setOpen] = useState(false);
   const listFetcher = useFetcher<ListResponse>();
   const useFetcherOne = useFetcher<UseResponse>();
 
-  const openPicker = useCallback(() => {
-    setOpen(true);
+  const refreshList = useCallback(() => {
     const fd: Record<string, string> = {
       intent: "listBucketFolders",
       prefix: "",
@@ -89,6 +88,11 @@ export function Sdl3dBucketFolderPicker({
     if (storageId) fd.storageId = storageId;
     listFetcher.submit(fd, { method: "post", action: "/api/sdl3d/storage" });
   }, [listFetcher, storageId]);
+
+  // Auto-fetch on mount + whenever storageId changes (e.g. merchant flips
+  // the topbar storage selector while this Modal tab is open).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { refreshList(); }, [storageId]);
 
   const handleUseFolder = useCallback(
     (folder: BucketFolder) => {
@@ -112,7 +116,6 @@ export function Sdl3dBucketFolderPicker({
     if (seenUseRef.current === useFetcherOne.data) return;
     seenUseRef.current = useFetcherOne.data;
     if (useFetcherOne.data.ok && typeof useFetcherOne.data.frameCount === "number") {
-      setOpen(false);
       onCompleted(useFetcherOne.data.frameCount);
     }
   }, [useFetcherOne.state, useFetcherOne.data, onCompleted]);
@@ -131,102 +134,86 @@ export function Sdl3dBucketFolderPicker({
       : null;
 
   return (
-    <>
-      <Button onClick={openPicker} disabled={isListing}>
-        Browse bucket folders…
-      </Button>
+    <BlockStack gap="300">
+      <InlineStack align="space-between" blockAlign="center">
+        <Banner tone="info">
+          Frames are used as-is — capture-pipeline validation (size,
+          ordering) is skipped. Folders must contain at least 24 image
+          files (.jpg / .jpeg / .png / .webp) to appear here.
+        </Banner>
+      </InlineStack>
 
-      <Modal
-        open={open}
-        onClose={() => (isImporting ? undefined : setOpen(false))}
-        title="Choose a bucket folder"
-        size="large"
-        secondaryActions={[
-          {
-            content: "Close",
-            disabled: isImporting,
-            onAction: () => setOpen(false),
-          },
-        ]}
-      >
-        <Modal.Section>
-          <BlockStack gap="300">
-            <Banner tone="info">
-              Frames are used as-is — capture-pipeline validation (size,
-              ordering) is skipped. Folders must contain at least 24 image
-              files (.jpg / .jpeg / .png / .webp) to appear here.
-            </Banner>
+      {hasExistingFrames ? (
+        <Banner tone="warning">
+          This product already has {existingFrameCount} frames. Selecting
+          a folder replaces them.
+        </Banner>
+      ) : null}
 
-            {hasExistingFrames ? (
-              <Banner tone="warning">
-                This product already has {existingFrameCount} frames. Selecting
-                a folder replaces them.
-              </Banner>
-            ) : null}
+      {importError ? (
+        <Banner tone="critical" title="Import failed">
+          <Text as="p">{importError}</Text>
+        </Banner>
+      ) : null}
 
-            {importError ? (
-              <Banner tone="critical" title="Import failed">
-                <Text as="p">{importError}</Text>
-              </Banner>
-            ) : null}
+      {listError ? (
+        <Banner
+          tone="critical"
+          title="Can't list bucket folders"
+          action={{ content: "Retry", onAction: refreshList }}
+        >
+          <Text as="p">{listError}</Text>
+        </Banner>
+      ) : null}
 
-            {listError ? (
-              <Banner tone="critical" title="Can't list bucket folders">
-                <Text as="p">{listError}</Text>
-              </Banner>
-            ) : null}
+      {listFetcher.data?.truncated ? (
+        <Banner tone="warning">
+          Bucket has more than 10,000 objects under this prefix — only
+          the first batch was scanned. Narrow the prefix or organize
+          frames under a sub-folder.
+        </Banner>
+      ) : null}
 
-            {listFetcher.data?.truncated ? (
-              <Banner tone="warning">
-                Bucket has more than 10,000 objects under this prefix — only
-                the first batch was scanned. Narrow the prefix or organize
-                frames under a sub-folder.
-              </Banner>
-            ) : null}
+      {isListing ? (
+        <Box padding="600">
+          <InlineStack align="center" gap="200">
+            <Spinner accessibilityLabel="Listing bucket folders" size="small" />
+            <Text as="span" tone="subdued">
+              Scanning bucket…
+            </Text>
+          </InlineStack>
+        </Box>
+      ) : null}
 
-            {isListing ? (
-              <Box padding="600">
-                <InlineStack align="center" gap="200">
-                  <Spinner accessibilityLabel="Listing bucket folders" size="small" />
-                  <Text as="span" tone="subdued">
-                    Scanning bucket…
-                  </Text>
-                </InlineStack>
-              </Box>
-            ) : null}
+      {!isListing && !listError && folders.length === 0 && listFetcher.data ? (
+        <EmptyState
+          heading="No frame sequences found"
+          image=""
+          action={{ content: "Reload", onAction: refreshList }}
+        >
+          <Text as="p">
+            Upload a folder of at least 24 images
+            (.jpg / .jpeg / .png / .webp) to your bucket, then click Reload.
+          </Text>
+        </EmptyState>
+      ) : null}
 
-            {!isListing && !listError && folders.length === 0 && listFetcher.data ? (
-              <EmptyState
-                heading="No frame sequences found"
-                image=""
-              >
-                <Text as="p">
-                  Upload a folder of at least 24 images
-                  (.jpg / .jpeg / .png / .webp) to your bucket, then re-open
-                  this picker.
-                </Text>
-              </EmptyState>
-            ) : null}
-
-            {!isListing && folders.length > 0 ? (
-              <ResourceList
-                resourceName={{ singular: "folder", plural: "folders" }}
-                items={folders}
-                renderItem={(folder) => (
-                  <BucketFolderRow
-                    key={folder.prefix}
-                    folder={folder}
-                    busy={isImporting && importingPrefix === folder.prefix}
-                    disabled={isImporting}
-                    onUse={handleUseFolder}
-                  />
-                )}
-              />
-            ) : null}
-          </BlockStack>
-        </Modal.Section>
-      </Modal>
-    </>
+      {!isListing && folders.length > 0 ? (
+        <ResourceList
+          resourceName={{ singular: "folder", plural: "folders" }}
+          items={folders}
+          renderItem={(folder) => (
+            <BucketFolderRow
+              key={folder.prefix}
+              folder={folder}
+              busy={isImporting && importingPrefix === folder.prefix}
+              disabled={isImporting}
+              onUse={handleUseFolder}
+            />
+          )}
+        />
+      ) : null}
+    </BlockStack>
   );
 }
 
