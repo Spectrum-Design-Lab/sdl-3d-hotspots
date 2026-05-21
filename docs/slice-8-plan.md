@@ -216,11 +216,17 @@ later PR surfaces a concrete reason.
    `StorefrontPreview` route gives them the animated view when they
    want to see it.
 
-10. **Schema changes are minimal**: one `Shop` column for
-    `hotspotEditorMode`, one migration. All hotspot-shape changes
-    are additive fields inside the existing `hotspotsJson` /
-    `hotspotsJson360` blobs (Zod schema additions only — no DB
-    columns). Existing rows tolerate missing fields with defaults.
+10. **Schema changes are minimal**: two migrations total across
+    the sub-cluster. PR #2 adds `Shop.hotspotEditorMode`; PR #3
+    adds `Hotspot.animation` (nullable; `null` = "none"). 360
+    hotspots stay JSON-blob and don't need a column; 3D hotspots
+    are stored relationally (one `Hotspot` row per hotspot) so any
+    field that needs to round-trip through the publish path lands
+    as a column. PRs #4 and #5 add no new columns — icon GID detection
+    reuses the existing `icon` string; media slots ride in the 360
+    JSON blob and (TBD) either the existing relational columns or a
+    small `metadataJson` blob for 3D — locked at PR #5 kickoff.
+    Existing rows tolerate missing fields with defaults.
 
 ## Migration order — PR-by-PR
 
@@ -643,8 +649,8 @@ to render the new popup layout.
 ## Build / typecheck checklist (per PR)
 
 ```bash
-npx prisma generate            # PR #2 has the only schema change
-npx prisma migrate dev         # PR #2 only
+npx prisma generate            # PRs #2 + #3 have schema changes
+npx prisma migrate dev         # PRs #2 + #3
 npx tsc --noEmit
 npm run build                  # CRITICAL — RR's .server import rule
 npx vitest run                 # PRs #3, #4, #5 add schema tests
