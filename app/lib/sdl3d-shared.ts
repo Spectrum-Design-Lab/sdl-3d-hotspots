@@ -8,10 +8,43 @@ import type {
 
 export type ViewerType = "MODEL_3D" | "IMAGE_360";
 
+/**
+ * Slice 8 hotspots PR #3 — hotspot dot animations. Five CSS-driven
+ * loops + the "none" default which preserves existing behaviour. Lives
+ * in the app-local types until the shared @spectrum-design-lab package
+ * picks the field up; the shared HotspotSchema / Hotspot360Schema parse
+ * unknown keys via passthrough where they need to (publish path is
+ * authoritative — DB column for 3D, JSON-blob passthrough for 360).
+ */
+export type HotspotAnimation =
+  | "none"
+  | "pulse"
+  | "bounce"
+  | "glow"
+  | "ripple"
+  | "wiggle";
+
+export const HOTSPOT_ANIMATIONS: HotspotAnimation[] = [
+  "none",
+  "pulse",
+  "bounce",
+  "glow",
+  "ripple",
+  "wiggle",
+];
+
+export function normalizeHotspotAnimation(value: unknown): HotspotAnimation {
+  return typeof value === "string" && (HOTSPOT_ANIMATIONS as string[]).includes(value)
+    ? (value as HotspotAnimation)
+    : "none";
+}
+
 // Types derived from Zod schemas — re-exported for backward compatibility
 export type ImageSequenceFrame = ImageSequenceFrameZ;
 export type Hotspot360Keyframe = Hotspot360KeyframeZ;
-export type Hotspot360 = Hotspot360Z;
+export type Hotspot360 = Hotspot360Z & {
+  animation?: HotspotAnimation;
+};
 
 function catmullRom(p0: number, p1: number, p2: number, p3: number, t: number): number {
   return 0.5 * (

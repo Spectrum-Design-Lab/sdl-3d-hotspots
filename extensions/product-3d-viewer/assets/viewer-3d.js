@@ -77,6 +77,7 @@
     if (h.color) b.style.setProperty("--sdl3d-hotspot-color", h.color);
     b.dataset.ft = h.focusTarget || h.position || "0m 0m 0m";
     if (h.focusOrbit) b.dataset.fo = h.focusOrbit;
+    if (h.animation && h.animation !== "none") b.dataset.sdl3dAnim = h.animation;
     b.ariaLabel = l;
     b.dataset.hsIndex = String(i);
 

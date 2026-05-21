@@ -227,6 +227,7 @@ export function Sdl3dEditorPreview({
         icon: "plus",
         style: "card",
         color: "#3b82f6",
+        animation: "none",
         position,
         normal,
         focusTarget: position,

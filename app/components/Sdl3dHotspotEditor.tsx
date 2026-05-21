@@ -29,6 +29,11 @@ import {
   TextField,
 } from "@shopify/polaris";
 import { getHotspotFieldErrors } from "../lib/sdl3d-validation";
+import {
+  HOTSPOT_ANIMATIONS,
+  normalizeHotspotAnimation,
+  type HotspotAnimation,
+} from "../lib/sdl3d-shared";
 
 export type EditableHotspot = {
   id: string;
@@ -39,6 +44,7 @@ export type EditableHotspot = {
   icon: string | null;
   style: string;
   color: string | null;
+  animation: HotspotAnimation;
   position: string;
   normal: string | null;
   focusTarget: string | null;
@@ -68,6 +74,7 @@ export function blankHotspot(index: number): EditableHotspot {
     icon: "plus",
     style: "card",
     color: "#3b82f6",
+    animation: "none",
     position: "0m 0m 0m",
     normal: null,
     focusTarget: null,
@@ -92,6 +99,7 @@ export function parseInitialHotspots(initialJson: string): EditableHotspot[] {
         icon: item.icon ?? "plus",
         style: String(item.style ?? "card"),
         color: item.color ?? "#3b82f6",
+        animation: normalizeHotspotAnimation(item.animation),
         position: String(item.position ?? "0m 0m 0m"),
         normal: item.normal ?? null,
         focusTarget: item.focusTarget ?? null,
@@ -130,6 +138,11 @@ const STYLE_OPTIONS = [
   { label: "Icon Only", value: "icon-only" },
   { label: "Panel", value: "panel" },
 ];
+
+const ANIMATION_OPTIONS = HOTSPOT_ANIMATIONS.map((value) => ({
+  label: value === "none" ? "None" : value.charAt(0).toUpperCase() + value.slice(1),
+  value,
+}));
 
 export function Sdl3dHotspotEditor({
   hotspots,
@@ -480,6 +493,15 @@ export function Sdl3dHotspotEditor({
                 onChange={(value) => updateSelected({ icon: value || null })}
                 placeholder="plus"
                 autoComplete="off"
+              />
+              <Select
+                label="Animation"
+                options={ANIMATION_OPTIONS}
+                value={selected.animation}
+                onChange={(value) =>
+                  updateSelected({ animation: normalizeHotspotAnimation(value) })
+                }
+                helpText="Subtle loop on the storefront. Respects prefers-reduced-motion."
               />
             </Subsection>
           ) : null}

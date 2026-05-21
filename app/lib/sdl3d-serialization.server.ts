@@ -17,6 +17,7 @@ export type PublishedHotspot = {
   icon: string | null;
   style: string;
   color: string | null;
+  animation: string | null;
   position: string;
   normal: string | null;
   focusTarget: string | null;
@@ -74,6 +75,7 @@ export function dbHotspotToPublished(h: Hotspot): PublishedHotspot {
     icon: h.icon ?? null,
     style: h.style,
     color: h.color ?? null,
+    animation: h.animation ?? null,
     position: formatMetersTriplet(h.positionX, h.positionY, h.positionZ),
     normal:
       h.normalX != null && h.normalY != null && h.normalZ != null
@@ -110,6 +112,7 @@ export function publishedHotspotsToCreateMany(
         icon: h.icon ?? null,
         style: h.style,
         color: h.color ?? null,
+        animation: h.animation ?? null,
         positionX: position.x,
         positionY: position.y,
         positionZ: position.z,

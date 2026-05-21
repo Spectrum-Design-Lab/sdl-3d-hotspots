@@ -24,7 +24,7 @@ import prisma from "../db.server";
 import shopify from "../shopify.server";
 import { adminGraphql, ensureShop } from "../lib/sdl3d-graphql.server";
 
-import { defaultViewerSettings, safeJsonParse, isValidConfigExport, viewerTypeDbToWire, normalizeViewerTypeToDb, type ViewerType, type ImageSequenceFrame, type Hotspot360, type ConfigExport } from "../lib/sdl3d-shared";
+import { defaultViewerSettings, safeJsonParse, isValidConfigExport, viewerTypeDbToWire, normalizeViewerTypeToDb, normalizeHotspotAnimation, type ViewerType, type ImageSequenceFrame, type Hotspot360, type ConfigExport } from "../lib/sdl3d-shared";
 import { validateDraftForPublish } from "../lib/sdl3d-validation";
 import {
   listShopifyFiles,
@@ -240,6 +240,7 @@ export async function loader({ request }: { request: Request }) {
       icon: h.icon,
       style: h.style,
       color: h.color,
+      animation: h.animation ?? "none",
       position: `${h.positionX}m ${h.positionY}m ${h.positionZ}m`,
       normal:
         h.normalX != null && h.normalY != null && h.normalZ != null
@@ -1134,6 +1135,7 @@ export default function Sdl3dEditorRoute() {
               icon: h.icon ?? "plus",
               style: String(h.style ?? "card"),
               color: h.color ?? "#3b82f6",
+              animation: normalizeHotspotAnimation(h.animation),
               position: String(h.position ?? "0m 0m 0m"),
               normal: h.normal ?? null,
               focusTarget: h.focusTarget ?? null,

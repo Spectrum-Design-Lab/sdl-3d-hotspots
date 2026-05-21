@@ -33,6 +33,8 @@ import {
   frameFromDisplay,
   coordToDisplay,
   coordFromDisplay,
+  HOTSPOT_ANIMATIONS,
+  normalizeHotspotAnimation,
   type Hotspot360,
   type Hotspot360Keyframe,
 } from "../lib/sdl3d-shared";
@@ -222,6 +224,11 @@ const STYLE_OPTIONS = [
   { label: "Icon Only", value: "icon-only" },
   { label: "Panel", value: "panel" },
 ];
+
+const ANIMATION_OPTIONS = HOTSPOT_ANIMATIONS.map((value) => ({
+  label: value === "none" ? "None" : value.charAt(0).toUpperCase() + value.slice(1),
+  value,
+}));
 
 export function Sdl3dHotspot360Editor({
   hotspots,
@@ -507,6 +514,17 @@ export function Sdl3dHotspot360Editor({
                           options={STYLE_OPTIONS}
                           value={hotspot.style || "card"}
                           onChange={(value) => updateHotspot(hotspot.id, { style: value })}
+                        />
+                        <Select
+                          label="Animation"
+                          options={ANIMATION_OPTIONS}
+                          value={hotspot.animation ?? "none"}
+                          onChange={(value) =>
+                            updateHotspot(hotspot.id, {
+                              animation: normalizeHotspotAnimation(value),
+                            })
+                          }
+                          helpText="Subtle loop on the storefront. Respects prefers-reduced-motion."
                         />
                       </Subsection>
                     ) : null}

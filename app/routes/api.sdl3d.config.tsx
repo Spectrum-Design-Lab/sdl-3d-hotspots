@@ -182,6 +182,8 @@ async function handleSaveDraft(shop: { id: string }, productGid: string, formDat
         icon: (h.icon as string) ?? null,
         style: String(h.style ?? "card"),
         color: (h.color as string) ?? null,
+        animation:
+          typeof h.animation === "string" && h.animation !== "none" ? h.animation : null,
         positionX: Number(position[1]),
         positionY: Number(position[2]),
         positionZ: Number(position[3]),

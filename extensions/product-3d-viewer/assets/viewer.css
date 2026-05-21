@@ -980,3 +980,64 @@
     justify-content: center;
   }
 }
+
+/* Slice 8 hotspots PR #3 — dot animations.
+   data-sdl3d-anim is set by viewer-3d.js / viewer-360.js when the
+   merchant picks an animation in the editor's Appearance subsection.
+   Wrapped in prefers-reduced-motion so accessibility-sensitive
+   customers see static dots. The animation runs on .__dot
+   (the visible circle) — the parent button keeps its model-viewer /
+   360-positioning transforms unaffected. */
+@media (prefers-reduced-motion: no-preference) {
+  .sdl3d-hotspot[data-sdl3d-anim] .sdl3d-hotspot__dot,
+  .sdl3d-360-hotspot[data-sdl3d-anim] .sdl3d-360-hotspot__dot {
+    transform-origin: 50% 50%;
+    will-change: transform, box-shadow;
+  }
+
+  .sdl3d-hotspot[data-sdl3d-anim="pulse"] .sdl3d-hotspot__dot,
+  .sdl3d-360-hotspot[data-sdl3d-anim="pulse"] .sdl3d-360-hotspot__dot {
+    animation: sdl3d-anim-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes sdl3d-anim-pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.18); }
+  }
+
+  .sdl3d-hotspot[data-sdl3d-anim="bounce"] .sdl3d-hotspot__dot,
+  .sdl3d-360-hotspot[data-sdl3d-anim="bounce"] .sdl3d-360-hotspot__dot {
+    animation: sdl3d-anim-bounce 1.4s ease-in-out infinite;
+  }
+  @keyframes sdl3d-anim-bounce {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-5px); }
+  }
+
+  .sdl3d-hotspot[data-sdl3d-anim="glow"] .sdl3d-hotspot__dot,
+  .sdl3d-360-hotspot[data-sdl3d-anim="glow"] .sdl3d-360-hotspot__dot {
+    animation: sdl3d-anim-glow 2s ease-in-out infinite;
+  }
+  @keyframes sdl3d-anim-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+    50%      { box-shadow: 0 0 6px 4px rgba(255, 255, 255, 0.55); }
+  }
+
+  .sdl3d-hotspot[data-sdl3d-anim="ripple"] .sdl3d-hotspot__dot,
+  .sdl3d-360-hotspot[data-sdl3d-anim="ripple"] .sdl3d-360-hotspot__dot {
+    animation: sdl3d-anim-ripple 1.8s linear infinite;
+  }
+  @keyframes sdl3d-anim-ripple {
+    0%   { box-shadow: 0 0 0 0 var(--sdl3d-hotspot-color, #3b82f6); }
+    100% { box-shadow: 0 0 0 14px transparent; }
+  }
+
+  .sdl3d-hotspot[data-sdl3d-anim="wiggle"] .sdl3d-hotspot__dot,
+  .sdl3d-360-hotspot[data-sdl3d-anim="wiggle"] .sdl3d-360-hotspot__dot {
+    animation: sdl3d-anim-wiggle 0.9s ease-in-out infinite;
+  }
+  @keyframes sdl3d-anim-wiggle {
+    0%, 100% { transform: rotate(0deg); }
+    25%      { transform: rotate(-6deg); }
+    75%      { transform: rotate(6deg); }
+  }
+}

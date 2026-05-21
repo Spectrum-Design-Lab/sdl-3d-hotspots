@@ -158,6 +158,7 @@ model Hotspot {
   icon            String?
   style           String   @default("card")
   color           String?
+  animation       String?
 
   positionX       Float
   positionY       Float

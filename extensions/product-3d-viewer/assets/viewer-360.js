@@ -97,6 +97,7 @@
     b.ariaLabel = label;
     b.dataset.hsIndex = String(i);
     if (h.color) b.style.setProperty("--sdl3d-hotspot-color", h.color);
+    if (h.animation && h.animation !== "none") b.dataset.sdl3dAnim = h.animation;
 
     var dot = ce("span", "sdl3d-360-hotspot__dot");
     dot.textContent = String(i + 1);
