@@ -189,9 +189,13 @@
       </script>
     </div>
   {% elsif model_media == blank %}
-    <div class="sdl3d-block__message">No model file metafield is assigned to this product.</div>
+    {% if request.design_mode %}
+      <div class="sdl3d-block__message">No model file metafield is assigned to this product.</div>
+    {% endif %}
   {% elsif model_source_url == blank %}
-    <div class="sdl3d-block__message">Model file found, but no usable source URL was resolved.</div>
+    {% if request.design_mode %}
+      <div class="sdl3d-block__message">Model file found, but no usable source URL was resolved.</div>
+    {% endif %}
   {% else %}
     {%- comment -%} 3D Model Viewer {%- endcomment -%}
     <div
