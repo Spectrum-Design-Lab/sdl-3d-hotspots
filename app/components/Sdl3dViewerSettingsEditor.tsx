@@ -1,21 +1,11 @@
 /**
- * Viewer settings form — Polaris migration (Slice 5C PR #5i).
+ * Viewer settings form. Two views — basic (Viewer inspector panel) and
+ * advanced (Publish panel). Both edit the same JSON blob.
  *
- * Two views — basic (rendered inside the editor's "Viewer" inspector
- * panel) and advanced (rendered inside the "Publish" panel). Both edit
- * the same JSON blob; the parent route owns the JSON state and passes
- * it down stringified.
- *
- * Field shapes are unchanged from the pre-Polaris version:
- * - TextField for free-form strings (orbit/target/color/url paths) with
- *   `error` prop wired to `getViewerSettingsFieldErrors`.
- * - Select for enums (interactionPrompt, hotspotStyle).
- * - Checkbox for booleans.
- * - TextField type="number" for `exposure`.
- *
- * Camera orbit kept as a single TextField (not a RangeSlider per the
- * 5C plan) because the value is a 3-part string "0deg 75deg 105%",
- * which doesn't map to a single slider.
+ * Slice 8 — gates 3D-only fields by viewerType so 360 merchants don't
+ * see (and tweak) settings that don't do anything. Stored values for
+ * 3D-only fields persist quietly when the merchant flips to 360 and
+ * back — we don't delete data, just hide the inputs.
  */
 import {
   BlockStack,
@@ -25,7 +15,11 @@ import {
   Text,
   TextField,
 } from "@shopify/polaris";
-import { defaultViewerSettings, type ViewerSettings } from "../lib/sdl3d-shared";
+import {
+  defaultViewerSettings,
+  type ViewerSettings,
+  type ViewerType,
+} from "../lib/sdl3d-shared";
 import { getViewerSettingsFieldErrors } from "../lib/sdl3d-validation";
 
 function parseViewerSettingsJson(valueJson: string): ViewerSettings {
@@ -66,13 +60,19 @@ export function Sdl3dViewerSettingsEditor({
   valueJson,
   onChangeJson,
   advanced,
+  viewerType,
 }: {
   valueJson: string;
   onChangeJson: (nextJson: string) => void;
   advanced?: boolean;
+  viewerType: ViewerType;
 }) {
   const settings = parseViewerSettingsJson(valueJson);
   const fieldErrors = getViewerSettingsFieldErrors(valueJson);
+  const is3D = viewerType === "MODEL_3D";
+  // Hint copy shown under each 3D-only section so 360 merchants who
+  // flip back and forth don't think their values were deleted.
+  const threeDOnlyHint = "Shown for 3D models only.";
 
   function update(patch: Partial<ViewerSettings>) {
     onChangeJson(
@@ -96,77 +96,91 @@ export function Sdl3dViewerSettingsEditor({
           Advanced settings
         </Text>
 
-        <BlockStack gap="300">
-          <Text as="h4" variant="headingXs">
-            Camera
-          </Text>
-          <TextField
-            label="Orbit"
-            value={settings.cameraOrbit ?? ""}
-            onChange={(value) => updateNullableString("cameraOrbit", value)}
-            placeholder="0deg 75deg 105%"
-            error={fieldErrors.cameraOrbit}
-            autoComplete="off"
-          />
-          <TextField
-            label="Target"
-            value={settings.cameraTarget ?? ""}
-            onChange={(value) => updateNullableString("cameraTarget", value)}
-            placeholder="0m 0m 0m"
-            error={fieldErrors.cameraTarget}
-            autoComplete="off"
-          />
-          <TextField
-            label="Field of view"
-            value={settings.fieldOfView ?? ""}
-            onChange={(value) => updateNullableString("fieldOfView", value)}
-            placeholder="auto"
-            autoComplete="off"
-          />
-          <TextField
-            label="Min orbit"
-            value={settings.minCameraOrbit ?? ""}
-            onChange={(value) => updateNullableString("minCameraOrbit", value)}
-            placeholder="auto auto auto"
-            error={fieldErrors.minCameraOrbit}
-            autoComplete="off"
-          />
-          <TextField
-            label="Max orbit"
-            value={settings.maxCameraOrbit ?? ""}
-            onChange={(value) => updateNullableString("maxCameraOrbit", value)}
-            placeholder="auto auto auto"
-            error={fieldErrors.maxCameraOrbit}
-            autoComplete="off"
-          />
-          <TextField
-            label="Locked polar angle"
-            value={settings.lockedPolarAngle ?? ""}
-            onChange={(value) => updateNullableString("lockedPolarAngle", value)}
-            placeholder="75deg"
-            error={fieldErrors.lockedPolarAngle}
-            autoComplete="off"
-          />
-        </BlockStack>
+        {is3D ? (
+          <BlockStack gap="300">
+            <BlockStack gap="050">
+              <Text as="h4" variant="headingXs">
+                Camera
+              </Text>
+              <Text as="p" tone="subdued" variant="bodySm">
+                {threeDOnlyHint}
+              </Text>
+            </BlockStack>
+            <TextField
+              label="Orbit"
+              value={settings.cameraOrbit ?? ""}
+              onChange={(value) => updateNullableString("cameraOrbit", value)}
+              placeholder="0deg 75deg 105%"
+              error={fieldErrors.cameraOrbit}
+              autoComplete="off"
+            />
+            <TextField
+              label="Target"
+              value={settings.cameraTarget ?? ""}
+              onChange={(value) => updateNullableString("cameraTarget", value)}
+              placeholder="0m 0m 0m"
+              error={fieldErrors.cameraTarget}
+              autoComplete="off"
+            />
+            <TextField
+              label="Field of view"
+              value={settings.fieldOfView ?? ""}
+              onChange={(value) => updateNullableString("fieldOfView", value)}
+              placeholder="auto"
+              autoComplete="off"
+            />
+            <TextField
+              label="Min orbit"
+              value={settings.minCameraOrbit ?? ""}
+              onChange={(value) => updateNullableString("minCameraOrbit", value)}
+              placeholder="auto auto auto"
+              error={fieldErrors.minCameraOrbit}
+              autoComplete="off"
+            />
+            <TextField
+              label="Max orbit"
+              value={settings.maxCameraOrbit ?? ""}
+              onChange={(value) => updateNullableString("maxCameraOrbit", value)}
+              placeholder="auto auto auto"
+              error={fieldErrors.maxCameraOrbit}
+              autoComplete="off"
+            />
+            <TextField
+              label="Locked polar angle"
+              value={settings.lockedPolarAngle ?? ""}
+              onChange={(value) => updateNullableString("lockedPolarAngle", value)}
+              placeholder="75deg"
+              error={fieldErrors.lockedPolarAngle}
+              autoComplete="off"
+            />
+          </BlockStack>
+        ) : null}
 
         <BlockStack gap="300">
           <Text as="h4" variant="headingXs">
             Advanced paths
           </Text>
-          <TextField
-            label="Environment image"
-            value={settings.environmentImage ?? ""}
-            onChange={(value) => updateNullableString("environmentImage", value)}
-            placeholder="https://..."
-            autoComplete="off"
-          />
-          <TextField
-            label="Skybox image"
-            value={settings.skyboxImage ?? ""}
-            onChange={(value) => updateNullableString("skyboxImage", value)}
-            placeholder="https://..."
-            autoComplete="off"
-          />
+          {is3D ? (
+            <>
+              <Text as="p" tone="subdued" variant="bodySm">
+                Environment + skybox images: {threeDOnlyHint.toLowerCase()}
+              </Text>
+              <TextField
+                label="Environment image"
+                value={settings.environmentImage ?? ""}
+                onChange={(value) => updateNullableString("environmentImage", value)}
+                placeholder="https://..."
+                autoComplete="off"
+              />
+              <TextField
+                label="Skybox image"
+                value={settings.skyboxImage ?? ""}
+                onChange={(value) => updateNullableString("skyboxImage", value)}
+                placeholder="https://..."
+                autoComplete="off"
+              />
+            </>
+          ) : null}
           <TextField
             label="Poster override"
             value={settings.poster ?? ""}
@@ -194,33 +208,41 @@ export function Sdl3dViewerSettingsEditor({
           checked={settings.autoRotate}
           onChange={(checked) => update({ autoRotate: checked })}
         />
-        <Checkbox
-          label="Camera controls"
-          checked={settings.cameraControls}
-          onChange={(checked) => update({ cameraControls: checked })}
-        />
-        <Select
-          label="Prompt"
-          options={INTERACTION_PROMPT_OPTIONS}
-          value={settings.interactionPrompt ?? "auto"}
-          onChange={(value) =>
-            updateNullableString("interactionPrompt", value === "auto" ? "auto" : value)
-          }
-        />
+        {is3D ? (
+          <>
+            <Checkbox
+              label="Camera controls"
+              checked={settings.cameraControls}
+              onChange={(checked) => update({ cameraControls: checked })}
+            />
+            <Select
+              label="Prompt"
+              options={INTERACTION_PROMPT_OPTIONS}
+              value={settings.interactionPrompt ?? "auto"}
+              onChange={(value) =>
+                updateNullableString("interactionPrompt", value === "auto" ? "auto" : value)
+              }
+              helpText={threeDOnlyHint}
+            />
+          </>
+        ) : null}
       </BlockStack>
 
       <BlockStack gap="300">
         <Text as="h4" variant="headingXs">
           Appearance
         </Text>
-        <TextField
-          label="Exposure"
-          type="number"
-          step={0.1}
-          value={String(settings.exposure)}
-          onChange={(value) => update({ exposure: Number(value || 0) })}
-          autoComplete="off"
-        />
+        {is3D ? (
+          <TextField
+            label="Exposure"
+            type="number"
+            step={0.1}
+            value={String(settings.exposure)}
+            onChange={(value) => update({ exposure: Number(value || 0) })}
+            helpText={threeDOnlyHint}
+            autoComplete="off"
+          />
+        ) : null}
         {/* Slice 7 PR #2: background color now lives here (was a floating
             preview-mode control). Pairs the TextField with a native swatch
             input so merchants can pick visually without leaving the form. */}
@@ -264,11 +286,14 @@ export function Sdl3dViewerSettingsEditor({
           checked={settings.showFullscreen}
           onChange={(checked) => update({ showFullscreen: checked })}
         />
-        <Checkbox
-          label="AR button"
-          checked={settings.showArButton}
-          onChange={(checked) => update({ showArButton: checked })}
-        />
+        {is3D ? (
+          <Checkbox
+            label="AR button"
+            checked={settings.showArButton}
+            onChange={(checked) => update({ showArButton: checked })}
+            helpText={threeDOnlyHint}
+          />
+        ) : null}
       </BlockStack>
     </BlockStack>
   );

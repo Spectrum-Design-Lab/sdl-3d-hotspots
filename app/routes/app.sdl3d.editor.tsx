@@ -1617,6 +1617,7 @@ export default function Sdl3dEditorRoute() {
                   <Sdl3dViewerSettingsEditor
                     valueJson={viewerSettingsJson}
                     onChangeJson={setViewerSettingsJson}
+                    viewerType={viewerType}
                   />
                 </InspectorSection>
 
@@ -1679,6 +1680,7 @@ export default function Sdl3dEditorRoute() {
                     valueJson={viewerSettingsJson}
                     onChangeJson={setViewerSettingsJson}
                     advanced
+                    viewerType={viewerType}
                   />
                   <Box paddingBlockStart="300">
                     <JsonAdvancedPanel
