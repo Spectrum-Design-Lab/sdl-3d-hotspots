@@ -270,7 +270,10 @@
     });
 
     if (vs.autoRotate === true) {
-      autoRotateTimer = setInterval(function () { setFrame(cf + 1); }, 80);
+      var spd = typeof vs.autoRotateSpeed === "number" ? vs.autoRotateSpeed : 30;
+      var step = vs.autoRotateDirection === "reverse" ? -1 : 1;
+      var ms = Math.max(20, Math.round((360 / spd) * (1000 / Math.max(1, fc))));
+      autoRotateTimer = setInterval(function () { setFrame(cf + step); }, ms);
     }
 
     var fbScope = R.closest(".sdl3d-block") || R;

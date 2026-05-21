@@ -450,7 +450,14 @@ export async function pullMetafieldsToDraft(args: {
       const raw = JSON.parse(rawViewerSettingsJson);
       const parsed = ViewerSettingsSchema.safeParse(raw);
       if (parsed.success) {
-        viewerSettings = parsed.data;
+        // Slice 8 PR #2: layer raw → parsed so the new
+        // autoRotateSpeed / autoRotateDirection fields (not known
+        // to the shared schema yet) survive metafield→DB sync.
+        viewerSettings = {
+          ...defaultViewerSettings,
+          ...(typeof raw === "object" && raw !== null ? raw : {}),
+          ...parsed.data,
+        } as typeof defaultViewerSettings;
       } else {
         parseIssues.push(
           `sdl_3d.viewer_settings failed validation: ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`,

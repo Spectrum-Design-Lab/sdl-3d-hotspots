@@ -9,14 +9,19 @@
  */
 import {
   BlockStack,
+  Box,
+  Button,
+  ButtonGroup,
   Checkbox,
   InlineStack,
+  RangeSlider,
   Select,
   Text,
   TextField,
 } from "@shopify/polaris";
 import {
   defaultViewerSettings,
+  type AutoRotateDirection,
   type ViewerSettings,
   type ViewerType,
 } from "../lib/sdl3d-shared";
@@ -208,6 +213,55 @@ export function Sdl3dViewerSettingsEditor({
           checked={settings.autoRotate}
           onChange={(checked) => update({ autoRotate: checked })}
         />
+        {/* Slice 8 viewer-settings PR #2 — speed + direction. Only
+            render when autoRotate is on (no point adjusting magnitude/
+            sign of a thing that isn't running). Applies to both 3D
+            and 360 viewers. Direction is split from speed (signed
+            number was the alternative) so the off-state lives in
+            the autoRotate Checkbox alone — each control has a single
+            responsibility. */}
+        {settings.autoRotate ? (
+          <Box paddingInlineStart="600">
+            <BlockStack gap="200">
+              <RangeSlider
+                label={`Auto-rotate speed: ${settings.autoRotateSpeed}°/sec`}
+                min={5}
+                max={180}
+                step={1}
+                value={settings.autoRotateSpeed}
+                onChange={(value) =>
+                  update({ autoRotateSpeed: Array.isArray(value) ? value[0] : value })
+                }
+                output
+              />
+              <InlineStack gap="200" blockAlign="center">
+                <Text as="span" variant="bodySm" fontWeight="medium">
+                  Direction:
+                </Text>
+                <ButtonGroup variant="segmented">
+                  <Button
+                    pressed={settings.autoRotateDirection === "forward"}
+                    onClick={() =>
+                      update({ autoRotateDirection: "forward" as AutoRotateDirection })
+                    }
+                    size="slim"
+                  >
+                    Forward
+                  </Button>
+                  <Button
+                    pressed={settings.autoRotateDirection === "reverse"}
+                    onClick={() =>
+                      update({ autoRotateDirection: "reverse" as AutoRotateDirection })
+                    }
+                    size="slim"
+                  >
+                    Reverse
+                  </Button>
+                </ButtonGroup>
+              </InlineStack>
+            </BlockStack>
+          </Box>
+        ) : null}
         {is3D ? (
           <>
             <Checkbox

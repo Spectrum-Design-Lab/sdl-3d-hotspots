@@ -54,11 +54,14 @@ export function formatMetersTriplet(x: string | number, y: string | number, z: s
 export { defaultViewerSettings, safeJsonParse };
 
 export function coerceViewerSettings(input: unknown): ViewerSettings {
-  const result = ViewerSettingsSchema.safeParse(input);
-  if (result.success) return result.data;
-  // Fall back to defaults merged with raw input
+  // Layer: defaults (provides PR #2's autoRotateSpeed/Direction which the
+  // shared Zod schema doesn't know about yet) → raw input (preserves any
+  // fields the schema doesn't gate on) → schema's parsed output (replaces
+  // any known fields with their validated/coerced form).
   const source = (input && typeof input === "object" ? input : {}) as Partial<ViewerSettings>;
-  return { ...defaultViewerSettings, ...source };
+  const result = ViewerSettingsSchema.safeParse(input);
+  const validated = result.success ? result.data : {};
+  return { ...defaultViewerSettings, ...source, ...validated } as ViewerSettings;
 }
 
 export function dbHotspotToPublished(h: Hotspot): PublishedHotspot {

@@ -164,7 +164,20 @@ export function detectViewerTypeFromFilename(filename: string): ViewerType {
   return "IMAGE_360";
 }
 
-export type ViewerSettings = ViewerSettingsZ;
+/**
+ * Slice 8 viewer-settings PR #2 — autoRotateSpeed + autoRotateDirection.
+ * These two fields are app-local for now (shared @spectrum-design-lab
+ * package's ViewerSettingsZ doesn't know about them). Zod passthrough
+ * preserves them on read/write, and the merge in parseViewerSettings
+ * fills the defaults for rows that pre-date this PR. The shared package
+ * picks them up next bump.
+ */
+export type AutoRotateDirection = "forward" | "reverse";
+
+export type ViewerSettings = ViewerSettingsZ & {
+  autoRotateSpeed: number;
+  autoRotateDirection: AutoRotateDirection;
+};
 
 export const defaultViewerSettings: ViewerSettings = {
   autoRotate: true,
@@ -186,6 +199,8 @@ export const defaultViewerSettings: ViewerSettings = {
   showFullscreen: true,
   showArButton: false,
   backgroundColor: "#0b1020",
+  autoRotateSpeed: 30,
+  autoRotateDirection: "forward",
 };
 
 /** Shape used for JSON import/export of product configurations (wire format — viewerType is lowercase). */

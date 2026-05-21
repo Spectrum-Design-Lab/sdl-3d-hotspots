@@ -16,6 +16,13 @@
 
     sa(mv, "camera-controls", s?.cameraControls !== false);
     sa(mv, "auto-rotate", s?.autoRotate === true);
+    if (s?.autoRotate === true) {
+      var spd = typeof s.autoRotateSpeed === "number" ? s.autoRotateSpeed : 30;
+      var sign = s.autoRotateDirection === "reverse" ? "-" : "";
+      mv.setAttribute("rotation-per-second", sign + spd + "deg");
+    } else {
+      mv.removeAttribute("rotation-per-second");
+    }
     if (s?.cameraOrbit) mv.setAttribute("camera-orbit", s.cameraOrbit);
     if (s?.cameraTarget) mv.setAttribute("camera-target", s.cameraTarget);
     if (s?.fieldOfView) mv.setAttribute("field-of-view", s.fieldOfView);
