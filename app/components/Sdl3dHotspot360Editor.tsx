@@ -1,14 +1,17 @@
 /**
- * 360° hotspot editor — Polaris migration (Slice 5C PR #5k).
+ * 360° hotspot editor — Polaris migration (Slice 5C PR #5k) + row
+ * layout redesign (Slice 8 hotspots PR #1).
  *
  * Renders inside the editor's "Hotspots" inspector panel when the
- * viewer is in IMAGE_360 mode. Same shape as Sdl3dHotspotEditor but
- * with frame-keyframe interpolation instead of fixed 3D coordinates,
- * plus an inline expand-row UX (no separate detail editor section).
+ * viewer is in IMAGE_360 mode. Same row shape as Sdl3dHotspotEditor
+ * but inline-expand (no separate detail editor section), and the
+ * expanded body groups fields into Content / Appearance / Layout
+ * subsections (Behavior stays empty until PR #5 surfaces CTA + media
+ * slot fields). Subsection naming mirrors the 3D editor so future
+ * field PRs gate the same way across both surfaces.
  *
- * Form fields swap to Polaris primitives. The row card uses the
- * shared `.sdl-hs-row*` Polaris-token classes added in PR #5j, plus a
- * Polaris `Collapsible` for the per-row expanded detail.
+ * The row card uses the shared `.sdl-hs-row*` Polaris-token classes
+ * from PR #5j, plus a Polaris `Collapsible` for the inline expand.
  */
 import { useEffect, useRef, useState } from "react";
 import {
@@ -458,54 +461,20 @@ export function Sdl3dHotspot360Editor({
                   style={{ paddingTop: "var(--p-space-300, 12px)" }}
                 >
                   <BlockStack gap="200">
-                    <TextField
-                      label="Title"
-                      value={hotspot.title}
-                      onChange={(value) => updateHotspot(hotspot.id, { title: value })}
-                      autoComplete="off"
-                    />
-                    <TextField
-                      label="Body"
-                      value={hotspot.body}
-                      onChange={(value) => updateHotspot(hotspot.id, { body: value })}
-                      multiline={2}
-                      autoComplete="off"
-                    />
-                    {/* Display 1-indexed; storage stays 0-indexed. FrameField
-                        keeps a local draft so backspacing the last digit
-                        doesn't snap back to the stored value — commit happens
-                        on blur via frameFromDisplay's clamp. */}
-                    <InlineStack gap="200" wrap={false}>
-                      <Box width="100%">
-                        <FrameField
-                          label="Visible from frame"
-                          storedValue={hotspot.visibleFrameStart}
-                          frameCount={frameCount}
-                          onCommit={(stored) =>
-                            updateHotspot(hotspot.id, { visibleFrameStart: stored })
-                          }
-                        />
-                      </Box>
-                      <Box width="100%">
-                        <FrameField
-                          label="Visible to frame"
-                          storedValue={hotspot.visibleFrameEnd}
-                          frameCount={frameCount}
-                          onCommit={(stored) =>
-                            updateHotspot(hotspot.id, { visibleFrameEnd: stored })
-                          }
-                        />
-                      </Box>
-                    </InlineStack>
-                    <InlineStack gap="300" blockAlign="end" wrap={false}>
-                      <Box width="100%">
-                        <Select
-                          label="Style"
-                          options={STYLE_OPTIONS}
-                          value={hotspot.style || "card"}
-                          onChange={(value) => updateHotspot(hotspot.id, { style: value })}
-                        />
-                      </Box>
+                    <Subsection label="Content">
+                      <TextField
+                        label="Title"
+                        value={hotspot.title}
+                        onChange={(value) => updateHotspot(hotspot.id, { title: value })}
+                        autoComplete="off"
+                      />
+                      <TextField
+                        label="Body"
+                        value={hotspot.body}
+                        onChange={(value) => updateHotspot(hotspot.id, { body: value })}
+                        multiline={2}
+                        autoComplete="off"
+                      />
                       <BlockStack gap="100">
                         <Text as="span" variant="bodySm" fontWeight="medium">
                           Color
@@ -526,69 +495,105 @@ export function Sdl3dHotspot360Editor({
                           }}
                         />
                       </BlockStack>
-                    </InlineStack>
+                    </Subsection>
 
-                    {/* Keyframes section — PR #7 swaps the read-only
-                        `x: 45.2% y: 62.1%` readout for typed X/Y inputs
-                        in [0, 1000]. Drag updates the storage 0–100 float
-                        directly; CoordField re-syncs via isFocusedRef so
-                        drag-driven changes don't fight the typed draft. */}
-                    <BlockStack gap="200">
-                      <InlineStack align="space-between" blockAlign="center">
-                        <Text as="span" variant="bodyMd" fontWeight="semibold">
-                          Keyframes
-                        </Text>
-                        <Button
-                          size="slim"
-                          onClick={() => addKeyframe(hotspot.id, currentFrame, 50, 50)}
-                        >
-                          {`+ Add at frame ${frameToDisplay(currentFrame)}`}
-                        </Button>
+                    <Subsection label="Appearance">
+                      <Select
+                        label="Style"
+                        options={STYLE_OPTIONS}
+                        value={hotspot.style || "card"}
+                        onChange={(value) => updateHotspot(hotspot.id, { style: value })}
+                      />
+                    </Subsection>
+
+                    <Subsection label="Layout">
+                      {/* Display 1-indexed; storage stays 0-indexed. FrameField
+                          keeps a local draft so backspacing the last digit
+                          doesn't snap back to the stored value — commit happens
+                          on blur via frameFromDisplay's clamp. */}
+                      <InlineStack gap="200" wrap={false}>
+                        <Box width="100%">
+                          <FrameField
+                            label="Visible from frame"
+                            storedValue={hotspot.visibleFrameStart}
+                            frameCount={frameCount}
+                            onCommit={(stored) =>
+                              updateHotspot(hotspot.id, { visibleFrameStart: stored })
+                            }
+                          />
+                        </Box>
+                        <Box width="100%">
+                          <FrameField
+                            label="Visible to frame"
+                            storedValue={hotspot.visibleFrameEnd}
+                            frameCount={frameCount}
+                            onCommit={(stored) =>
+                              updateHotspot(hotspot.id, { visibleFrameEnd: stored })
+                            }
+                          />
+                        </Box>
                       </InlineStack>
-                      {hotspot.keyframes.length === 0 ? (
-                        <Text as="p" tone="subdued" variant="bodySm">
-                          No keyframes. Click on the image to place, or add manually.
-                        </Text>
-                      ) : (
-                        <BlockStack gap="100">
-                          <Text as="p" tone="subdued" variant="bodySm">
-                            X / Y: 0 = top-left edge, 1000 = bottom-right edge.
+
+                      {/* Keyframes — drag updates the storage 0–100 float
+                          directly; CoordField re-syncs via isFocusedRef so
+                          drag-driven changes don't fight the typed draft. */}
+                      <BlockStack gap="200">
+                        <InlineStack align="space-between" blockAlign="center">
+                          <Text as="span" variant="bodyMd" fontWeight="semibold">
+                            Keyframes
                           </Text>
-                          {hotspot.keyframes.map((kf) => (
-                            <InlineStack
-                              key={kf.frame}
-                              gap="200"
-                              blockAlign="center"
-                              align="space-between"
-                              wrap={false}
-                            >
-                              <Text as="span" variant="bodySm" fontWeight="semibold">
-                                {`Frame ${frameToDisplay(kf.frame)}`}
-                              </Text>
-                              <InlineStack gap="100" blockAlign="center" wrap={false}>
-                                <CoordField
-                                  axis="X"
-                                  storedValue={kf.x}
-                                  onCommit={(x) => addKeyframe(hotspot.id, kf.frame, x, kf.y)}
-                                />
-                                <CoordField
-                                  axis="Y"
-                                  storedValue={kf.y}
-                                  onCommit={(y) => addKeyframe(hotspot.id, kf.frame, kf.x, y)}
-                                />
-                                <Button
-                                  size="micro"
-                                  variant="plain"
-                                  onClick={() => removeKeyframe(hotspot.id, kf.frame)}
-                                >
-                                  Remove
-                                </Button>
+                          <Button
+                            size="slim"
+                            onClick={() => addKeyframe(hotspot.id, currentFrame, 50, 50)}
+                          >
+                            {`+ Add at frame ${frameToDisplay(currentFrame)}`}
+                          </Button>
+                        </InlineStack>
+                        {hotspot.keyframes.length === 0 ? (
+                          <Text as="p" tone="subdued" variant="bodySm">
+                            No keyframes. Click on the image to place, or add manually.
+                          </Text>
+                        ) : (
+                          <BlockStack gap="100">
+                            <Text as="p" tone="subdued" variant="bodySm">
+                              X / Y: 0 = top-left edge, 1000 = bottom-right edge.
+                            </Text>
+                            {hotspot.keyframes.map((kf) => (
+                              <InlineStack
+                                key={kf.frame}
+                                gap="200"
+                                blockAlign="center"
+                                align="space-between"
+                                wrap={false}
+                              >
+                                <Text as="span" variant="bodySm" fontWeight="semibold">
+                                  {`Frame ${frameToDisplay(kf.frame)}`}
+                                </Text>
+                                <InlineStack gap="100" blockAlign="center" wrap={false}>
+                                  <CoordField
+                                    axis="X"
+                                    storedValue={kf.x}
+                                    onCommit={(x) => addKeyframe(hotspot.id, kf.frame, x, kf.y)}
+                                  />
+                                  <CoordField
+                                    axis="Y"
+                                    storedValue={kf.y}
+                                    onCommit={(y) => addKeyframe(hotspot.id, kf.frame, kf.x, y)}
+                                  />
+                                  <Button
+                                    size="micro"
+                                    variant="plain"
+                                    onClick={() => removeKeyframe(hotspot.id, kf.frame)}
+                                  >
+                                    Remove
+                                  </Button>
+                                </InlineStack>
                               </InlineStack>
-                            </InlineStack>
-                          ))}
-                        </BlockStack>
-                      )}
-                    </BlockStack>
+                            ))}
+                          </BlockStack>
+                        )}
+                      </BlockStack>
+                    </Subsection>
                   </BlockStack>
                 </div>
               </Collapsible>
@@ -596,6 +601,24 @@ export function Sdl3dHotspot360Editor({
           );
         })}
       </div>
+    </BlockStack>
+  );
+}
+
+/**
+ * Non-collapsible subsection header + body. Mirrors the helper in
+ * Sdl3dHotspotEditor.tsx so future field PRs gate identically on
+ * both surfaces.
+ */
+function Subsection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <BlockStack gap="100">
+      <Box paddingBlockStart="200" paddingBlockEnd="050">
+        <Text as="h4" variant="headingXs">
+          {label}
+        </Text>
+      </Box>
+      <BlockStack gap="200">{children}</BlockStack>
     </BlockStack>
   );
 }

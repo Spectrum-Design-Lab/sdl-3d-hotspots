@@ -1,22 +1,20 @@
 /**
- * 3D-hotspot editor — Polaris migration (Slice 5C PR #5j).
+ * 3D-hotspot editor — Polaris migration (Slice 5C PR #5j) + row layout
+ * redesign (Slice 8 hotspots PR #1).
  *
  * Renders inside the editor's "Hotspots" inspector panel when the
  * viewer is in MODEL_3D mode. Owns hotspot list (drag reorder + multi-
- * select + batch ops) and detail editor (Title / Body / Style / Color
- * / Position / Camera / CTA fields).
+ * select + batch ops) and detail editor.
  *
- * Form fields migrated to Polaris (TextField with `error` prop,
- * Checkbox, Select). The detail editor's two inner "Position & Camera"
- * and "Advanced" sections use Polaris `Collapsible` with locally-tracked
- * open state.
+ * Detail editor is grouped into four non-collapsible subsections:
+ * Content / Appearance / Layout / Behavior. Subsection headers are
+ * the layout primitive the Simple/Advanced gate (PR #2) and the new-
+ * field PRs (#3 animations, #4 icons, #5 media slots) hang off.
  *
  * **Intentionally preserved**: the list rows stay native
- * `<div draggable>` (Polaris ships no drag-reorder primitive) — but
- * styling migrates onto new `.sdl-hs-row*` classes built from Polaris
- * design tokens. The color swatch row also stays bespoke since Polaris
- * `ColorPicker` is a full HSV picker overlay that's overkill for
- * quick-pick presets.
+ * `<div draggable>` (Polaris ships no drag-reorder primitive); the
+ * color swatch row stays bespoke since Polaris `ColorPicker` is a
+ * full HSV overlay that's overkill for quick-pick presets.
  */
 import { useCallback, useState } from "react";
 import {
@@ -25,14 +23,11 @@ import {
   Button,
   ButtonGroup,
   Checkbox,
-  Collapsible,
-  Icon,
   InlineStack,
   Select,
   Text,
   TextField,
 } from "@shopify/polaris";
-import { ChevronDownIcon, ChevronUpIcon } from "@shopify/polaris-icons";
 import { getHotspotFieldErrors } from "../lib/sdl3d-validation";
 
 export type EditableHotspot = {
@@ -158,8 +153,6 @@ export function Sdl3dHotspotEditor({
 
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [positionOpen, setPositionOpen] = useState(true);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   function replaceHotspots(next: EditableHotspot[]) {
     const normalized = normalizeSortOrder(next);
@@ -398,154 +391,143 @@ export function Sdl3dHotspotEditor({
       {/* Detail editor */}
       {selected ? (
         <BlockStack gap="300">
-          <ButtonGroup>
-            <Button
-              size="slim"
-              onClick={() => moveSelected(-1)}
-              disabled={selectedIndex === 0}
-              accessibilityLabel="Move up"
-            >
-              ↑
-            </Button>
-            <Button
-              size="slim"
-              onClick={() => moveSelected(1)}
-              disabled={selectedIndex === safeHotspots.length - 1}
-              accessibilityLabel="Move down"
-            >
-              ↓
-            </Button>
-            <Button size="slim" onClick={duplicateSelected}>
-              Duplicate
-            </Button>
-            <Button size="slim" tone="critical" onClick={removeSelected}>
-              Delete
-            </Button>
-          </ButtonGroup>
+          <InlineStack align="space-between" blockAlign="center" wrap>
+            <ButtonGroup>
+              <Button
+                size="slim"
+                onClick={() => moveSelected(-1)}
+                disabled={selectedIndex === 0}
+                accessibilityLabel="Move up"
+              >
+                ↑
+              </Button>
+              <Button
+                size="slim"
+                onClick={() => moveSelected(1)}
+                disabled={selectedIndex === safeHotspots.length - 1}
+                accessibilityLabel="Move down"
+              >
+                ↓
+              </Button>
+              <Button size="slim" onClick={duplicateSelected}>
+                Duplicate
+              </Button>
+              <Button size="slim" tone="critical" onClick={removeSelected}>
+                Delete
+              </Button>
+            </ButtonGroup>
+            <Checkbox
+              label="Visible"
+              checked={selected.visible}
+              onChange={(checked) => updateSelected({ visible: checked })}
+            />
+          </InlineStack>
 
-          <TextField
-            label="Title"
-            value={selected.title}
-            onChange={(value) => updateSelected({ title: value })}
-            error={selectedErrors.title}
-            autoComplete="off"
-          />
-          <TextField
-            label="Body"
-            value={selected.body}
-            onChange={(value) => updateSelected({ body: value })}
-            multiline={3}
-            autoComplete="off"
-          />
-          <Checkbox
-            label="Visible"
-            checked={selected.visible}
-            onChange={(checked) => updateSelected({ visible: checked })}
-          />
-
-          <Select
-            label="Style"
-            options={STYLE_OPTIONS}
-            value={selected.style}
-            onChange={(value) => updateSelected({ style: value })}
-          />
-
-          <BlockStack gap="150">
+          <Subsection label="Content">
             <TextField
-              label="Color"
-              value={selected.color ?? ""}
-              onChange={(value) => updateSelected({ color: value || null })}
-              placeholder="#3b82f6"
+              label="Title"
+              value={selected.title}
+              onChange={(value) => updateSelected({ title: value })}
+              error={selectedErrors.title}
               autoComplete="off"
             />
-            <div className="sdl-hs-swatches" role="group" aria-label="Quick color presets">
-              {COLOR_SWATCHES.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className="sdl-hs-swatch"
-                  data-active={selected.color === c || undefined}
-                  style={{ background: c }}
-                  onClick={() => updateSelected({ color: c })}
-                  title={c}
-                  aria-label={`Use color ${c}`}
-                />
-              ))}
-            </div>
-          </BlockStack>
-
-          {/* Position & Camera collapsible */}
-          <SectionToggle
-            id="hotspot-position-section"
-            label="Position & Camera"
-            open={positionOpen}
-            onToggle={() => setPositionOpen((v) => !v)}
-          >
-            <BlockStack gap="200">
+            <TextField
+              label="Body"
+              value={selected.body}
+              onChange={(value) => updateSelected({ body: value })}
+              multiline={3}
+              autoComplete="off"
+            />
+            <BlockStack gap="150">
               <TextField
-                label="Position"
-                value={selected.position}
-                onChange={(value) => updateSelected({ position: value })}
-                placeholder="0m 0m 0m"
-                error={selectedErrors.position}
+                label="Color"
+                value={selected.color ?? ""}
+                onChange={(value) => updateSelected({ color: value || null })}
+                placeholder="#3b82f6"
                 autoComplete="off"
               />
-              <TextField
-                label="Normal"
-                value={selected.normal ?? ""}
-                onChange={(value) => updateSelected({ normal: value || null })}
-                placeholder="0m 1m 0m"
-                error={selectedErrors.normal}
-                autoComplete="off"
-              />
-              <TextField
-                label="Focus target"
-                value={selected.focusTarget ?? ""}
-                onChange={(value) => updateSelected({ focusTarget: value || null })}
-                placeholder="0m 0m 0m"
-                error={selectedErrors.focusTarget}
-                autoComplete="off"
-              />
-              <TextField
-                label="Focus orbit"
-                value={selected.focusOrbit ?? ""}
-                onChange={(value) => updateSelected({ focusOrbit: value || null })}
-                placeholder="20deg 72deg 85%"
-                error={selectedErrors.focusOrbit}
-                autoComplete="off"
-              />
+              <div className="sdl-hs-swatches" role="group" aria-label="Quick color presets">
+                {COLOR_SWATCHES.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className="sdl-hs-swatch"
+                    data-active={selected.color === c || undefined}
+                    style={{ background: c }}
+                    onClick={() => updateSelected({ color: c })}
+                    title={c}
+                    aria-label={`Use color ${c}`}
+                  />
+                ))}
+              </div>
             </BlockStack>
-          </SectionToggle>
+          </Subsection>
 
-          {/* Advanced collapsible */}
-          <SectionToggle
-            id="hotspot-advanced-section"
-            label="Advanced"
-            open={advancedOpen}
-            onToggle={() => setAdvancedOpen((v) => !v)}
-          >
-            <BlockStack gap="200">
-              <TextField
-                label="Icon"
-                value={selected.icon ?? ""}
-                onChange={(value) => updateSelected({ icon: value || null })}
-                placeholder="plus"
-                autoComplete="off"
-              />
-              <TextField
-                label="CTA label"
-                value={selected.ctaLabel ?? ""}
-                onChange={(value) => updateSelected({ ctaLabel: value || null })}
-                autoComplete="off"
-              />
-              <TextField
-                label="CTA URL"
-                value={selected.ctaUrl ?? ""}
-                onChange={(value) => updateSelected({ ctaUrl: value || null })}
-                autoComplete="off"
-              />
-            </BlockStack>
-          </SectionToggle>
+          <Subsection label="Appearance">
+            <Select
+              label="Style"
+              options={STYLE_OPTIONS}
+              value={selected.style}
+              onChange={(value) => updateSelected({ style: value })}
+            />
+            <TextField
+              label="Icon"
+              value={selected.icon ?? ""}
+              onChange={(value) => updateSelected({ icon: value || null })}
+              placeholder="plus"
+              autoComplete="off"
+            />
+          </Subsection>
+
+          <Subsection label="Layout">
+            <TextField
+              label="Position"
+              value={selected.position}
+              onChange={(value) => updateSelected({ position: value })}
+              placeholder="0m 0m 0m"
+              error={selectedErrors.position}
+              autoComplete="off"
+            />
+            <TextField
+              label="Normal"
+              value={selected.normal ?? ""}
+              onChange={(value) => updateSelected({ normal: value || null })}
+              placeholder="0m 1m 0m"
+              error={selectedErrors.normal}
+              autoComplete="off"
+            />
+            <TextField
+              label="Focus target"
+              value={selected.focusTarget ?? ""}
+              onChange={(value) => updateSelected({ focusTarget: value || null })}
+              placeholder="0m 0m 0m"
+              error={selectedErrors.focusTarget}
+              autoComplete="off"
+            />
+            <TextField
+              label="Focus orbit"
+              value={selected.focusOrbit ?? ""}
+              onChange={(value) => updateSelected({ focusOrbit: value || null })}
+              placeholder="20deg 72deg 85%"
+              error={selectedErrors.focusOrbit}
+              autoComplete="off"
+            />
+          </Subsection>
+
+          <Subsection label="Behavior">
+            <TextField
+              label="CTA label"
+              value={selected.ctaLabel ?? ""}
+              onChange={(value) => updateSelected({ ctaLabel: value || null })}
+              autoComplete="off"
+            />
+            <TextField
+              label="CTA URL"
+              value={selected.ctaUrl ?? ""}
+              onChange={(value) => updateSelected({ ctaUrl: value || null })}
+              autoComplete="off"
+            />
+          </Subsection>
         </BlockStack>
       ) : (
         <Text as="p" tone="subdued" variant="bodySm">
@@ -556,39 +538,22 @@ export function Sdl3dHotspotEditor({
   );
 }
 
-/** Inline collapsible block — chevron header + Polaris Collapsible body. */
-function SectionToggle({
-  id,
-  label,
-  open,
-  onToggle,
-  children,
-}: {
-  id: string;
-  label: string;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
+/**
+ * Non-collapsible subsection header + body. Replaces the prior
+ * Position & Camera / Advanced Collapsibles. Subsection naming
+ * (Content / Appearance / Layout / Behavior) is the load-bearing
+ * primitive the Simple/Advanced gate (PR #2) and the new-field PRs
+ * hang off.
+ */
+function Subsection({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <BlockStack gap="100">
-      <button
-        type="button"
-        className="sdl-hs-section__trigger"
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={onToggle}
-      >
-        <InlineStack align="space-between" blockAlign="center" wrap={false}>
-          <Text as="span" variant="bodyMd" fontWeight="semibold">
-            {label}
-          </Text>
-          <Icon source={open ? ChevronUpIcon : ChevronDownIcon} tone="subdued" />
-        </InlineStack>
-      </button>
-      <Collapsible id={id} open={open} transition={{ duration: "150ms", timingFunction: "ease-in-out" }}>
-        <Box paddingBlockStart="100">{children}</Box>
-      </Collapsible>
+      <Box paddingBlockStart="200" paddingBlockEnd="050">
+        <Text as="h4" variant="headingXs">
+          {label}
+        </Text>
+      </Box>
+      <BlockStack gap="200">{children}</BlockStack>
     </BlockStack>
   );
 }
