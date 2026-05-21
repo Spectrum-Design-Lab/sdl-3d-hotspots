@@ -27,15 +27,16 @@ model Session {
   refreshTokenExpires DateTime?
 }
 model Shop {
-  id                 String          @id @default(cuid())
-  shopDomain         String          @unique
-  planName           String?
-  logoUrl            String?
-  onboardingComplete Boolean         @default(false)
-  darkMode           Boolean         @default(false)
-  installedAt        DateTime        @default(now())
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  id                            String   @id @default(cuid())
+  shopDomain                    String   @unique
+  planName                      String?
+  logoUrl                       String?
+  onboardingComplete            Boolean  @default(false)
+  darkMode                      Boolean  @default(false)
+  defaultViewerBackgroundColor  String?
+  installedAt                   DateTime @default(now())
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
 
   productCaches  ProductCache[]
   productConfigs ProductConfig[]

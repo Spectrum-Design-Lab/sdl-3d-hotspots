@@ -262,6 +262,7 @@ export async function loader({ request }: { request: Request }) {
     shop: session.shop,
     darkMode: shop.darkMode ?? false,
     shopLogoUrl: shop.logoUrl ?? null,
+    shopDefaultBackgroundColor: shop.defaultViewerBackgroundColor ?? null,
     productFeaturedImageUrl,
     q,
     flash,
@@ -1618,6 +1619,7 @@ export default function Sdl3dEditorRoute() {
                     valueJson={viewerSettingsJson}
                     onChangeJson={setViewerSettingsJson}
                     viewerType={viewerType}
+                    shopDefaultBackgroundColor={loaderData.shopDefaultBackgroundColor}
                   />
                 </InspectorSection>
 
@@ -1681,6 +1683,7 @@ export default function Sdl3dEditorRoute() {
                     onChangeJson={setViewerSettingsJson}
                     advanced
                     viewerType={viewerType}
+                    shopDefaultBackgroundColor={loaderData.shopDefaultBackgroundColor}
                   />
                   <Box paddingBlockStart="300">
                     <JsonAdvancedPanel

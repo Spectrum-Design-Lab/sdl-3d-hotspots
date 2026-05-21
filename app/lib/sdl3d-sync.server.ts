@@ -62,9 +62,23 @@ export async function publishConfigToMetafields(args: {
 
   const shop = await ensureShop(shopDomain);
 
-  const viewerSettings = coerceViewerSettings(
+  const rawViewerSettings = coerceViewerSettings(
     safeJsonParse(config.viewerSettingsJson, defaultViewerSettings),
   );
+  // Slice 8 PR #3 — resolve background colour at publish time:
+  // productOverride ?? shopDefault ?? hardcoded fallback. TAE keeps
+  // reading just the per-product metafield, so once published the
+  // value is frozen until next publish (the staleness footgun called
+  // out in the plan — a "Republish all" bulk action is a follow-up
+  // that would clear it).
+  const resolvedBackgroundColor =
+    rawViewerSettings.backgroundColor
+    ?? shop.defaultViewerBackgroundColor
+    ?? defaultViewerSettings.backgroundColor;
+  const viewerSettings = {
+    ...rawViewerSettings,
+    backgroundColor: resolvedBackgroundColor,
+  };
   const hotspots = config.hotspots.map(dbHotspotToPublished);
 
   const viewerType = normalizeViewerTypeToDb(config.viewerType);

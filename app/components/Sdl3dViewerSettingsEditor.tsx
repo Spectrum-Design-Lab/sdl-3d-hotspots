@@ -66,11 +66,13 @@ export function Sdl3dViewerSettingsEditor({
   onChangeJson,
   advanced,
   viewerType,
+  shopDefaultBackgroundColor,
 }: {
   valueJson: string;
   onChangeJson: (nextJson: string) => void;
   advanced?: boolean;
   viewerType: ViewerType;
+  shopDefaultBackgroundColor?: string | null;
 }) {
   const settings = parseViewerSettingsJson(valueJson);
   const fieldErrors = getViewerSettingsFieldErrors(valueJson);
@@ -78,6 +80,11 @@ export function Sdl3dViewerSettingsEditor({
   // Hint copy shown under each 3D-only section so 360 merchants who
   // flip back and forth don't think their values were deleted.
   const threeDOnlyHint = "Shown for 3D models only.";
+  // Slice 8 PR #3: BG colour placeholder shows the shop default when
+  // the per-product field is empty so merchants understand what their
+  // storefront will actually use. Falls back to the hardcoded default
+  // when no shop default is set.
+  const bgPlaceholder = shopDefaultBackgroundColor || "#0b1020";
 
   function update(patch: Partial<ViewerSettings>) {
     onChangeJson(
@@ -297,38 +304,62 @@ export function Sdl3dViewerSettingsEditor({
             autoComplete="off"
           />
         ) : null}
-        {/* Slice 7 PR #2: background color now lives here (was a floating
-            preview-mode control). Pairs the TextField with a native swatch
-            input so merchants can pick visually without leaving the form. */}
-        <InlineStack gap="200" blockAlign="end" wrap={false}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <TextField
-              label="Background color"
-              value={settings.backgroundColor ?? ""}
-              onChange={(value) => updateNullableString("backgroundColor", value)}
-              placeholder="#0b1020"
-              error={fieldErrors.backgroundColor}
-              autoComplete="off"
+        {/* Background colour: per-product override.
+            Slice 7 PR #2 introduced the inline editor + swatch.
+            Slice 8 PR #3 — placeholder shows the shop default so the
+            merchant knows what colour their storefront will use when
+            the field is blank, plus a Reset button when an override
+            is set. The publish-time resolver substitutes the shop
+            default if this stays null. */}
+        <BlockStack gap="100">
+          <InlineStack gap="200" blockAlign="end" wrap={false}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <TextField
+                label="Background color"
+                value={settings.backgroundColor ?? ""}
+                onChange={(value) => updateNullableString("backgroundColor", value)}
+                placeholder={bgPlaceholder}
+                error={fieldErrors.backgroundColor}
+                helpText={
+                  settings.backgroundColor
+                    ? undefined
+                    : shopDefaultBackgroundColor
+                      ? `Using shop default (${shopDefaultBackgroundColor}).`
+                      : undefined
+                }
+                autoComplete="off"
+              />
+            </div>
+            <input
+              type="color"
+              value={settings.backgroundColor && /^#[0-9a-f]{6}$/i.test(settings.backgroundColor)
+                ? settings.backgroundColor
+                : bgPlaceholder}
+              onChange={(e) => updateNullableString("backgroundColor", e.target.value)}
+              aria-label="Background color swatch"
+              style={{
+                width: 36,
+                height: 36,
+                border: "1px solid var(--p-color-border)",
+                borderRadius: "var(--p-border-radius-200)",
+                padding: 2,
+                cursor: "pointer",
+                background: "transparent",
+              }}
             />
-          </div>
-          <input
-            type="color"
-            value={settings.backgroundColor && /^#[0-9a-f]{6}$/i.test(settings.backgroundColor)
-              ? settings.backgroundColor
-              : "#0b1020"}
-            onChange={(e) => updateNullableString("backgroundColor", e.target.value)}
-            aria-label="Background color swatch"
-            style={{
-              width: 36,
-              height: 36,
-              border: "1px solid var(--p-color-border)",
-              borderRadius: "var(--p-border-radius-200)",
-              padding: 2,
-              cursor: "pointer",
-              background: "transparent",
-            }}
-          />
-        </InlineStack>
+          </InlineStack>
+          {settings.backgroundColor ? (
+            <InlineStack>
+              <Button
+                size="micro"
+                variant="plain"
+                onClick={() => updateNullableString("backgroundColor", "")}
+              >
+                Reset to default
+              </Button>
+            </InlineStack>
+          ) : null}
+        </BlockStack>
         <Select
           label="Hotspot style"
           options={HOTSPOT_STYLE_OPTIONS}

@@ -47,6 +47,23 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ ok: true, logoUrl });
     }
 
+    // Slice 8 viewer-settings PR #3 — shop-level default BG colour.
+    // Empty string clears the override and the publish-time resolver
+    // falls back to the hardcoded #0b1020. Validated against the same
+    // CSS-color regex as the per-product override.
+    if (intent === "saveDefaultViewerBackgroundColor") {
+      const raw = String(formData.get("color") || "").trim();
+      if (raw && !/^(#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})|(rgb|rgba|hsl|hsla)\([^)]+\))$/i.test(raw)) {
+        return json({ ok: false, message: "Use a CSS colour like #0b1020 or rgb(...)." }, 400);
+      }
+      const next = raw || null;
+      await prisma.shop.update({
+        where: { id: shop.id },
+        data: { defaultViewerBackgroundColor: next },
+      });
+      return json({ ok: true, defaultViewerBackgroundColor: next });
+    }
+
     return json({ ok: false, message: "Unknown settings intent." }, 400);
   });
 }

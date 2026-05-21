@@ -65,6 +65,7 @@ export async function loader({ request }: { request: Request }) {
     shop: session.shop,
     logoUrl: shop.logoUrl ?? "",
     darkMode: shop.darkMode ?? false,
+    defaultViewerBackgroundColor: shop.defaultViewerBackgroundColor ?? "",
     apiVersion: String(apiVersion),
     configCount,
     presetCount,
@@ -96,8 +97,10 @@ export default function Sdl3dSettingsRoute() {
   const darkModeFetcher = useFetcher<ActionData<{ darkMode?: boolean }>>();
   const metafieldFetcher = useFetcher<ActionData<{ results?: MetafieldResult[] }>>();
   const onboardingFetcher = useFetcher<ActionData<{ resetOnboarding?: boolean }>>();
+  const bgColorFetcher = useFetcher<ActionData<{ defaultViewerBackgroundColor?: string | null }>>();
 
   const [logoInput, setLogoInput] = useState(data.logoUrl);
+  const [bgColorInput, setBgColorInput] = useState(data.defaultViewerBackgroundColor);
   const [themeChoice, setThemeChoice] = useState<("light" | "dark")[]>(
     data.darkMode ? ["dark"] : ["light"],
   );
@@ -143,12 +146,32 @@ export default function Sdl3dSettingsRoute() {
     }
   }, [onboardingFetcher.state, onboardingFetcher.data]);
 
+  useEffect(() => {
+    if (
+      bgColorFetcher.state === "idle" &&
+      bgColorFetcher.data?.ok &&
+      bgColorFetcher.data.defaultViewerBackgroundColor !== undefined
+    ) {
+      setBgColorInput(bgColorFetcher.data.defaultViewerBackgroundColor ?? "");
+      setToast({ message: "Default background colour saved." });
+    } else if (bgColorFetcher.state === "idle" && bgColorFetcher.data?.message && !bgColorFetcher.data.ok) {
+      setToast({ message: bgColorFetcher.data.message, error: true });
+    }
+  }, [bgColorFetcher.state, bgColorFetcher.data]);
+
   const handleLogoSubmit = useCallback(() => {
     const fd = new FormData();
     fd.set("intent", "saveLogo");
     fd.set("logoUrl", logoInput);
     logoFetcher.submit(fd, { method: "post", action: "/api/sdl3d/settings" });
   }, [logoFetcher, logoInput]);
+
+  const handleBgColorSubmit = useCallback(() => {
+    const fd = new FormData();
+    fd.set("intent", "saveDefaultViewerBackgroundColor");
+    fd.set("color", bgColorInput);
+    bgColorFetcher.submit(fd, { method: "post", action: "/api/sdl3d/settings" });
+  }, [bgColorFetcher, bgColorInput]);
 
   const handleThemeChange = useCallback(
     (selected: string[]) => {
@@ -257,6 +280,71 @@ export default function Sdl3dSettingsRoute() {
                     </InlineStack>
                   </FormLayout>
                 </PolarisForm>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+
+          {/* Slice 8 viewer-settings PR #3 — shop-level default BG colour.
+              Per-product override still lives in the editor's Viewer
+              inspector; this is the fallback the publish-time resolver
+              uses when the product hasn't set its own. */}
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">Default viewer background</Text>
+                <Text as="p" tone="subdued">
+                  Applied to every product's storefront viewer unless that product overrides it in the editor. Leave blank to fall back to the built-in dark navy ({"#0b1020"}). Changes apply to new publishes; re-publish older products to refresh them.
+                </Text>
+                <InlineStack gap="200" blockAlign="end" wrap={false}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <TextField
+                      label="Default background colour"
+                      value={bgColorInput}
+                      onChange={setBgColorInput}
+                      placeholder="#0b1020"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <input
+                    type="color"
+                    value={/^#[0-9a-f]{6}$/i.test(bgColorInput) ? bgColorInput : "#0b1020"}
+                    onChange={(e) => setBgColorInput(e.target.value)}
+                    aria-label="Default background colour swatch"
+                    style={{
+                      width: 36,
+                      height: 36,
+                      border: "1px solid var(--p-color-border)",
+                      borderRadius: "var(--p-border-radius-200)",
+                      padding: 2,
+                      cursor: "pointer",
+                      background: "transparent",
+                    }}
+                  />
+                </InlineStack>
+                <InlineStack gap="200">
+                  <Button
+                    variant="primary"
+                    onClick={handleBgColorSubmit}
+                    loading={bgColorFetcher.state !== "idle"}
+                    disabled={bgColorFetcher.state !== "idle"}
+                  >
+                    Save
+                  </Button>
+                  {bgColorInput ? (
+                    <Button
+                      onClick={() => {
+                        setBgColorInput("");
+                        const fd = new FormData();
+                        fd.set("intent", "saveDefaultViewerBackgroundColor");
+                        fd.set("color", "");
+                        bgColorFetcher.submit(fd, { method: "post", action: "/api/sdl3d/settings" });
+                      }}
+                      disabled={bgColorFetcher.state !== "idle"}
+                    >
+                      Clear
+                    </Button>
+                  ) : null}
+                </InlineStack>
               </BlockStack>
             </Card>
           </Layout.Section>
