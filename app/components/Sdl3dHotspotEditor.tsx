@@ -134,6 +134,7 @@ const STYLE_OPTIONS = [
 export function Sdl3dHotspotEditor({
   hotspots,
   selectedHotspotId,
+  editorMode = "simple",
   onChange,
   onSelectHotspot,
   onSaveAsPreset,
@@ -141,11 +142,13 @@ export function Sdl3dHotspotEditor({
 }: {
   hotspots: EditableHotspot[] | undefined;
   selectedHotspotId: string | null;
+  editorMode?: "simple" | "advanced";
   onChange: (next: EditableHotspot[]) => void;
   onSelectHotspot: (id: string | null) => void;
   onSaveAsPreset?: (selectedHotspots: EditableHotspot[]) => void;
   onApplyPreset?: () => void;
 }) {
+  const isAdvanced = editorMode === "advanced";
   const safeHotspots = Array.isArray(hotspots) ? hotspots : [];
   const selectedIndex = safeHotspots.findIndex((h) => h.id === selectedHotspotId);
   const selected = selectedIndex >= 0 ? safeHotspots[selectedIndex] : null;
@@ -463,21 +466,23 @@ export function Sdl3dHotspotEditor({
             </BlockStack>
           </Subsection>
 
-          <Subsection label="Appearance">
-            <Select
-              label="Style"
-              options={STYLE_OPTIONS}
-              value={selected.style}
-              onChange={(value) => updateSelected({ style: value })}
-            />
-            <TextField
-              label="Icon"
-              value={selected.icon ?? ""}
-              onChange={(value) => updateSelected({ icon: value || null })}
-              placeholder="plus"
-              autoComplete="off"
-            />
-          </Subsection>
+          {isAdvanced ? (
+            <Subsection label="Appearance">
+              <Select
+                label="Style"
+                options={STYLE_OPTIONS}
+                value={selected.style}
+                onChange={(value) => updateSelected({ style: value })}
+              />
+              <TextField
+                label="Icon"
+                value={selected.icon ?? ""}
+                onChange={(value) => updateSelected({ icon: value || null })}
+                placeholder="plus"
+                autoComplete="off"
+              />
+            </Subsection>
+          ) : null}
 
           <Subsection label="Layout">
             <TextField
@@ -504,30 +509,34 @@ export function Sdl3dHotspotEditor({
               error={selectedErrors.focusTarget}
               autoComplete="off"
             />
-            <TextField
-              label="Focus orbit"
-              value={selected.focusOrbit ?? ""}
-              onChange={(value) => updateSelected({ focusOrbit: value || null })}
-              placeholder="20deg 72deg 85%"
-              error={selectedErrors.focusOrbit}
-              autoComplete="off"
-            />
+            {isAdvanced ? (
+              <TextField
+                label="Focus orbit"
+                value={selected.focusOrbit ?? ""}
+                onChange={(value) => updateSelected({ focusOrbit: value || null })}
+                placeholder="20deg 72deg 85%"
+                error={selectedErrors.focusOrbit}
+                autoComplete="off"
+              />
+            ) : null}
           </Subsection>
 
-          <Subsection label="Behavior">
-            <TextField
-              label="CTA label"
-              value={selected.ctaLabel ?? ""}
-              onChange={(value) => updateSelected({ ctaLabel: value || null })}
-              autoComplete="off"
-            />
-            <TextField
-              label="CTA URL"
-              value={selected.ctaUrl ?? ""}
-              onChange={(value) => updateSelected({ ctaUrl: value || null })}
-              autoComplete="off"
-            />
-          </Subsection>
+          {isAdvanced ? (
+            <Subsection label="Behavior">
+              <TextField
+                label="CTA label"
+                value={selected.ctaLabel ?? ""}
+                onChange={(value) => updateSelected({ ctaLabel: value || null })}
+                autoComplete="off"
+              />
+              <TextField
+                label="CTA URL"
+                value={selected.ctaUrl ?? ""}
+                onChange={(value) => updateSelected({ ctaUrl: value || null })}
+                autoComplete="off"
+              />
+            </Subsection>
+          ) : null}
         </BlockStack>
       ) : (
         <Text as="p" tone="subdued" variant="bodySm">

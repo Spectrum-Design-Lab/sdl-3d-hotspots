@@ -15,6 +15,7 @@ import {
   Select,
   Text,
   TextField,
+  Tooltip,
 } from "@shopify/polaris";
 import { ChevronDownIcon, ChevronUpIcon } from "@shopify/polaris-icons";
 import "../styles/editor.css";
@@ -263,6 +264,7 @@ export async function loader({ request }: { request: Request }) {
     darkMode: shop.darkMode ?? false,
     shopLogoUrl: shop.logoUrl ?? null,
     shopDefaultBackgroundColor: shop.defaultViewerBackgroundColor ?? null,
+    hotspotEditorMode: shop.hotspotEditorMode === "advanced" ? "advanced" : "simple",
     productFeaturedImageUrl,
     q,
     flash,
@@ -366,6 +368,25 @@ export default function Sdl3dEditorRoute() {
     message?: string;
     reload?: boolean;
   }>();
+  // Slice 8 hotspots PR #2 — per-shop Simple/Advanced editor mode.
+  // Local state shadows loaderData so the toggle flips optimistically;
+  // the API call is fire-and-forget (no loader revalidation needed —
+  // editorMode is a pure UI gate, no derived loader data depends on it).
+  const editorModeFetcher = useFetcher<{
+    ok?: boolean;
+    hotspotEditorMode?: "simple" | "advanced";
+  }>();
+  const [editorMode, setEditorModeLocal] = useState<"simple" | "advanced">(
+    loaderData.hotspotEditorMode,
+  );
+  function setEditorMode(next: "simple" | "advanced") {
+    if (next === editorMode) return;
+    setEditorModeLocal(next);
+    const fd = new FormData();
+    fd.set("intent", "setHotspotEditorMode");
+    fd.set("mode", next);
+    editorModeFetcher.submit(fd, { method: "post", action: "/api/sdl3d/settings" });
+  }
   // Slice 8 PR #2 — "Delete this config" reuses the dashboard's
   // intent=deleteConfig (clears the DB row + cascaded hotspots/captures;
   // metafields are intentionally left intact so the merchant can recover
@@ -1629,23 +1650,50 @@ export default function Sdl3dEditorRoute() {
                   open={rightTab === "hotspots"}
                   onToggle={() => setRightTab(rightTab === "hotspots" ? "upload" : "hotspots")}
                 >
-                  <InlineStack gap="100" blockAlign="center">
-                    <Button
-                      size="slim"
-                      disabled={!canUndo}
-                      onClick={handleUndo}
-                      accessibilityLabel="Undo (Ctrl+Z)"
+                  <InlineStack align="space-between" blockAlign="center" wrap>
+                    <InlineStack gap="100" blockAlign="center">
+                      <Button
+                        size="slim"
+                        disabled={!canUndo}
+                        onClick={handleUndo}
+                        accessibilityLabel="Undo (Ctrl+Z)"
+                      >
+                        Undo
+                      </Button>
+                      <Button
+                        size="slim"
+                        disabled={!canRedo}
+                        onClick={handleRedo}
+                        accessibilityLabel="Redo (Ctrl+Shift+Z)"
+                      >
+                        Redo
+                      </Button>
+                    </InlineStack>
+                    {/* Slice 8 hotspots PR #2 — per-shop Simple/Advanced gate.
+                        Simple hides icon / style / focus orbit (3D) / frame
+                        range + numeric coords (360) / CTA + media slots.
+                        Stored values for advanced-only fields persist quietly
+                        when flipped back to simple. */}
+                    <Tooltip
+                      content="Advanced surfaces icon, style, focus camera, CTA, and (soon) animations + media slots."
                     >
-                      Undo
-                    </Button>
-                    <Button
-                      size="slim"
-                      disabled={!canRedo}
-                      onClick={handleRedo}
-                      accessibilityLabel="Redo (Ctrl+Shift+Z)"
-                    >
-                      Redo
-                    </Button>
+                      <ButtonGroup variant="segmented">
+                        <Button
+                          size="slim"
+                          pressed={editorMode === "simple"}
+                          onClick={() => setEditorMode("simple")}
+                        >
+                          Simple
+                        </Button>
+                        <Button
+                          size="slim"
+                          pressed={editorMode === "advanced"}
+                          onClick={() => setEditorMode("advanced")}
+                        >
+                          Advanced
+                        </Button>
+                      </ButtonGroup>
+                    </Tooltip>
                   </InlineStack>
                   <Box paddingBlockStart="200">
                     {viewerType === "IMAGE_360" ? (
@@ -1654,6 +1702,7 @@ export default function Sdl3dEditorRoute() {
                         selectedHotspotId={selectedHotspotId}
                         frameCount={loaderData.config.frameCount}
                         currentFrame={currentFrame360}
+                        editorMode={editorMode}
                         onChange={setHotspots360}
                         onSelectHotspot={handlePreviewHotspotSelect}
                         onSaveAsPreset={handleSave360HotspotsAsPreset}
@@ -1663,6 +1712,7 @@ export default function Sdl3dEditorRoute() {
                       <Sdl3dHotspotEditor
                         hotspots={hotspots}
                         selectedHotspotId={selectedHotspotId}
+                        editorMode={editorMode}
                         onChange={setHotspots}
                         onSelectHotspot={handlePreviewHotspotSelect}
                         onSaveAsPreset={handleSaveHotspotsAsPreset}

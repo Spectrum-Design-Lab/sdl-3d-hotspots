@@ -42,6 +42,7 @@ interface Sdl3dHotspot360EditorProps {
   selectedHotspotId: string | null;
   frameCount: number;
   currentFrame: number;
+  editorMode?: "simple" | "advanced";
   onChange: (hotspots: Hotspot360[]) => void;
   onSelectHotspot: (id: string | null) => void;
   onSaveAsPreset?: (selectedHotspots: Hotspot360[]) => void;
@@ -227,11 +228,13 @@ export function Sdl3dHotspot360Editor({
   selectedHotspotId,
   frameCount,
   currentFrame,
+  editorMode = "simple",
   onChange,
   onSelectHotspot,
   onSaveAsPreset,
   onApplyPreset,
 }: Sdl3dHotspot360EditorProps) {
+  const isAdvanced = editorMode === "advanced";
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
 
@@ -497,46 +500,55 @@ export function Sdl3dHotspot360Editor({
                       </BlockStack>
                     </Subsection>
 
-                    <Subsection label="Appearance">
-                      <Select
-                        label="Style"
-                        options={STYLE_OPTIONS}
-                        value={hotspot.style || "card"}
-                        onChange={(value) => updateHotspot(hotspot.id, { style: value })}
-                      />
-                    </Subsection>
+                    {isAdvanced ? (
+                      <Subsection label="Appearance">
+                        <Select
+                          label="Style"
+                          options={STYLE_OPTIONS}
+                          value={hotspot.style || "card"}
+                          onChange={(value) => updateHotspot(hotspot.id, { style: value })}
+                        />
+                      </Subsection>
+                    ) : null}
 
                     <Subsection label="Layout">
                       {/* Display 1-indexed; storage stays 0-indexed. FrameField
                           keeps a local draft so backspacing the last digit
                           doesn't snap back to the stored value — commit happens
-                          on blur via frameFromDisplay's clamp. */}
-                      <InlineStack gap="200" wrap={false}>
-                        <Box width="100%">
-                          <FrameField
-                            label="Visible from frame"
-                            storedValue={hotspot.visibleFrameStart}
-                            frameCount={frameCount}
-                            onCommit={(stored) =>
-                              updateHotspot(hotspot.id, { visibleFrameStart: stored })
-                            }
-                          />
-                        </Box>
-                        <Box width="100%">
-                          <FrameField
-                            label="Visible to frame"
-                            storedValue={hotspot.visibleFrameEnd}
-                            frameCount={frameCount}
-                            onCommit={(stored) =>
-                              updateHotspot(hotspot.id, { visibleFrameEnd: stored })
-                            }
-                          />
-                        </Box>
-                      </InlineStack>
+                          on blur via frameFromDisplay's clamp. Frame-range
+                          inputs gate to Advanced; default is full range so
+                          Simple-mode merchants get correct visibility without
+                          the controls. */}
+                      {isAdvanced ? (
+                        <InlineStack gap="200" wrap={false}>
+                          <Box width="100%">
+                            <FrameField
+                              label="Visible from frame"
+                              storedValue={hotspot.visibleFrameStart}
+                              frameCount={frameCount}
+                              onCommit={(stored) =>
+                                updateHotspot(hotspot.id, { visibleFrameStart: stored })
+                              }
+                            />
+                          </Box>
+                          <Box width="100%">
+                            <FrameField
+                              label="Visible to frame"
+                              storedValue={hotspot.visibleFrameEnd}
+                              frameCount={frameCount}
+                              onCommit={(stored) =>
+                                updateHotspot(hotspot.id, { visibleFrameEnd: stored })
+                              }
+                            />
+                          </Box>
+                        </InlineStack>
+                      ) : null}
 
                       {/* Keyframes — drag updates the storage 0–100 float
                           directly; CoordField re-syncs via isFocusedRef so
-                          drag-driven changes don't fight the typed draft. */}
+                          drag-driven changes don't fight the typed draft.
+                          In Simple mode the per-row X/Y typed inputs hide;
+                          merchants place keyframes by clicking the canvas. */}
                       <BlockStack gap="200">
                         <InlineStack align="space-between" blockAlign="center">
                           <Text as="span" variant="bodyMd" fontWeight="semibold">
@@ -555,9 +567,11 @@ export function Sdl3dHotspot360Editor({
                           </Text>
                         ) : (
                           <BlockStack gap="100">
-                            <Text as="p" tone="subdued" variant="bodySm">
-                              X / Y: 0 = top-left edge, 1000 = bottom-right edge.
-                            </Text>
+                            {isAdvanced ? (
+                              <Text as="p" tone="subdued" variant="bodySm">
+                                X / Y: 0 = top-left edge, 1000 = bottom-right edge.
+                              </Text>
+                            ) : null}
                             {hotspot.keyframes.map((kf) => (
                               <InlineStack
                                 key={kf.frame}
@@ -570,16 +584,20 @@ export function Sdl3dHotspot360Editor({
                                   {`Frame ${frameToDisplay(kf.frame)}`}
                                 </Text>
                                 <InlineStack gap="100" blockAlign="center" wrap={false}>
-                                  <CoordField
-                                    axis="X"
-                                    storedValue={kf.x}
-                                    onCommit={(x) => addKeyframe(hotspot.id, kf.frame, x, kf.y)}
-                                  />
-                                  <CoordField
-                                    axis="Y"
-                                    storedValue={kf.y}
-                                    onCommit={(y) => addKeyframe(hotspot.id, kf.frame, kf.x, y)}
-                                  />
+                                  {isAdvanced ? (
+                                    <>
+                                      <CoordField
+                                        axis="X"
+                                        storedValue={kf.x}
+                                        onCommit={(x) => addKeyframe(hotspot.id, kf.frame, x, kf.y)}
+                                      />
+                                      <CoordField
+                                        axis="Y"
+                                        storedValue={kf.y}
+                                        onCommit={(y) => addKeyframe(hotspot.id, kf.frame, kf.x, y)}
+                                      />
+                                    </>
+                                  ) : null}
                                   <Button
                                     size="micro"
                                     variant="plain"

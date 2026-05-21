@@ -64,6 +64,22 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ ok: true, defaultViewerBackgroundColor: next });
     }
 
+    // Slice 8 hotspots PR #2 — per-shop Simple/Advanced editor mode.
+    // Default is "simple"; "advanced" surfaces every hotspot field.
+    // Stored values for advanced-only fields persist quietly when the
+    // merchant flips back to simple, so the toggle is non-destructive.
+    if (intent === "setHotspotEditorMode") {
+      const raw = String(formData.get("mode") || "").trim();
+      if (raw !== "simple" && raw !== "advanced") {
+        return json({ ok: false, message: "Mode must be 'simple' or 'advanced'." }, 400);
+      }
+      await prisma.shop.update({
+        where: { id: shop.id },
+        data: { hotspotEditorMode: raw },
+      });
+      return json({ ok: true, hotspotEditorMode: raw });
+    }
+
     return json({ ok: false, message: "Unknown settings intent." }, 400);
   });
 }
