@@ -34,6 +34,7 @@ import {
   normalizeHotspotAnimation,
   type HotspotAnimation,
 } from "../lib/sdl3d-shared";
+import { Sdl3dIconPicker } from "./Sdl3dIconPicker";
 
 export type EditableHotspot = {
   id: string;
@@ -71,7 +72,7 @@ export function blankHotspot(index: number): EditableHotspot {
     visible: true,
     title: `Hotspot ${index + 1}`,
     body: "",
-    icon: "plus",
+    icon: null,
     style: "card",
     color: "#3b82f6",
     animation: "none",
@@ -96,7 +97,7 @@ export function parseInitialHotspots(initialJson: string): EditableHotspot[] {
         visible: Boolean(item.visible ?? true),
         title: String(item.title ?? `Hotspot ${index + 1}`),
         body: String(item.body ?? ""),
-        icon: item.icon ?? "plus",
+        icon: item.icon ?? null,
         style: String(item.style ?? "card"),
         color: item.color ?? "#3b82f6",
         animation: normalizeHotspotAnimation(item.animation),
@@ -148,18 +149,22 @@ export function Sdl3dHotspotEditor({
   hotspots,
   selectedHotspotId,
   editorMode = "simple",
+  iconResolvedUrls,
   onChange,
   onSelectHotspot,
   onSaveAsPreset,
   onApplyPreset,
+  onOpenIconBrowser,
 }: {
   hotspots: EditableHotspot[] | undefined;
   selectedHotspotId: string | null;
   editorMode?: "simple" | "advanced";
+  iconResolvedUrls?: Record<string, string>;
   onChange: (next: EditableHotspot[]) => void;
   onSelectHotspot: (id: string | null) => void;
   onSaveAsPreset?: (selectedHotspots: EditableHotspot[]) => void;
   onApplyPreset?: () => void;
+  onOpenIconBrowser?: (hotspotId: string) => void;
 }) {
   const isAdvanced = editorMode === "advanced";
   const safeHotspots = Array.isArray(hotspots) ? hotspots : [];
@@ -487,12 +492,15 @@ export function Sdl3dHotspotEditor({
                 value={selected.style}
                 onChange={(value) => updateSelected({ style: value })}
               />
-              <TextField
-                label="Icon"
-                value={selected.icon ?? ""}
-                onChange={(value) => updateSelected({ icon: value || null })}
-                placeholder="plus"
-                autoComplete="off"
+              <Sdl3dIconPicker
+                value={selected.icon}
+                resolvedUrl={
+                  selected.icon && selected.icon.startsWith("gid://")
+                    ? iconResolvedUrls?.[selected.icon] ?? null
+                    : null
+                }
+                onChange={(next) => updateSelected({ icon: next })}
+                onPickFromShopifyFiles={() => onOpenIconBrowser?.(selected.id)}
               />
               <Select
                 label="Animation"

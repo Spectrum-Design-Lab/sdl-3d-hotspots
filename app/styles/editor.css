@@ -415,6 +415,17 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   touch-action: none;
 }
 
+/* Slice 8 hotspots PR #4 — preset SVG / URL <img> inside the dot.
+   Matches the storefront viewer.css rule so editor-canvas + storefront
+   render identically. */
+.sdl3d-hotspot__dot--icon svg,
+.sdl3d-hotspot__dot--icon img {
+  display: block;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
 .sdl-preview--dragging .sdl3d-hotspot__dot {
   cursor: grabbing;
 }

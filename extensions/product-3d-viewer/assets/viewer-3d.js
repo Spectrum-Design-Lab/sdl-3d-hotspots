@@ -7,6 +7,37 @@
   if (!S) return;
   var ce = S.ce, sa = S.sa, mkFs = S.mkFs, sFb = S.sFb, mkSidebar = S.mkSidebar;
 
+  // ── Hotspot icon library (Slice 8 hotspots PR #4) ──
+  // Parallel copy of app/lib/hotspot-icons.ts — every change here must
+  // be mirrored there. GIDs are resolved to URLs at publish time so
+  // the storefront only sees preset names or absolute URLs.
+  var PRESET_ICONS = {
+    "plus": '<path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/>',
+    "minus": '<path d="M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/>',
+    "info": '<circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 16v-5M12 8h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/>',
+    "warning": '<path d="M12 3 22 21H2Z M12 10v4M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+    "star": '<path d="M12 2.5l2.95 6.4 6.85.5-5.3 4.5 1.9 6.8L12 17.1l-6.4 3.6 1.9-6.8-5.3-4.5 6.85-.5z" fill="currentColor"/>',
+    "heart": '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z" fill="currentColor"/>',
+    "check": '<path d="M5 12l5 5 9-9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+    "x": '<path d="M6 6l12 12M6 18l12-12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/>',
+    "arrow-up": '<path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+    "arrow-down": '<path d="M12 5v14M5 12l7 7 7-7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+    "arrow-left": '<path d="M19 12H5M12 5l-7 7 7 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+    "arrow-right": '<path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+    "play": '<path d="M8 5v14l11-7z" fill="currentColor"/>',
+    "circle": '<circle cx="12" cy="12" r="9" fill="currentColor"/>'
+  };
+  function iconHtml(v) {
+    if (!v || typeof v !== "string") return "";
+    var t = v.trim();
+    if (!t) return "";
+    if (PRESET_ICONS[t]) return '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">' + PRESET_ICONS[t] + '</svg>';
+    if (t.indexOf("http://") === 0 || t.indexOf("https://") === 0 || t.indexOf("//") === 0) {
+      return '<img src="' + t.replace(/"/g, "&quot;") + '" alt="" />';
+    }
+    return "";
+  }
+
   // ── Viewer settings ──
 
   function applyS(mv, R, s) {
@@ -82,7 +113,13 @@
     b.dataset.hsIndex = String(i);
 
     var d = ce("span", "sdl3d-hotspot__dot");
-    d.textContent = String(i + 1);
+    var iconMarkup = iconHtml(h.icon);
+    if (iconMarkup) {
+      d.classList.add("sdl3d-hotspot__dot--icon");
+      d.innerHTML = iconMarkup;
+    } else {
+      d.textContent = String(i + 1);
+    }
     var c = ce("span", "sdl3d-hotspot__card");
     var t = ce("strong", "sdl3d-hotspot__title");
     t.textContent = l;

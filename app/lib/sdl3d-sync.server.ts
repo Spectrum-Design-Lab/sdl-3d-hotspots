@@ -20,6 +20,7 @@ import {
 import { normalizeViewerTypeToDb } from "./sdl3d-shared";
 import { adminGraphql, ensureShop, type AdminGraphqlClient } from "./sdl3d-graphql.server";
 import { resolveImageSequenceUrls } from "./sdl3d-image-sequence.server";
+import { resolveImageUrlsByGid } from "./sdl3d-files.server";
 
 const NAMESPACE = SDL3D_METAFIELD_NAMESPACE;
 
@@ -80,6 +81,50 @@ export async function publishConfigToMetafields(args: {
     backgroundColor: resolvedBackgroundColor,
   };
   const hotspots = config.hotspots.map(dbHotspotToPublished);
+
+  // Slice 8 hotspots PR #4 — resolve icon GIDs to URLs at publish
+  // time. TAE has no Admin API at render, so the metafield must
+  // carry resolved URLs. Preset names + absolute URLs pass through
+  // resolveImageUrlsByGid's prefix filter untouched.
+  const iconGidsToResolve: string[] = [];
+  for (const h of hotspots) {
+    if (h.icon && h.icon.startsWith("gid://shopify/")) iconGidsToResolve.push(h.icon);
+  }
+  let hotspots360Parsed: Array<Record<string, unknown>> = [];
+  if (config.hotspotsJson360) {
+    try {
+      const arr = JSON.parse(config.hotspotsJson360);
+      if (Array.isArray(arr)) {
+        hotspots360Parsed = arr as Array<Record<string, unknown>>;
+        for (const h of hotspots360Parsed) {
+          const icon = h.icon;
+          if (typeof icon === "string" && icon.startsWith("gid://shopify/")) {
+            iconGidsToResolve.push(icon);
+          }
+        }
+      }
+    } catch { /* malformed — leave as-is, the 360 metafield write below will use the raw string */ }
+  }
+  const iconUrlMap = iconGidsToResolve.length
+    ? await resolveImageUrlsByGid(admin, iconGidsToResolve)
+    : {};
+  for (const h of hotspots) {
+    if (h.icon && h.icon.startsWith("gid://shopify/")) {
+      h.icon = iconUrlMap[h.icon] ?? null;
+    }
+  }
+  // Round-trip 360 hotspots through the parsed copy so resolved icons
+  // land in the published payload. If parsing failed above, fall back
+  // to the raw string further down.
+  const hotspots360Resolved = hotspots360Parsed.length
+    ? hotspots360Parsed.map((h) => {
+      const icon = h.icon;
+      if (typeof icon === "string" && icon.startsWith("gid://shopify/")) {
+        return { ...h, icon: iconUrlMap[icon] ?? null };
+      }
+      return h;
+    })
+    : null;
 
   const viewerType = normalizeViewerTypeToDb(config.viewerType);
 
@@ -167,7 +212,9 @@ export async function publishConfigToMetafields(args: {
       namespace: NAMESPACE,
       key: SDL3D_KEYS.hotspots360,
       type: "json",
-      value: config.hotspotsJson360 || "[]",
+      value: hotspots360Resolved
+        ? JSON.stringify(hotspots360Resolved)
+        : config.hotspotsJson360 || "[]",
     });
   }
 

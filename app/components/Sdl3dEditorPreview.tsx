@@ -224,7 +224,7 @@ export function Sdl3dEditorPreview({
         visible: true,
         title: `Hotspot ${safeHotspots.length + 1}`,
         body: "",
-        icon: "plus",
+        icon: null,
         style: "card",
         color: "#3b82f6",
         animation: "none",

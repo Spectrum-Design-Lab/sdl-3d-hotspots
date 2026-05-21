@@ -428,3 +428,54 @@ export async function resolveSelectedAssetUrls(args: {
 
   return { modelSourceUrl, posterUrl };
 }
+
+/**
+ * Slice 8 hotspots PR #4 — batch-resolve arbitrary Shopify file GIDs
+ * to their public image URLs. Used by the editor loader for live-
+ * preview of GID-typed hotspot icons, and by the publish path to
+ * write resolved URLs into the metafield (TAE has no Admin API
+ * access at render time).
+ *
+ * Filters down to MediaImage nodes only (icons are images by
+ * contract); deleted / non-image GIDs simply drop from the map and
+ * the storefront / editor fall back to the index-number dot.
+ */
+export async function resolveImageUrlsByGid(
+  admin: AdminGraphqlClient,
+  gids: string[],
+): Promise<Record<string, string>> {
+  const unique = Array.from(new Set(gids.filter((g) => typeof g === "string" && g.startsWith("gid://shopify/"))));
+  if (!unique.length) return {};
+
+  const data = await adminGraphql<{
+    nodes: Array<
+      | { __typename: "MediaImage"; id: string; image: { url: string } | null }
+      | { __typename: string; id: string }
+      | null
+    >;
+  }>(
+    admin,
+    `
+      query ResolveImageUrls($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          __typename
+          ... on MediaImage {
+            id
+            image { url }
+          }
+        }
+      }
+    `,
+    { ids: unique },
+  );
+
+  const out: Record<string, string> = {};
+  for (const node of data.nodes) {
+    if (!node) continue;
+    if (node.__typename === "MediaImage") {
+      const url = (node as { image: { url: string } | null }).image?.url;
+      if (url) out[node.id] = url;
+    }
+  }
+  return out;
+}

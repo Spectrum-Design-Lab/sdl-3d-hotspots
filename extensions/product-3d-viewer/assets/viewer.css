@@ -73,6 +73,19 @@
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
 }
 
+/* Slice 8 hotspots PR #4 — when an icon is set, the dot drops the
+   index-number textContent and inlines an SVG / img. Same sizing
+   constraints across both viewers. */
+.sdl3d-hotspot__dot--icon svg,
+.sdl3d-hotspot__dot--icon img,
+.sdl3d-360-hotspot__dot--icon svg,
+.sdl3d-360-hotspot__dot--icon img {
+  display: block;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
 .sdl3d-hotspot__card {
   display: none;
   position: absolute;

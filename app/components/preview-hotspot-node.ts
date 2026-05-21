@@ -3,6 +3,7 @@
  * Pure DOM function — no React dependencies.
  */
 import type { EditableHotspot } from "./Sdl3dHotspotEditor";
+import { classifyIcon, presetIconSvg, type HotspotIconKey } from "../lib/hotspot-icons";
 
 export function createPreviewHotspotNode(
   hotspot: EditableHotspot,
@@ -26,7 +27,19 @@ export function createPreviewHotspotNode(
 
   const dot = document.createElement("span");
   dot.className = "sdl3d-hotspot__dot";
-  dot.textContent = String(index + 1);
+  const iconKind = classifyIcon(hotspot.icon);
+  if (iconKind === "preset" && hotspot.icon) {
+    dot.classList.add("sdl3d-hotspot__dot--icon");
+    dot.innerHTML = presetIconSvg(hotspot.icon as HotspotIconKey, 14);
+  } else if (iconKind === "url" && hotspot.icon) {
+    dot.classList.add("sdl3d-hotspot__dot--icon");
+    const img = document.createElement("img");
+    img.src = hotspot.icon;
+    img.alt = "";
+    dot.appendChild(img);
+  } else {
+    dot.textContent = String(index + 1);
+  }
 
   const card = document.createElement("span");
   card.className = "sdl3d-hotspot__card";

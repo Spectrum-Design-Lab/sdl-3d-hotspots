@@ -29,6 +29,7 @@ import { validateDraftForPublish } from "../lib/sdl3d-validation";
 import {
   listShopifyFiles,
   resolveSelectedAssetUrls,
+  resolveImageUrlsByGid,
 } from "../lib/sdl3d-files.server";
 import { resolveImageSequenceUrls } from "../lib/sdl3d-image-sequence.server";
 import { hasSyncableSdl3dMetafields, pullMetafieldsToDraft } from "../lib/sdl3d-sync.server";
@@ -211,7 +212,31 @@ export async function loader({ request }: { request: Request }) {
   // ── Phase 2: queries that depend on Phase 1 results ──
   const viewerType = (config?.viewerType || "MODEL_3D") as "MODEL_3D" | "IMAGE_360";
 
-  const [resolvedAssets, imageSequenceFrames] = await Promise.all([
+  // Slice 8 hotspots PR #4 — collect icon GIDs from 3D rows + 360 JSON
+  // for batched resolution. Non-GID values (preset names, URLs) pass
+  // through resolveImageUrlsByGid's prefix filter and don't hit the
+  // Admin API.
+  const iconGids: string[] = [];
+  if (config) {
+    for (const row of config.hotspots) {
+      if (row.icon && row.icon.startsWith("gid://shopify/")) iconGids.push(row.icon);
+    }
+    if (config.hotspotsJson360) {
+      try {
+        const arr = JSON.parse(config.hotspotsJson360);
+        if (Array.isArray(arr)) {
+          for (const h of arr) {
+            const icon = (h as { icon?: unknown }).icon;
+            if (typeof icon === "string" && icon.startsWith("gid://shopify/")) {
+              iconGids.push(icon);
+            }
+          }
+        }
+      } catch { /* malformed JSON — ignore, schema parse will catch */ }
+    }
+  }
+
+  const [resolvedAssets, imageSequenceFrames, iconResolvedUrls] = await Promise.all([
     // Resolve model/poster URLs (GraphQL — needs config)
     resolveSelectedAssetUrls({
       admin,
@@ -223,6 +248,9 @@ export async function loader({ request }: { request: Request }) {
     viewerType === "IMAGE_360" && config?.imageSequenceJson
       ? resolveImageSequenceUrls({ admin, imageSequenceJson: config.imageSequenceJson })
       : Promise.resolve([] as ImageSequenceFrame[]),
+
+    // Resolve hotspot icon GIDs for live preview in the picker.
+    iconGids.length ? resolveImageUrlsByGid(admin, iconGids) : Promise.resolve({} as Record<string, string>),
   ]);
 
   // ── Derived data (sync, no I/O) ──
@@ -280,6 +308,7 @@ export async function loader({ request }: { request: Request }) {
     posterFilesCursor: posterFileResult.endCursor,
     resolvedAssets,
     imageSequenceFrames,
+    iconResolvedUrls,
     config: config
       ? {
         id: config.id,
@@ -436,6 +465,13 @@ export default function Sdl3dEditorRoute() {
   const [showModelBrowser, setShowModelBrowser] = useState(false);
   const [showPosterBrowser, setShowPosterBrowser] = useState(false);
   const [showSequenceBrowser, setShowSequenceBrowser] = useState(false);
+  // Slice 8 hotspots PR #4 — Shopify Files picker for hotspot icons.
+  // FileBrowserModal opens in poster (image-single-select) mode; the
+  // selected GID is written to the icon field of the hotspot whose
+  // picker fired the request, tracked by id so concurrent rows don't
+  // collide.
+  const [showIconBrowser, setShowIconBrowser] = useState(false);
+  const [iconBrowserHotspotId, setIconBrowserHotspotId] = useState<string | null>(null);
   // Slice 7 PR #3b — unified 360° source Modal. The FileTriggerCard opens
   // this; the legacy `showSequenceBrowser` (FileBrowserModal mode=sequence)
   // is now only triggered from inside this Modal's "Browse Shopify Files"
@@ -1036,6 +1072,29 @@ export default function Sdl3dEditorRoute() {
       ),
     );
   }
+  // Slice 8 hotspots PR #4 — icon picker → Shopify Files modal handlers.
+  function handleOpenIconBrowser(hotspotId: string) {
+    setIconBrowserHotspotId(hotspotId);
+    setShowIconBrowser(true);
+  }
+  function handleIconBrowserSelect(gids: string[]) {
+    const gid = gids[0];
+    setShowIconBrowser(false);
+    if (!iconBrowserHotspotId || !gid) {
+      setIconBrowserHotspotId(null);
+      return;
+    }
+    if (viewerType === "IMAGE_360") {
+      setHotspots360((current) =>
+        current.map((h) => (h.id === iconBrowserHotspotId ? { ...h, icon: gid } : h)),
+      );
+    } else {
+      setHotspots((current) =>
+        current.map((h) => (h.id === iconBrowserHotspotId ? { ...h, icon: gid } : h)),
+      );
+    }
+    setIconBrowserHotspotId(null);
+  }
   const handlePreviewHotspotSelect = useCallback((id: string | null) => {
     setSelectedHotspotId(id);
     if (id) {
@@ -1132,7 +1191,7 @@ export default function Sdl3dEditorRoute() {
               visible: Boolean(h.visible ?? true),
               title: String(h.title ?? "Hotspot"),
               body: String(h.body ?? ""),
-              icon: h.icon ?? "plus",
+              icon: h.icon ?? null,
               style: String(h.style ?? "card"),
               color: h.color ?? "#3b82f6",
               animation: normalizeHotspotAnimation(h.animation),
@@ -1705,20 +1764,24 @@ export default function Sdl3dEditorRoute() {
                         frameCount={loaderData.config.frameCount}
                         currentFrame={currentFrame360}
                         editorMode={editorMode}
+                        iconResolvedUrls={loaderData.iconResolvedUrls}
                         onChange={setHotspots360}
                         onSelectHotspot={handlePreviewHotspotSelect}
                         onSaveAsPreset={handleSave360HotspotsAsPreset}
                         onApplyPreset={() => setShowPresetBrowser(true)}
+                        onOpenIconBrowser={handleOpenIconBrowser}
                       />
                     ) : (
                       <Sdl3dHotspotEditor
                         hotspots={hotspots}
                         selectedHotspotId={selectedHotspotId}
                         editorMode={editorMode}
+                        iconResolvedUrls={loaderData.iconResolvedUrls}
                         onChange={setHotspots}
                         onSelectHotspot={handlePreviewHotspotSelect}
                         onSaveAsPreset={handleSaveHotspotsAsPreset}
                         onApplyPreset={() => setShowPresetBrowser(true)}
+                        onOpenIconBrowser={handleOpenIconBrowser}
                       />
                     )}
                   </Box>
@@ -1828,6 +1891,22 @@ export default function Sdl3dEditorRoute() {
             shopLogoUrl={loaderData.shopLogoUrl}
             productFeaturedImageUrl={loaderData.productFeaturedImageUrl}
             referenceFilename={allPosterFiles.find((f) => f.id === loaderData.config.posterFileShopifyGid)?.name}
+          />
+          <FileBrowserModal
+            open={showIconBrowser}
+            onClose={() => {
+              setShowIconBrowser(false);
+              setIconBrowserHotspotId(null);
+            }}
+            mode="poster"
+            initialFiles={allPosterFiles}
+            initialHasMore={posterHasMore}
+            initialCursor={posterCursor}
+            onSelect={handleIconBrowserSelect}
+            onUpload={handlePosterUpload}
+            productGid={loaderData.selectedProduct.id}
+            q={loaderData.q}
+            busy={isActionBusy}
           />
           <FileBrowserModal
             open={showSequenceBrowser}

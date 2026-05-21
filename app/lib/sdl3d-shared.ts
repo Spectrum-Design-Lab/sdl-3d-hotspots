@@ -42,8 +42,14 @@ export function normalizeHotspotAnimation(value: unknown): HotspotAnimation {
 // Types derived from Zod schemas — re-exported for backward compatibility
 export type ImageSequenceFrame = ImageSequenceFrameZ;
 export type Hotspot360Keyframe = Hotspot360KeyframeZ;
+/**
+ * `icon` was added in Slice 8 hotspots PR #4. 3D hotspots already had
+ * the column; 360 hotspots picked it up via the JSON-blob passthrough
+ * so existing rows tolerate the field arriving / departing.
+ */
 export type Hotspot360 = Hotspot360Z & {
   animation?: HotspotAnimation;
+  icon?: string | null;
 };
 
 function catmullRom(p0: number, p1: number, p2: number, p3: number, t: number): number {

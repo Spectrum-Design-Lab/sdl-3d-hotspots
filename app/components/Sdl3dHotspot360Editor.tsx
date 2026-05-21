@@ -38,6 +38,7 @@ import {
   type Hotspot360,
   type Hotspot360Keyframe,
 } from "../lib/sdl3d-shared";
+import { Sdl3dIconPicker } from "./Sdl3dIconPicker";
 
 interface Sdl3dHotspot360EditorProps {
   hotspots: Hotspot360[];
@@ -45,10 +46,12 @@ interface Sdl3dHotspot360EditorProps {
   frameCount: number;
   currentFrame: number;
   editorMode?: "simple" | "advanced";
+  iconResolvedUrls?: Record<string, string>;
   onChange: (hotspots: Hotspot360[]) => void;
   onSelectHotspot: (id: string | null) => void;
   onSaveAsPreset?: (selectedHotspots: Hotspot360[]) => void;
   onApplyPreset?: () => void;
+  onOpenIconBrowser?: (hotspotId: string) => void;
 }
 
 function blankHotspot360(index: number, frameCount: number): Hotspot360 {
@@ -236,10 +239,12 @@ export function Sdl3dHotspot360Editor({
   frameCount,
   currentFrame,
   editorMode = "simple",
+  iconResolvedUrls,
   onChange,
   onSelectHotspot,
   onSaveAsPreset,
   onApplyPreset,
+  onOpenIconBrowser,
 }: Sdl3dHotspot360EditorProps) {
   const isAdvanced = editorMode === "advanced";
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -514,6 +519,16 @@ export function Sdl3dHotspot360Editor({
                           options={STYLE_OPTIONS}
                           value={hotspot.style || "card"}
                           onChange={(value) => updateHotspot(hotspot.id, { style: value })}
+                        />
+                        <Sdl3dIconPicker
+                          value={hotspot.icon ?? null}
+                          resolvedUrl={
+                            hotspot.icon && hotspot.icon.startsWith("gid://")
+                              ? iconResolvedUrls?.[hotspot.icon] ?? null
+                              : null
+                          }
+                          onChange={(next) => updateHotspot(hotspot.id, { icon: next })}
+                          onPickFromShopifyFiles={() => onOpenIconBrowser?.(hotspot.id)}
                         />
                         <Select
                           label="Animation"
