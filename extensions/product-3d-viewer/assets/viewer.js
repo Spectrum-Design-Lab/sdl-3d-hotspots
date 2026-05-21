@@ -1,12 +1,7 @@
-/**
- * SDL 3D Hotspots — Core bootstrap + shared utilities.
- * 3D model code in viewer-3d.js, 360 code in viewer-360.js (loaded dynamically).
- */
+/* SDL 3D Hotspots core bootstrap. 3D code: viewer-3d.js. 360: viewer-360.js. */
 (function () {
   var mvP = null;
   var MV_CDN = "https://unpkg.com/@google/model-viewer@4.2.0/dist/model-viewer.min.js";
-
-  // ── Shared utilities ──
 
   function ce(tag, cls) {
     var e = document.createElement(tag);
@@ -65,14 +60,11 @@
     R.appendChild(img);
   }
 
-  // ── Sidebar builder ──
-
   function mkSidebar(hotspots, onSelect) {
     var sb = ce("div", "sdl3d-sidebar");
     var menuOpen = false;
     var selectedIndex = -1;
 
-    // Header with hamburger
     var hdr = ce("div", "sdl3d-sidebar__header");
     var hdrTitle = ce("span", "sdl3d-sidebar__header-title");
     hdrTitle.textContent = "Product features";
@@ -85,10 +77,8 @@
     if (hotspots && hotspots.length) hdr.appendChild(burger);
     sb.appendChild(hdr);
 
-    // Content container (shows either prompt, detail, or list)
     var content = ce("div", "sdl3d-sidebar__content");
 
-    // Prompt (default state)
     var prompt = ce("div", "sdl3d-sidebar__prompt");
     var promptIcon = ce("div", "sdl3d-sidebar__prompt-icon");
     promptIcon.innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
@@ -98,7 +88,6 @@
     prompt.appendChild(promptText);
     content.appendChild(prompt);
 
-    // Detail view (title + body + CTA + clear)
     var detail = ce("div", "sdl3d-sidebar__detail");
     var dtitle = ce("div", "sdl3d-sidebar__detail-title");
     var dbody = ce("div", "sdl3d-sidebar__detail-body");
@@ -115,7 +104,6 @@
     detail.appendChild(dclear);
     content.appendChild(detail);
 
-    // List view (toggled by hamburger)
     var list = ce("div", "sdl3d-sidebar__list");
 
     if (hotspots && hotspots.length) {
@@ -158,7 +146,6 @@
       } else {
         dcta.style.display = "none";
       }
-      // highlight active item in list
       list.querySelectorAll(".sdl3d-sidebar__item.is-active")
         .forEach(function (n) { n.classList.remove("is-active"); });
       var items = list.querySelectorAll(".sdl3d-sidebar__item");
@@ -175,7 +162,6 @@
       }
     });
 
-    // Start in prompt state
     showView("prompt");
 
     sb._selectIndex = function (idx) {
@@ -202,13 +188,9 @@
     return sb;
   }
 
-  // ── Expose shared API ──
-
   window._sdl3d = {
     ce: ce, jd: jd, sa: sa, mkFs: mkFs, sFb: sFb, mkSidebar: mkSidebar, loadMV: loadMV,
   };
-
-  // ── Dynamic script loaders ──
 
   var _3dP = null;
   function load3d() {
@@ -244,8 +226,6 @@
     return _360P;
   }
 
-  // ── App proxy init ──
-
   function iApp(R) {
     if (R.dataset.sdl3dAppInit === "1") return;
     R.dataset.sdl3dAppInit = "1";
@@ -275,8 +255,6 @@
         R.innerHTML = "<div class=sdl3d-block__message>Load error</div>";
       });
   }
-
-  // ── Init all viewers ──
 
   function initAll() {
     var r3d = document.querySelectorAll("[data-sdl3d-root]");
