@@ -158,6 +158,10 @@
     b.ariaLabel = l;
     b.dataset.hsIndex = String(i);
 
+    // Slice 8 hotspots PR #5 follow-up — all popup info moved to the
+    // right sidebar (title / body / image / video / CTA). The hotspot
+    // button now contains only the dot; clicking it opens the sidebar
+    // detail view via _selectIndex below.
     var d = ce("span", "sdl3d-hotspot__dot");
     var iconMarkup = iconHtml(h.icon);
     if (iconMarkup) {
@@ -166,23 +170,7 @@
     } else {
       d.textContent = String(i + 1);
     }
-    var c = ce("span", "sdl3d-hotspot__card");
-    var media = mediaHtml(h.mediaImageUrl, h.mediaVideoUrl);
-    if (media) {
-      var mw = ce("span", "");
-      mw.innerHTML = media;
-      while (mw.firstChild) c.appendChild(mw.firstChild);
-    }
-    var t = ce("strong", "sdl3d-hotspot__title");
-    t.textContent = l;
-    c.appendChild(t);
-    if (h.body) {
-      var bd = ce("span", "sdl3d-hotspot__body");
-      bd.textContent = h.body;
-      c.appendChild(bd);
-    }
     b.appendChild(d);
-    b.appendChild(c);
 
     b.addEventListener("click", function () {
       var mv = b.closest("model-viewer");
@@ -228,7 +216,7 @@
       mv.querySelectorAll(".sdl3d-hotspot.is-active").forEach(function (n) { n.classList.remove("is-active"); });
       var dots = mv.querySelectorAll(".sdl3d-hotspot");
       if (dots[i]) dots[i].classList.add("is-active");
-    });
+    }, { renderMedia: function (h) { return mediaHtml(h.mediaImageUrl, h.mediaVideoUrl); } });
     var sbHost = R.closest(".sdl3d-block__body") || R.parentNode;
     var old = sbHost.querySelector(":scope > .sdl3d-sidebar");
     if (old) old.remove();
@@ -270,7 +258,7 @@
         mv.querySelectorAll(".sdl3d-hotspot.is-active").forEach(function (n) { n.classList.remove("is-active"); });
         var dots = mv.querySelectorAll(".sdl3d-hotspot");
         if (dots[i]) dots[i].classList.add("is-active");
-      });
+      }, { renderMedia: function (h) { return mediaHtml(h.mediaImageUrl, h.mediaVideoUrl); } });
       var sbHost = R.closest(".sdl3d-block__body") || R.parentNode;
       var old = sbHost.querySelector(":scope > .sdl3d-sidebar");
       if (old) old.remove();

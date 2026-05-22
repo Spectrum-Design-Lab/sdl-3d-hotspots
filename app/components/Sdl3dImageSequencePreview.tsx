@@ -3,7 +3,6 @@ import { Button } from "@shopify/polaris";
 import type { ImageSequenceFrame, Hotspot360 } from "../lib/sdl3d-shared";
 import { interpolateHotspotPosition, isHotspot360Visible } from "../lib/sdl3d-shared";
 import { classifyIcon, presetIconSvg, type HotspotIconKey } from "../lib/hotspot-icons";
-import { buildHotspotMediaHtml } from "../lib/hotspot-media-render";
 
 interface DragHotspotState {
   hotspotId: string;
@@ -395,22 +394,10 @@ export function Sdl3dImageSequencePreview({
                     </span>
                   );
                 })()}
-                <span className="sdl-360-hotspot__card">
-                  {(() => {
-                    const mediaMarkup = buildHotspotMediaHtml(
-                      hotspot.mediaImageUrl,
-                      hotspot.mediaVideoUrl,
-                      true,
-                    );
-                    return mediaMarkup ? (
-                      <span dangerouslySetInnerHTML={{ __html: mediaMarkup }} />
-                    ) : null;
-                  })()}
-                  <strong className="sdl-360-hotspot__title">{hotspot.title}</strong>
-                  {hotspot.body ? (
-                    <span className="sdl-360-hotspot__body">{hotspot.body}</span>
-                  ) : null}
-                </span>
+                {/* Slice 8 hotspots PR #5 follow-up — popup card stripped.
+                    All hotspot info (title / body / image / video / CTA)
+                    surfaces in the editor's right-side inspector and the
+                    storefront's sidebar detail view. */}
               </button>
             );
           })}

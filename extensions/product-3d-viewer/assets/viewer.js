@@ -60,7 +60,8 @@
     R.appendChild(img);
   }
 
-  function mkSidebar(hotspots, onSelect) {
+  function mkSidebar(hotspots, onSelect, opts) {
+    var renderMedia = opts && opts.renderMedia;
     var sb = ce("div", "sdl3d-sidebar");
     var menuOpen = false;
     var selectedIndex = -1;
@@ -91,6 +92,7 @@
     var detail = ce("div", "sdl3d-sidebar__detail");
     var dtitle = ce("div", "sdl3d-sidebar__detail-title");
     var dbody = ce("div", "sdl3d-sidebar__detail-body");
+    var dmedia = ce("div", "sdl3d-sidebar__detail-media");
     var dcta = ce("a", "sdl3d-sidebar__detail-cta");
     dcta.target = "_blank";
     dcta.rel = "noopener";
@@ -100,6 +102,7 @@
     dclear.textContent = "Clear selection";
     detail.appendChild(dtitle);
     detail.appendChild(dbody);
+    detail.appendChild(dmedia);
     detail.appendChild(dcta);
     detail.appendChild(dclear);
     content.appendChild(detail);
@@ -139,6 +142,7 @@
       menuOpen = false;
       dtitle.textContent = h.title || "Hotspot " + (i + 1);
       dbody.textContent = h.body || "";
+      dmedia.innerHTML = renderMedia ? (renderMedia(h) || "") : "";
       if (h.ctaLabel && h.ctaUrl) {
         dcta.textContent = h.ctaLabel;
         dcta.href = h.ctaUrl;

@@ -173,6 +173,9 @@
     if (h.color) b.style.setProperty("--sdl3d-hotspot-color", h.color);
     if (h.animation && h.animation !== "none") b.dataset.sdl3dAnim = h.animation;
 
+    // Slice 8 hotspots PR #5 follow-up — popup card stripped. All
+    // hotspot info (title / body / image / video / CTA) renders in
+    // the right sidebar; the button carries only the dot.
     var dot = ce("span", "sdl3d-360-hotspot__dot");
     var iconMarkup = iconHtml(h.icon);
     if (iconMarkup) {
@@ -181,25 +184,7 @@
     } else {
       dot.textContent = String(i + 1);
     }
-
-    var card = ce("span", "sdl3d-360-hotspot__card");
-    var media = mediaHtml(h.mediaImageUrl, h.mediaVideoUrl);
-    if (media) {
-      var mw = ce("span", "");
-      mw.innerHTML = media;
-      while (mw.firstChild) card.appendChild(mw.firstChild);
-    }
-    var title = ce("strong", "sdl3d-360-hotspot__title");
-    title.textContent = label;
-    card.appendChild(title);
-    if (h.body) {
-      var bd = ce("span", "sdl3d-360-hotspot__body");
-      bd.textContent = h.body;
-      card.appendChild(bd);
-    }
-
     b.appendChild(dot);
-    b.appendChild(card);
     b.addEventListener("click", function (e) {
       e.stopPropagation();
       var p = b.closest("[data-sdl3d-360-root],[data-sdl3d-app-root]");
@@ -322,7 +307,7 @@
         setFrame(mid);
         R.querySelectorAll(".sdl3d-360-hotspot.is-active").forEach(function (n) { n.classList.remove("is-active"); });
         if (hotspotEls[i]) hotspotEls[i].el.classList.add("is-active");
-      });
+      }, { renderMedia: function (h) { return mediaHtml(h.mediaImageUrl, h.mediaVideoUrl); } });
       var old = sbHost.querySelector(":scope > .sdl3d-sidebar");
       if (old) old.remove();
       sbHost.appendChild(sb);

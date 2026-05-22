@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { EditableHotspot } from "./Sdl3dHotspotEditor";
 import { classifyIcon, presetIconSvg, type HotspotIconKey } from "../lib/hotspot-icons";
-import { buildHotspotMediaHtml } from "../lib/hotspot-media-render";
 
 /**
  * StorefrontPreview renders a simulated storefront product block inside the admin editor.
@@ -158,34 +157,12 @@ export function StorefrontPreview({
         dot.textContent = String(index + 1);
       }
 
-      const card = document.createElement("span");
-      card.className = "sdl3d-hotspot__card";
-
-      // Slice 8 hotspots PR #5 — media slot (image + video) above title.
-      const mediaMarkup = buildHotspotMediaHtml(
-        hotspot.mediaImageUrl,
-        hotspot.mediaVideoUrl,
-      );
-      if (mediaMarkup) {
-        const mediaWrap = document.createElement("span");
-        mediaWrap.innerHTML = mediaMarkup;
-        while (mediaWrap.firstChild) card.appendChild(mediaWrap.firstChild);
-      }
-
-      const title = document.createElement("strong");
-      title.className = "sdl3d-hotspot__title";
-      title.textContent = hotspot.title || `Hotspot ${index + 1}`;
-      card.appendChild(title);
-
-      if (hotspot.body) {
-        const body = document.createElement("span");
-        body.className = "sdl3d-hotspot__body";
-        body.textContent = hotspot.body;
-        card.appendChild(body);
-      }
-
+      // Slice 8 hotspots PR #5 follow-up — popup card stripped to
+      // match the storefront. All hotspot info (title / body / image /
+      // video / CTA) renders in the storefront's right-side sidebar
+      // detail panel; this preview surface deliberately mirrors that
+      // by leaving the canvas dot bare.
       button.appendChild(dot);
-      button.appendChild(card);
 
       // Click -> camera animation (same as storefront)
       button.addEventListener("click", () => {
