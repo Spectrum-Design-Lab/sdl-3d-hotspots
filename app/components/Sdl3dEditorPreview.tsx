@@ -228,6 +228,8 @@ export function Sdl3dEditorPreview({
         style: "card",
         color: "#3b82f6",
         animation: "none",
+        mediaImageUrl: null,
+        mediaVideoUrl: null,
         position,
         normal,
         focusTarget: position,

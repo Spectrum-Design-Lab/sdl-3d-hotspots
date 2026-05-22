@@ -159,6 +159,8 @@ model Hotspot {
   style           String   @default("card")
   color           String?
   animation       String?
+  mediaImageUrl   String?
+  mediaVideoUrl   String?
 
   positionX       Float
   positionY       Float

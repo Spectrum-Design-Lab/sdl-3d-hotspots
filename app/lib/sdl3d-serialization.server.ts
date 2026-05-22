@@ -18,6 +18,8 @@ export type PublishedHotspot = {
   style: string;
   color: string | null;
   animation: string | null;
+  mediaImageUrl: string | null;
+  mediaVideoUrl: string | null;
   position: string;
   normal: string | null;
   focusTarget: string | null;
@@ -76,6 +78,8 @@ export function dbHotspotToPublished(h: Hotspot): PublishedHotspot {
     style: h.style,
     color: h.color ?? null,
     animation: h.animation ?? null,
+    mediaImageUrl: h.mediaImageUrl ?? null,
+    mediaVideoUrl: h.mediaVideoUrl ?? null,
     position: formatMetersTriplet(h.positionX, h.positionY, h.positionZ),
     normal:
       h.normalX != null && h.normalY != null && h.normalZ != null
@@ -113,6 +117,8 @@ export function publishedHotspotsToCreateMany(
         style: h.style,
         color: h.color ?? null,
         animation: h.animation ?? null,
+        mediaImageUrl: h.mediaImageUrl ?? null,
+        mediaVideoUrl: h.mediaVideoUrl ?? null,
         positionX: position.x,
         positionY: position.y,
         positionZ: position.z,

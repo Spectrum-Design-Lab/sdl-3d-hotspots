@@ -35,6 +35,7 @@ import {
   type HotspotAnimation,
 } from "../lib/sdl3d-shared";
 import { Sdl3dIconPicker } from "./Sdl3dIconPicker";
+import { Sdl3dHotspotMediaSlots } from "./Sdl3dHotspotMediaSlots";
 
 export type EditableHotspot = {
   id: string;
@@ -46,6 +47,8 @@ export type EditableHotspot = {
   style: string;
   color: string | null;
   animation: HotspotAnimation;
+  mediaImageUrl: string | null;
+  mediaVideoUrl: string | null;
   position: string;
   normal: string | null;
   focusTarget: string | null;
@@ -76,6 +79,8 @@ export function blankHotspot(index: number): EditableHotspot {
     style: "card",
     color: "#3b82f6",
     animation: "none",
+    mediaImageUrl: null,
+    mediaVideoUrl: null,
     position: "0m 0m 0m",
     normal: null,
     focusTarget: null,
@@ -101,6 +106,8 @@ export function parseInitialHotspots(initialJson: string): EditableHotspot[] {
         style: String(item.style ?? "card"),
         color: item.color ?? "#3b82f6",
         animation: normalizeHotspotAnimation(item.animation),
+        mediaImageUrl: item.mediaImageUrl ?? null,
+        mediaVideoUrl: item.mediaVideoUrl ?? null,
         position: String(item.position ?? "0m 0m 0m"),
         normal: item.normal ?? null,
         focusTarget: item.focusTarget ?? null,
@@ -155,6 +162,7 @@ export function Sdl3dHotspotEditor({
   onSaveAsPreset,
   onApplyPreset,
   onOpenIconBrowser,
+  onOpenMediaImageBrowser,
 }: {
   hotspots: EditableHotspot[] | undefined;
   selectedHotspotId: string | null;
@@ -165,6 +173,7 @@ export function Sdl3dHotspotEditor({
   onSaveAsPreset?: (selectedHotspots: EditableHotspot[]) => void;
   onApplyPreset?: () => void;
   onOpenIconBrowser?: (hotspotId: string) => void;
+  onOpenMediaImageBrowser?: (hotspotId: string) => void;
 }) {
   const isAdvanced = editorMode === "advanced";
   const safeHotspots = Array.isArray(hotspots) ? hotspots : [];
@@ -482,6 +491,20 @@ export function Sdl3dHotspotEditor({
                 ))}
               </div>
             </BlockStack>
+            {isAdvanced ? (
+              <Sdl3dHotspotMediaSlots
+                mediaImageUrl={selected.mediaImageUrl}
+                mediaImageResolvedUrl={
+                  selected.mediaImageUrl && selected.mediaImageUrl.startsWith("gid://")
+                    ? iconResolvedUrls?.[selected.mediaImageUrl] ?? null
+                    : null
+                }
+                mediaVideoUrl={selected.mediaVideoUrl}
+                onChangeImage={(next) => updateSelected({ mediaImageUrl: next })}
+                onChangeVideo={(next) => updateSelected({ mediaVideoUrl: next })}
+                onPickImageFromShopifyFiles={() => onOpenMediaImageBrowser?.(selected.id)}
+              />
+            ) : null}
           </Subsection>
 
           {isAdvanced ? (

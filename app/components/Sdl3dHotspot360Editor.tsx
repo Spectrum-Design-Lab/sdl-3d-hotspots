@@ -39,6 +39,7 @@ import {
   type Hotspot360Keyframe,
 } from "../lib/sdl3d-shared";
 import { Sdl3dIconPicker } from "./Sdl3dIconPicker";
+import { Sdl3dHotspotMediaSlots } from "./Sdl3dHotspotMediaSlots";
 
 interface Sdl3dHotspot360EditorProps {
   hotspots: Hotspot360[];
@@ -52,6 +53,7 @@ interface Sdl3dHotspot360EditorProps {
   onSaveAsPreset?: (selectedHotspots: Hotspot360[]) => void;
   onApplyPreset?: () => void;
   onOpenIconBrowser?: (hotspotId: string) => void;
+  onOpenMediaImageBrowser?: (hotspotId: string) => void;
 }
 
 function blankHotspot360(index: number, frameCount: number): Hotspot360 {
@@ -245,6 +247,7 @@ export function Sdl3dHotspot360Editor({
   onSaveAsPreset,
   onApplyPreset,
   onOpenIconBrowser,
+  onOpenMediaImageBrowser,
 }: Sdl3dHotspot360EditorProps) {
   const isAdvanced = editorMode === "advanced";
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -510,6 +513,22 @@ export function Sdl3dHotspot360Editor({
                           }}
                         />
                       </BlockStack>
+                      {isAdvanced ? (
+                        <Sdl3dHotspotMediaSlots
+                          mediaImageUrl={hotspot.mediaImageUrl ?? null}
+                          mediaImageResolvedUrl={
+                            hotspot.mediaImageUrl && hotspot.mediaImageUrl.startsWith("gid://")
+                              ? iconResolvedUrls?.[hotspot.mediaImageUrl] ?? null
+                              : null
+                          }
+                          mediaVideoUrl={hotspot.mediaVideoUrl ?? null}
+                          onChangeImage={(next) => updateHotspot(hotspot.id, { mediaImageUrl: next })}
+                          onChangeVideo={(next) => updateHotspot(hotspot.id, { mediaVideoUrl: next })}
+                          onPickImageFromShopifyFiles={() =>
+                            onOpenMediaImageBrowser?.(hotspot.id)
+                          }
+                        />
+                      ) : null}
                     </Subsection>
 
                     {isAdvanced ? (

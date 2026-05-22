@@ -431,6 +431,51 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   pointer-events: none;
 }
 
+/* Slice 8 hotspots PR #5 — popup media slot (image + video) above
+   the title. Identical rules to viewer.css so editor surfaces render
+   the same way the storefront does. Hotspot-media-render emits
+   sdl3d-hotspot__media* / sdl3d-360-hotspot__media* class names. */
+.sdl3d-hotspot__media,
+.sdl3d-360-hotspot__media {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+}
+.sdl3d-hotspot__media-image,
+.sdl3d-360-hotspot__media-image {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.04);
+}
+.sdl3d-hotspot__media-image img,
+.sdl3d-360-hotspot__media-image img {
+  display: block;
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+}
+.sdl3d-hotspot__media-video,
+.sdl3d-360-hotspot__media-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-top: 4px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+.sdl3d-hotspot__media-video iframe,
+.sdl3d-hotspot__media-video video,
+.sdl3d-360-hotspot__media-video iframe,
+.sdl3d-360-hotspot__media-video video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
 .sdl-preview--dragging .sdl3d-hotspot__dot {
   cursor: grabbing;
 }

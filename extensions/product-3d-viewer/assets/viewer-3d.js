@@ -38,6 +38,52 @@
     return "";
   }
 
+  // ── Hotspot popup media (Slice 8 hotspots PR #5) ──
+  // Parallel of app/lib/sdl3d-shared.ts classifyVideoUrl + the
+  // mediaHtml builder used in viewer-360.js. mediaImageUrl GIDs are
+  // resolved to URLs at publish time so the storefront only sees
+  // absolute URLs here.
+  function escAttr(s) { return String(s).replace(/"/g, "&quot;"); }
+  function classifyVideo(url) {
+    if (!url) return "unknown";
+    var v = url.trim();
+    if (!v) return "unknown";
+    if (/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))[\w-]+/i.test(v)) return "youtube";
+    if (/vimeo\.com\/\d+/i.test(v)) return "vimeo";
+    if (/\.(mp4|webm)(?:[?#].*)?$/i.test(v)) return "file";
+    return "unknown";
+  }
+  function videoEmbedHtml(url) {
+    var kind = classifyVideo(url);
+    if (kind === "youtube") {
+      var m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]+)/i);
+      return m
+        ? '<iframe src="https://www.youtube.com/embed/' + escAttr(m[1]) + '" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>'
+        : "";
+    }
+    if (kind === "vimeo") {
+      var vm = url.match(/vimeo\.com\/(\d+)/i);
+      return vm
+        ? '<iframe src="https://player.vimeo.com/video/' + escAttr(vm[1]) + '" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen loading="lazy"></iframe>'
+        : "";
+    }
+    if (kind === "file") {
+      return '<video src="' + escAttr(url) + '" controls preload="metadata"></video>';
+    }
+    return "";
+  }
+  function mediaHtml(image, video) {
+    var parts = "";
+    if (typeof image === "string" && image.trim()) {
+      parts += '<div class="sdl3d-hotspot__media-image"><img src="' + escAttr(image.trim()) + '" alt="" loading="lazy" /></div>';
+    }
+    if (typeof video === "string" && video.trim()) {
+      var v = videoEmbedHtml(video.trim());
+      if (v) parts += '<div class="sdl3d-hotspot__media-video">' + v + '</div>';
+    }
+    return parts ? '<div class="sdl3d-hotspot__media">' + parts + '</div>' : "";
+  }
+
   // ── Viewer settings ──
 
   function applyS(mv, R, s) {
@@ -121,6 +167,12 @@
       d.textContent = String(i + 1);
     }
     var c = ce("span", "sdl3d-hotspot__card");
+    var media = mediaHtml(h.mediaImageUrl, h.mediaVideoUrl);
+    if (media) {
+      var mw = ce("span", "");
+      mw.innerHTML = media;
+      while (mw.firstChild) c.appendChild(mw.firstChild);
+    }
     var t = ce("strong", "sdl3d-hotspot__title");
     t.textContent = l;
     c.appendChild(t);

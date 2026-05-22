@@ -41,6 +41,50 @@
     return "";
   }
 
+  // ── Hotspot popup media (Slice 8 hotspots PR #5) ──
+  // Parallel of viewer-3d.js mediaHtml/videoEmbedHtml and the
+  // classifyVideoUrl helper in app/lib/sdl3d-shared.ts.
+  function escAttr(s) { return String(s).replace(/"/g, "&quot;"); }
+  function classifyVideo(url) {
+    if (!url) return "unknown";
+    var v = url.trim();
+    if (!v) return "unknown";
+    if (/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))[\w-]+/i.test(v)) return "youtube";
+    if (/vimeo\.com\/\d+/i.test(v)) return "vimeo";
+    if (/\.(mp4|webm)(?:[?#].*)?$/i.test(v)) return "file";
+    return "unknown";
+  }
+  function videoEmbedHtml(url) {
+    var kind = classifyVideo(url);
+    if (kind === "youtube") {
+      var m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]+)/i);
+      return m
+        ? '<iframe src="https://www.youtube.com/embed/' + escAttr(m[1]) + '" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>'
+        : "";
+    }
+    if (kind === "vimeo") {
+      var vm = url.match(/vimeo\.com\/(\d+)/i);
+      return vm
+        ? '<iframe src="https://player.vimeo.com/video/' + escAttr(vm[1]) + '" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen loading="lazy"></iframe>'
+        : "";
+    }
+    if (kind === "file") {
+      return '<video src="' + escAttr(url) + '" controls preload="metadata"></video>';
+    }
+    return "";
+  }
+  function mediaHtml(image, video) {
+    var parts = "";
+    if (typeof image === "string" && image.trim()) {
+      parts += '<div class="sdl3d-360-hotspot__media-image"><img src="' + escAttr(image.trim()) + '" alt="" loading="lazy" /></div>';
+    }
+    if (typeof video === "string" && video.trim()) {
+      var v = videoEmbedHtml(video.trim());
+      if (v) parts += '<div class="sdl3d-360-hotspot__media-video">' + v + '</div>';
+    }
+    return parts ? '<div class="sdl3d-360-hotspot__media">' + parts + '</div>' : "";
+  }
+
   function cr(p0, p1, p2, p3, t) {
     return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);
   }
@@ -139,6 +183,12 @@
     }
 
     var card = ce("span", "sdl3d-360-hotspot__card");
+    var media = mediaHtml(h.mediaImageUrl, h.mediaVideoUrl);
+    if (media) {
+      var mw = ce("span", "");
+      mw.innerHTML = media;
+      while (mw.firstChild) card.appendChild(mw.firstChild);
+    }
     var title = ce("strong", "sdl3d-360-hotspot__title");
     title.textContent = label;
     card.appendChild(title);

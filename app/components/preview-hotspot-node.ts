@@ -4,6 +4,7 @@
  */
 import type { EditableHotspot } from "./Sdl3dHotspotEditor";
 import { classifyIcon, presetIconSvg, type HotspotIconKey } from "../lib/hotspot-icons";
+import { buildHotspotMediaHtml } from "../lib/hotspot-media-render";
 
 export function createPreviewHotspotNode(
   hotspot: EditableHotspot,
@@ -43,6 +44,17 @@ export function createPreviewHotspotNode(
 
   const card = document.createElement("span");
   card.className = "sdl3d-hotspot__card";
+
+  // Slice 8 hotspots PR #5 — media above title.
+  const mediaMarkup = buildHotspotMediaHtml(
+    hotspot.mediaImageUrl,
+    hotspot.mediaVideoUrl,
+  );
+  if (mediaMarkup) {
+    const mediaWrap = document.createElement("span");
+    mediaWrap.innerHTML = mediaMarkup;
+    while (mediaWrap.firstChild) card.appendChild(mediaWrap.firstChild);
+  }
 
   const title = document.createElement("strong");
   title.className = "sdl3d-hotspot__title";

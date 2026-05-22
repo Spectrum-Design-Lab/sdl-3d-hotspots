@@ -82,13 +82,21 @@ export async function publishConfigToMetafields(args: {
   };
   const hotspots = config.hotspots.map(dbHotspotToPublished);
 
-  // Slice 8 hotspots PR #4 — resolve icon GIDs to URLs at publish
-  // time. TAE has no Admin API at render, so the metafield must
-  // carry resolved URLs. Preset names + absolute URLs pass through
-  // resolveImageUrlsByGid's prefix filter untouched.
-  const iconGidsToResolve: string[] = [];
+  // Slice 8 hotspots PR #4 + PR #5 — resolve any Shopify file GIDs
+  // (icon + mediaImageUrl) to URLs at publish time. TAE has no Admin
+  // API at render, so the metafield must carry resolved URLs. Preset
+  // names + absolute URLs pass through resolveImageUrlsByGid's
+  // prefix filter untouched. One batched call handles both fields
+  // across all hotspots.
+  const gidsToResolve: string[] = [];
+  function collectGid(value: unknown) {
+    if (typeof value === "string" && value.startsWith("gid://shopify/")) {
+      gidsToResolve.push(value);
+    }
+  }
   for (const h of hotspots) {
-    if (h.icon && h.icon.startsWith("gid://shopify/")) iconGidsToResolve.push(h.icon);
+    collectGid(h.icon);
+    collectGid(h.mediaImageUrl);
   }
   let hotspots360Parsed: Array<Record<string, unknown>> = [];
   if (config.hotspotsJson360) {
@@ -97,32 +105,41 @@ export async function publishConfigToMetafields(args: {
       if (Array.isArray(arr)) {
         hotspots360Parsed = arr as Array<Record<string, unknown>>;
         for (const h of hotspots360Parsed) {
-          const icon = h.icon;
-          if (typeof icon === "string" && icon.startsWith("gid://shopify/")) {
-            iconGidsToResolve.push(icon);
-          }
+          collectGid(h.icon);
+          collectGid(h.mediaImageUrl);
         }
       }
     } catch { /* malformed — leave as-is, the 360 metafield write below will use the raw string */ }
   }
-  const iconUrlMap = iconGidsToResolve.length
-    ? await resolveImageUrlsByGid(admin, iconGidsToResolve)
+  const gidUrlMap = gidsToResolve.length
+    ? await resolveImageUrlsByGid(admin, gidsToResolve)
     : {};
+  function resolveGid(value: unknown): string | null {
+    if (typeof value !== "string") return null;
+    if (!value.startsWith("gid://shopify/")) return value;
+    return gidUrlMap[value] ?? null;
+  }
   for (const h of hotspots) {
     if (h.icon && h.icon.startsWith("gid://shopify/")) {
-      h.icon = iconUrlMap[h.icon] ?? null;
+      h.icon = resolveGid(h.icon);
+    }
+    if (h.mediaImageUrl && h.mediaImageUrl.startsWith("gid://shopify/")) {
+      h.mediaImageUrl = resolveGid(h.mediaImageUrl);
     }
   }
-  // Round-trip 360 hotspots through the parsed copy so resolved icons
-  // land in the published payload. If parsing failed above, fall back
-  // to the raw string further down.
+  // Round-trip 360 hotspots through the parsed copy so resolved icons +
+  // media images land in the published payload. If parsing failed
+  // above, fall back to the raw string further down.
   const hotspots360Resolved = hotspots360Parsed.length
     ? hotspots360Parsed.map((h) => {
-      const icon = h.icon;
-      if (typeof icon === "string" && icon.startsWith("gid://shopify/")) {
-        return { ...h, icon: iconUrlMap[icon] ?? null };
+      const next = { ...h };
+      if (typeof h.icon === "string" && h.icon.startsWith("gid://shopify/")) {
+        next.icon = resolveGid(h.icon);
       }
-      return h;
+      if (typeof h.mediaImageUrl === "string" && h.mediaImageUrl.startsWith("gid://shopify/")) {
+        next.mediaImageUrl = resolveGid(h.mediaImageUrl);
+      }
+      return next;
     })
     : null;
 

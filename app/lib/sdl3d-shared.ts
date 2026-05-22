@@ -46,11 +46,47 @@ export type Hotspot360Keyframe = Hotspot360KeyframeZ;
  * `icon` was added in Slice 8 hotspots PR #4. 3D hotspots already had
  * the column; 360 hotspots picked it up via the JSON-blob passthrough
  * so existing rows tolerate the field arriving / departing.
+ *
+ * `mediaImageUrl` + `mediaVideoUrl` were added in PR #5 (typed media
+ * slots). Same pattern — 3D has columns, 360 passes through. Both
+ * accept Shopify file GIDs (resolved to URLs at publish) or absolute
+ * URLs. Video URLs are also classified into YouTube / Vimeo / direct
+ * .mp4 / .webm at render time.
  */
 export type Hotspot360 = Hotspot360Z & {
   animation?: HotspotAnimation;
   icon?: string | null;
+  mediaImageUrl?: string | null;
+  mediaVideoUrl?: string | null;
 };
+
+/**
+ * Slice 8 hotspots PR #5 — video URL classification. YouTube and
+ * Vimeo IDs come from any of the common URL shapes; direct video
+ * files match the file-extension suffix.
+ */
+export type VideoUrlKind = "youtube" | "vimeo" | "file" | "unknown";
+
+export function classifyVideoUrl(url: string | null | undefined): VideoUrlKind {
+  if (!url) return "unknown";
+  const v = url.trim();
+  if (!v) return "unknown";
+  if (/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))[\w-]+/i.test(v)) return "youtube";
+  if (/vimeo\.com\/\d+/i.test(v)) return "vimeo";
+  if (/\.(mp4|webm)(?:[?#].*)?$/i.test(v)) return "file";
+  return "unknown";
+}
+
+/**
+ * Lightweight validity check: a video URL is acceptable iff
+ * classifyVideoUrl can place it. Empty string is fine (means
+ * "no video"); only non-empty unrecognized strings fail.
+ */
+export function isValidVideoUrl(url: string | null | undefined): boolean {
+  if (!url) return true;
+  if (!url.trim()) return true;
+  return classifyVideoUrl(url) !== "unknown";
+}
 
 function catmullRom(p0: number, p1: number, p2: number, p3: number, t: number): number {
   return 0.5 * (

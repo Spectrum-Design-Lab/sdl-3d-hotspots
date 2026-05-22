@@ -212,14 +212,16 @@ export async function loader({ request }: { request: Request }) {
   // ── Phase 2: queries that depend on Phase 1 results ──
   const viewerType = (config?.viewerType || "MODEL_3D") as "MODEL_3D" | "IMAGE_360";
 
-  // Slice 8 hotspots PR #4 — collect icon GIDs from 3D rows + 360 JSON
-  // for batched resolution. Non-GID values (preset names, URLs) pass
-  // through resolveImageUrlsByGid's prefix filter and don't hit the
-  // Admin API.
+  // Slice 8 hotspots PR #4 + PR #5 — collect icon + mediaImage GIDs
+  // from 3D rows + 360 JSON for batched resolution. Non-GID values
+  // (preset names, URLs) pass through resolveImageUrlsByGid's prefix
+  // filter and don't hit the Admin API. The map is keyed by GID
+  // and reused for both icon and media image live previews.
   const iconGids: string[] = [];
   if (config) {
     for (const row of config.hotspots) {
       if (row.icon && row.icon.startsWith("gid://shopify/")) iconGids.push(row.icon);
+      if (row.mediaImageUrl && row.mediaImageUrl.startsWith("gid://shopify/")) iconGids.push(row.mediaImageUrl);
     }
     if (config.hotspotsJson360) {
       try {
@@ -229,6 +231,10 @@ export async function loader({ request }: { request: Request }) {
             const icon = (h as { icon?: unknown }).icon;
             if (typeof icon === "string" && icon.startsWith("gid://shopify/")) {
               iconGids.push(icon);
+            }
+            const media = (h as { mediaImageUrl?: unknown }).mediaImageUrl;
+            if (typeof media === "string" && media.startsWith("gid://shopify/")) {
+              iconGids.push(media);
             }
           }
         }
@@ -269,6 +275,8 @@ export async function loader({ request }: { request: Request }) {
       style: h.style,
       color: h.color,
       animation: h.animation ?? "none",
+      mediaImageUrl: h.mediaImageUrl,
+      mediaVideoUrl: h.mediaVideoUrl,
       position: `${h.positionX}m ${h.positionY}m ${h.positionZ}m`,
       normal:
         h.normalX != null && h.normalY != null && h.normalZ != null
@@ -472,6 +480,11 @@ export default function Sdl3dEditorRoute() {
   // collide.
   const [showIconBrowser, setShowIconBrowser] = useState(false);
   const [iconBrowserHotspotId, setIconBrowserHotspotId] = useState<string | null>(null);
+  // Slice 8 hotspots PR #5 — same FileBrowserModal reuse for the
+  // mediaImageUrl slot. Separate state so concurrent picker invocations
+  // (icon vs media) don't collide.
+  const [showMediaImageBrowser, setShowMediaImageBrowser] = useState(false);
+  const [mediaImageBrowserHotspotId, setMediaImageBrowserHotspotId] = useState<string | null>(null);
   // Slice 7 PR #3b — unified 360° source Modal. The FileTriggerCard opens
   // this; the legacy `showSequenceBrowser` (FileBrowserModal mode=sequence)
   // is now only triggered from inside this Modal's "Browse Shopify Files"
@@ -1095,6 +1108,32 @@ export default function Sdl3dEditorRoute() {
     }
     setIconBrowserHotspotId(null);
   }
+  function handleOpenMediaImageBrowser(hotspotId: string) {
+    setMediaImageBrowserHotspotId(hotspotId);
+    setShowMediaImageBrowser(true);
+  }
+  function handleMediaImageBrowserSelect(gids: string[]) {
+    const gid = gids[0];
+    setShowMediaImageBrowser(false);
+    if (!mediaImageBrowserHotspotId || !gid) {
+      setMediaImageBrowserHotspotId(null);
+      return;
+    }
+    if (viewerType === "IMAGE_360") {
+      setHotspots360((current) =>
+        current.map((h) =>
+          h.id === mediaImageBrowserHotspotId ? { ...h, mediaImageUrl: gid } : h,
+        ),
+      );
+    } else {
+      setHotspots((current) =>
+        current.map((h) =>
+          h.id === mediaImageBrowserHotspotId ? { ...h, mediaImageUrl: gid } : h,
+        ),
+      );
+    }
+    setMediaImageBrowserHotspotId(null);
+  }
   const handlePreviewHotspotSelect = useCallback((id: string | null) => {
     setSelectedHotspotId(id);
     if (id) {
@@ -1195,6 +1234,8 @@ export default function Sdl3dEditorRoute() {
               style: String(h.style ?? "card"),
               color: h.color ?? "#3b82f6",
               animation: normalizeHotspotAnimation(h.animation),
+              mediaImageUrl: h.mediaImageUrl ?? null,
+              mediaVideoUrl: h.mediaVideoUrl ?? null,
               position: String(h.position ?? "0m 0m 0m"),
               normal: h.normal ?? null,
               focusTarget: h.focusTarget ?? null,
@@ -1770,6 +1811,7 @@ export default function Sdl3dEditorRoute() {
                         onSaveAsPreset={handleSave360HotspotsAsPreset}
                         onApplyPreset={() => setShowPresetBrowser(true)}
                         onOpenIconBrowser={handleOpenIconBrowser}
+                        onOpenMediaImageBrowser={handleOpenMediaImageBrowser}
                       />
                     ) : (
                       <Sdl3dHotspotEditor
@@ -1782,6 +1824,7 @@ export default function Sdl3dEditorRoute() {
                         onSaveAsPreset={handleSaveHotspotsAsPreset}
                         onApplyPreset={() => setShowPresetBrowser(true)}
                         onOpenIconBrowser={handleOpenIconBrowser}
+                        onOpenMediaImageBrowser={handleOpenMediaImageBrowser}
                       />
                     )}
                   </Box>
@@ -1903,6 +1946,22 @@ export default function Sdl3dEditorRoute() {
             initialHasMore={posterHasMore}
             initialCursor={posterCursor}
             onSelect={handleIconBrowserSelect}
+            onUpload={handlePosterUpload}
+            productGid={loaderData.selectedProduct.id}
+            q={loaderData.q}
+            busy={isActionBusy}
+          />
+          <FileBrowserModal
+            open={showMediaImageBrowser}
+            onClose={() => {
+              setShowMediaImageBrowser(false);
+              setMediaImageBrowserHotspotId(null);
+            }}
+            mode="poster"
+            initialFiles={allPosterFiles}
+            initialHasMore={posterHasMore}
+            initialCursor={posterCursor}
+            onSelect={handleMediaImageBrowserSelect}
             onUpload={handlePosterUpload}
             productGid={loaderData.selectedProduct.id}
             q={loaderData.q}

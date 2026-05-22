@@ -184,6 +184,8 @@ async function handleSaveDraft(shop: { id: string }, productGid: string, formDat
         color: (h.color as string) ?? null,
         animation:
           typeof h.animation === "string" && h.animation !== "none" ? h.animation : null,
+        mediaImageUrl: typeof h.mediaImageUrl === "string" && h.mediaImageUrl ? h.mediaImageUrl : null,
+        mediaVideoUrl: typeof h.mediaVideoUrl === "string" && h.mediaVideoUrl ? h.mediaVideoUrl : null,
         positionX: Number(position[1]),
         positionY: Number(position[2]),
         positionZ: Number(position[3]),
