@@ -763,6 +763,39 @@ needed in practice (orphaned columns are fine).
 These items are still queued in Slice 8 but separate from the
 hotspot rework cluster:
 
+- **Storefront hotspots clip through the theme's top nav bar** — bug
+  surfaced after the hotspot sub-cluster shipped. Hotspot dots
+  rendered *over* the storefront's sticky theme header, breaking
+  visual stacking. **Root cause**: `.sdl3d-block` had no stacking
+  context of its own; hotspot dots use `transform` (3D projection
+  for model-viewer slotted hotspots, `translate(-50%, -50%)` for
+  360 dots) which creates a stacking context per dot. With the
+  block at `z-index: auto` and the theme header at `z-index: auto`,
+  source order determined paint — and the block (later in DOM)
+  painted on top, dragging the dots with it.
+
+  **Fix** (in `viewer.css`): give `.sdl3d-block` an explicit low
+  stacking level so theme chrome with z-index ≥ 1 sits above it,
+  and isolate the internal z-index ladder so dots can't escape:
+  ```css
+  .sdl3d-block {
+    position: relative;
+    isolation: isolate;
+    z-index: var(--sdl3d-block-z, 0);
+  }
+  .sdl3d-block .sdl3d-viewer,
+  .sdl3d-block .sdl3d-360-viewer,
+  .sdl3d-block .sdl3d-app-viewer {
+    isolation: isolate;  /* containment redundancy — see PR comment */
+  }
+  ```
+  Adds `--sdl3d-block-z` CSS variable as a merchant escape hatch
+  for themes with unusual stacking (e.g. negative-z elements in
+  the header). Documented inline in `viewer.css`; no Theme
+  Customizer setting added yet — wait until a second merchant hits
+  the edge case before promoting it to UI. Standard playbook for
+  embedded-app stacking: `isolation` + low explicit z-index + CSS
+  var escape hatch, deliberately not entering a z-index arms race.
 - **"Republish all products with default BG" bulk action** — closes
   the staleness footgun in viewer-settings PR #3 (shop-default BG
   resolved at publish-time). Settings page action button → walks
@@ -782,11 +815,17 @@ hotspot rework cluster:
   malformed folder.
 - **Bundle `@spectrum-design-lab/shared` into the TAE build** —
   architectural cleanup to eliminate the parallel JS copies in
-  `viewer-360.js` (interpolation), `viewer-3d.js`, `icons.js`,
-  and the upcoming animation + media-slot parallel patches. Each
-  Slice that adds shared semantics grows this debt; the bundle
-  refactor is overdue but isn't blocking. Cluster boundary —
-  ideally lands between Slice 8 and Slice 9.
+  `viewer-360.js` (interpolation), `viewer-3d.js`, the
+  non-existent-but-referenced `icons.js`, and the upcoming
+  animation + media-slot parallel patches. Each Slice that adds
+  shared semantics grows this debt; the bundle refactor is overdue
+  but isn't blocking. Cluster boundary — ideally lands between
+  Slice 8 and Slice 9. **Plan scoped in
+  [docs/tae-bundle-plan.md](tae-bundle-plan.md)**: shared package
+  picks up icon constants + video classify + animation enum,
+  TAE assets become esbuild-bundled IIFE outputs from new
+  `extensions/product-3d-viewer/src/` TS sources, build artifacts
+  git-ignored. One PR, 5 steps, scope is refactor-only.
 - **Catmull-Rom across the wrap** — PR #6 of Slice 7 falls back
   to linear when keyframes wrap. A merchant noticing the kink at
   the wrap point can trigger this work; not yet reported.

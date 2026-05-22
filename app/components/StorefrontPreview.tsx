@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { EditableHotspot } from "./Sdl3dHotspotEditor";
-import { classifyIcon, presetIconSvg, type HotspotIconKey } from "../lib/hotspot-icons";
+import { classifyIcon, presetIconSvg, type HotspotIconKey } from "@spectrum-design-lab/shared";
 
 /**
  * StorefrontPreview renders a simulated storefront product block inside the admin editor.

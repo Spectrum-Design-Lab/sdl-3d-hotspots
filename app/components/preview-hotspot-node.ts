@@ -3,7 +3,7 @@
  * Pure DOM function — no React dependencies.
  */
 import type { EditableHotspot } from "./Sdl3dHotspotEditor";
-import { classifyIcon, presetIconSvg, type HotspotIconKey } from "../lib/hotspot-icons";
+import { classifyIcon, presetIconSvg, type HotspotIconKey } from "@spectrum-design-lab/shared";
 
 export function createPreviewHotspotNode(
   hotspot: EditableHotspot,

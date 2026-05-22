@@ -23,6 +23,12 @@ database.sqlite
 
 /extensions/*/dist
 
+# TAE bundle outputs — generated from extensions/product-3d-viewer/src/
+# by `npm run build:tae` (esbuild). Source of truth is the .ts files.
+/extensions/product-3d-viewer/assets/viewer.js
+/extensions/product-3d-viewer/assets/viewer-3d.js
+/extensions/product-3d-viewer/assets/viewer-360.js
+
 # Ignore shopify files created during app dev
 .shopify/*
 .shopify.lock

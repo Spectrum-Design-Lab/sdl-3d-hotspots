@@ -31,7 +31,7 @@ import {
   presetIconLabel,
   presetIconSvg,
   type HotspotIconKey,
-} from "../lib/hotspot-icons";
+} from "@spectrum-design-lab/shared";
 
 interface Sdl3dIconPickerProps {
   value: string | null;

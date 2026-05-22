@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@shopify/polaris";
 import type { ImageSequenceFrame, Hotspot360 } from "../lib/sdl3d-shared";
 import { interpolateHotspotPosition, isHotspot360Visible } from "../lib/sdl3d-shared";
-import { classifyIcon, presetIconSvg, type HotspotIconKey } from "../lib/hotspot-icons";
+import { classifyIcon, presetIconSvg, type HotspotIconKey } from "@spectrum-design-lab/shared";
 
 interface DragHotspotState {
   hotspotId: string;

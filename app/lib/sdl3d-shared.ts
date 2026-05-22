@@ -9,35 +9,20 @@ import type {
 export type ViewerType = "MODEL_3D" | "IMAGE_360";
 
 /**
- * Slice 8 hotspots PR #3 — hotspot dot animations. Five CSS-driven
- * loops + the "none" default which preserves existing behaviour. Lives
- * in the app-local types until the shared @spectrum-design-lab package
- * picks the field up; the shared HotspotSchema / Hotspot360Schema parse
- * unknown keys via passthrough where they need to (publish path is
- * authoritative — DB column for 3D, JSON-blob passthrough for 360).
+ * Hotspot dot animations + video URL classification now live in
+ * `@spectrum-design-lab/shared` so the storefront TAE bundle can pull
+ * the same enum / regex set the admin editor uses. Re-exported here so
+ * existing callers (`../lib/sdl3d-shared`) don't need to switch import
+ * paths.
  */
-export type HotspotAnimation =
-  | "none"
-  | "pulse"
-  | "bounce"
-  | "glow"
-  | "ripple"
-  | "wiggle";
+import type { HotspotAnimation } from "@spectrum-design-lab/shared";
 
-export const HOTSPOT_ANIMATIONS: HotspotAnimation[] = [
-  "none",
-  "pulse",
-  "bounce",
-  "glow",
-  "ripple",
-  "wiggle",
-];
+export {
+  HOTSPOT_ANIMATIONS,
+  normalizeHotspotAnimation,
+} from "@spectrum-design-lab/shared";
 
-export function normalizeHotspotAnimation(value: unknown): HotspotAnimation {
-  return typeof value === "string" && (HOTSPOT_ANIMATIONS as string[]).includes(value)
-    ? (value as HotspotAnimation)
-    : "none";
-}
+export type { HotspotAnimation };
 
 // Types derived from Zod schemas — re-exported for backward compatibility
 export type ImageSequenceFrame = ImageSequenceFrameZ;
@@ -60,33 +45,10 @@ export type Hotspot360 = Hotspot360Z & {
   mediaVideoUrl?: string | null;
 };
 
-/**
- * Slice 8 hotspots PR #5 — video URL classification. YouTube and
- * Vimeo IDs come from any of the common URL shapes; direct video
- * files match the file-extension suffix.
- */
-export type VideoUrlKind = "youtube" | "vimeo" | "file" | "unknown";
-
-export function classifyVideoUrl(url: string | null | undefined): VideoUrlKind {
-  if (!url) return "unknown";
-  const v = url.trim();
-  if (!v) return "unknown";
-  if (/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))[\w-]+/i.test(v)) return "youtube";
-  if (/vimeo\.com\/\d+/i.test(v)) return "vimeo";
-  if (/\.(mp4|webm)(?:[?#].*)?$/i.test(v)) return "file";
-  return "unknown";
-}
-
-/**
- * Lightweight validity check: a video URL is acceptable iff
- * classifyVideoUrl can place it. Empty string is fine (means
- * "no video"); only non-empty unrecognized strings fail.
- */
-export function isValidVideoUrl(url: string | null | undefined): boolean {
-  if (!url) return true;
-  if (!url.trim()) return true;
-  return classifyVideoUrl(url) !== "unknown";
-}
+// Video URL classification re-exported from @spectrum-design-lab/shared
+// (see top of file for the animations re-exports — same rationale).
+export { classifyVideoUrl, isValidVideoUrl } from "@spectrum-design-lab/shared";
+export type { VideoUrlKind } from "@spectrum-design-lab/shared";
 
 function catmullRom(p0: number, p1: number, p2: number, p3: number, t: number): number {
   return 0.5 * (
