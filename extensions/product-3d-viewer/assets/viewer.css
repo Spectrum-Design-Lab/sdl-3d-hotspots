@@ -1,7 +1,16 @@
+/* Stacking — isolate the block so internal z-indexes (hotspot dots,
+   popup cards, fullscreen button) can't punch up past theme chrome
+   like sticky headers or announcement bars. The block sits at a low
+   explicit level so any theme header with z-index >= 1 paints above
+   it. Merchants on themes with unusual stacking can override the
+   level via the --sdl3d-block-z custom property. */
 .sdl3d-block {
   width: 100%;
   display: flex;
   gap: 0;
+  position: relative;
+  isolation: isolate;
+  z-index: var(--sdl3d-block-z, 0);
 }
 
 .sdl3d-block .sdl3d-viewer,
@@ -10,6 +19,7 @@
   flex: 1;
   min-width: 0;
   border-radius: 18px 0 0 18px;
+  isolation: isolate;
 }
 
 .sdl3d-block__message {
