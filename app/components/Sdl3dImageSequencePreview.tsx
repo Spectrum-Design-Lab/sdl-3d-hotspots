@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@shopify/polaris";
 import type { ImageSequenceFrame, Hotspot360 } from "../lib/sdl3d-shared";
 import { interpolateHotspotPosition, isHotspot360Visible } from "../lib/sdl3d-shared";
+import { classifyIcon, presetIconSvg, type HotspotIconKey } from "../lib/hotspot-icons";
 
 interface DragHotspotState {
   hotspotId: string;
@@ -369,15 +370,30 @@ export function Sdl3dImageSequencePreview({
                   if (!isDraggingHotspot) onSelectHotspot?.(hotspot.id);
                 }}
               >
-                <span
-                  className="sdl-360-hotspot__dot"
-                  onPointerDown={(e) => {
-                    if (onDragHotspot) startHotspotDrag(hotspot.id, e);
-                  }}
-                  style={{ cursor: onDragHotspot ? (isDragTarget ? "grabbing" : "grab") : undefined }}
-                >
-                  {hotspot.sortOrder}
-                </span>
+                {(() => {
+                  const iconKind = classifyIcon(hotspot.icon);
+                  const hasPreset = iconKind === "preset" && hotspot.icon;
+                  const hasUrl = iconKind === "url" && hotspot.icon;
+                  const hasIcon = hasPreset || hasUrl;
+                  return (
+                    <span
+                      className={`sdl-360-hotspot__dot${hasIcon ? " sdl-360-hotspot__dot--icon" : ""}`}
+                      onPointerDown={(e) => {
+                        if (onDragHotspot) startHotspotDrag(hotspot.id, e);
+                      }}
+                      style={{ cursor: onDragHotspot ? (isDragTarget ? "grabbing" : "grab") : undefined }}
+                      {...(hasPreset
+                        ? {
+                            dangerouslySetInnerHTML: {
+                              __html: presetIconSvg(hotspot.icon as HotspotIconKey, 14),
+                            },
+                          }
+                        : {})}
+                    >
+                      {hasPreset ? null : hasUrl ? <img src={hotspot.icon!} alt="" /> : hotspot.sortOrder}
+                    </span>
+                  );
+                })()}
                 <span className="sdl-360-hotspot__card">
                   <strong className="sdl-360-hotspot__title">{hotspot.title}</strong>
                   {hotspot.body ? (

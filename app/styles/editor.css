@@ -417,9 +417,14 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
 
 /* Slice 8 hotspots PR #4 — preset SVG / URL <img> inside the dot.
    Matches the storefront viewer.css rule so editor-canvas + storefront
-   render identically. */
+   render identically. Covers both the 3D canvas (.sdl3d-hotspot__dot)
+   and the editor 360 preview (.sdl-360-hotspot__dot — note the
+   dash-less namespace, different from the storefront's
+   sdl3d-360-hotspot). */
 .sdl3d-hotspot__dot--icon svg,
-.sdl3d-hotspot__dot--icon img {
+.sdl3d-hotspot__dot--icon img,
+.sdl-360-hotspot__dot--icon svg,
+.sdl-360-hotspot__dot--icon img {
   display: block;
   width: 16px;
   height: 16px;
