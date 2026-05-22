@@ -27,9 +27,9 @@ import {
 } from "@shopify/polaris";
 import {
   HOTSPOT_ICON_KEYS,
-  HOTSPOT_PRESET_ICONS,
   classifyIcon,
   presetIconLabel,
+  presetIconSvg,
   type HotspotIconKey,
 } from "../lib/hotspot-icons";
 
@@ -122,9 +122,9 @@ function IconPreview({
     inner = (
       <span
         aria-hidden
-        style={{ width: 28, height: 28, color: "var(--p-color-text, #1c1c1e)" }}
+        style={{ color: "var(--p-color-text, #1c1c1e)", display: "inline-flex" }}
         dangerouslySetInnerHTML={{
-          __html: HOTSPOT_PRESET_ICONS[value as HotspotIconKey],
+          __html: presetIconSvg(value as HotspotIconKey, 28),
         }}
       />
     );
@@ -164,13 +164,6 @@ function IconPreview({
         flexShrink: 0,
       }}
     >
-      <svg
-        // wrapper so dangerouslySetInnerHTML markup matches the picker grid
-        // sizing for preset icons (the inner SVG already has its own viewBox)
-        width={0}
-        height={0}
-        style={{ display: "none" }}
-      />
       {inner}
     </div>
   );
@@ -229,8 +222,8 @@ function PresetGrid({
           >
             <span
               aria-hidden
-              style={{ width: 22, height: 22 }}
-              dangerouslySetInnerHTML={{ __html: HOTSPOT_PRESET_ICONS[key] }}
+              style={{ display: "inline-flex" }}
+              dangerouslySetInnerHTML={{ __html: presetIconSvg(key, 22) }}
             />
           </button>
         );
