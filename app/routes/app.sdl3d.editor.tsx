@@ -421,8 +421,12 @@ export default function Sdl3dEditorRoute() {
     ok?: boolean;
     hotspotEditorMode?: "simple" | "advanced";
   }>();
+  // Shop.hotspotEditorMode is a free-form String in Prisma; narrow at the
+  // boundary so the local state stays strictly typed. Anything that isn't
+  // explicitly "advanced" falls back to "simple" (matches the column's
+  // @default).
   const [editorMode, setEditorModeLocal] = useState<"simple" | "advanced">(
-    loaderData.hotspotEditorMode,
+    loaderData.hotspotEditorMode === "advanced" ? "advanced" : "simple",
   );
   function setEditorMode(next: "simple" | "advanced") {
     if (next === editorMode) return;
@@ -1357,6 +1361,12 @@ export default function Sdl3dEditorRoute() {
                   icon: "plus",
                   style: String(h.style ?? "card"),
                   color: (h.color as string) ?? "#3b82f6",
+                  // Slice 8 fields — 360 presets don't store animation /
+                  // typed media slots, but EditableHotspot requires them;
+                  // normalize the same way the 3D path above does.
+                  animation: normalizeHotspotAnimation(h.animation),
+                  mediaImageUrl: (h.mediaImageUrl as string) ?? null,
+                  mediaVideoUrl: (h.mediaVideoUrl as string) ?? null,
                   position: "0m 0m 0m",
                   normal: null,
                   focusTarget: null,
