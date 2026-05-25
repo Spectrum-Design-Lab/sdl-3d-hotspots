@@ -16,17 +16,19 @@
  *
  * No `.server` imports — this file is reachable from the route's JSX.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Banner,
   BlockStack,
   Button,
   Card,
   InlineStack,
+  List,
   ProgressBar,
   Spinner,
   Text,
 } from "@shopify/polaris";
+import type { ValidationIssue, ValidationReport } from "@spectrum-design-lab/shared";
 import type { CaptureStatus } from "../lib/captures-shared";
 
 const POLL_INTERVAL_MS = 2000;
@@ -51,6 +53,8 @@ type StatusResponse = {
     errorMessage: string | null;
     frameCountActual: number | null;
     frameCountTarget: number;
+    /** Slice 9 PR #1 — serialized `ValidationReport`; null when clean. */
+    validationJson: string | null;
   } | null;
 };
 
@@ -66,13 +70,19 @@ type LocalState =
       status: CaptureStatus;
       frameCountTarget: number;
     }
-  | { kind: "done"; captureId: string; frameCount: number }
+  | {
+      kind: "done";
+      captureId: string;
+      frameCount: number;
+      validationJson: string | null;
+    }
   | {
       kind: "error";
       message: string;
       captureId?: string;
       needsStorageSetup?: boolean;
       retryable: boolean;
+      validationJson: string | null;
     };
 
 type Props = {
@@ -101,11 +111,40 @@ type Props = {
     errorMessage: string | null;
     frameCountActual: number | null;
     frameCountTarget: number;
+    /** Slice 9 PR #1 — last-known validation report, restored on reload. */
+    validationJson?: string | null;
   } | null;
 };
 
 const ZIP_TYPE_RE = /\.zip$/i;
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|tiff?|bmp)$/i;
+
+const ISSUE_PREVIEW_LIMIT = 8;
+
+function formatIssue(issue: ValidationIssue): string {
+  if (issue.filename) return `${issue.filename}: ${issue.message}`;
+  if (issue.frameIndex !== undefined) return `Frame ${issue.frameIndex}: ${issue.message}`;
+  return issue.message;
+}
+
+function ValidationIssueList({ report }: { report: ValidationReport }) {
+  const shown = report.issues.slice(0, ISSUE_PREVIEW_LIMIT);
+  const overflow = report.issues.length - shown.length;
+  return (
+    <BlockStack gap="100">
+      <List type="bullet">
+        {shown.map((issue, idx) => (
+          <List.Item key={`${issue.type}-${idx}`}>{formatIssue(issue)}</List.Item>
+        ))}
+      </List>
+      {overflow > 0 ? (
+        <Text as="p" variant="bodySm" tone="subdued">
+          {`…and ${overflow} more issue${overflow === 1 ? "" : "s"} not shown.`}
+        </Text>
+      ) : null}
+    </BlockStack>
+  );
+}
 
 async function buildZip(
   files: File[],
@@ -181,6 +220,7 @@ export function Sdl3dRawCaptureUploader({
         message: initialCapture.errorMessage ?? "Last capture failed.",
         captureId: initialCapture.id,
         retryable: true,
+        validationJson: initialCapture.validationJson ?? null,
       };
     }
 
@@ -213,6 +253,7 @@ export function Sdl3dRawCaptureUploader({
             message: data.message ?? "Lost track of capture.",
             captureId,
             retryable: true,
+            validationJson: null,
           });
           return;
         }
@@ -222,6 +263,7 @@ export function Sdl3dRawCaptureUploader({
             kind: "done",
             captureId,
             frameCount: cap.frameCountActual ?? cap.frameCountTarget,
+            validationJson: cap.validationJson,
           });
           return;
         }
@@ -234,6 +276,7 @@ export function Sdl3dRawCaptureUploader({
               cap.errorMessage ?? "",
             ),
             retryable: true,
+            validationJson: cap.validationJson,
           });
           return;
         }
@@ -250,6 +293,7 @@ export function Sdl3dRawCaptureUploader({
               "Capture is taking longer than expected (15+ minutes). The worker may be stuck — check container logs or retry.",
             captureId,
             retryable: true,
+            validationJson: null,
           });
           return;
         }
@@ -262,6 +306,7 @@ export function Sdl3dRawCaptureUploader({
           message,
           captureId,
           retryable: true,
+          validationJson: null,
         });
       }
     }
@@ -304,6 +349,7 @@ export function Sdl3dRawCaptureUploader({
               message:
                 "No supported image files in selection. Pick a .zip or a folder of .jpg/.png/.webp images.",
               retryable: false,
+              validationJson: null,
             });
             return;
           }
@@ -334,6 +380,7 @@ export function Sdl3dRawCaptureUploader({
             message: signed.message ?? "Could not sign upload URL.",
             needsStorageSetup: signed.needsStorageSetup,
             retryable: false,
+            validationJson: null,
           });
           return;
         }
@@ -375,6 +422,7 @@ export function Sdl3dRawCaptureUploader({
             message: recorded.message ?? "Could not enqueue processing job.",
             captureId: signed.captureId,
             retryable: true,
+            validationJson: null,
           });
           return;
         }
@@ -387,12 +435,17 @@ export function Sdl3dRawCaptureUploader({
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Upload failed.";
-        setState({ kind: "error", message, retryable: true });
+        setState({
+          kind: "error",
+          message,
+          retryable: true,
+          validationJson: null,
+        });
       } finally {
         if (inputRef.current) inputRef.current.value = "";
       }
     },
-    [productGid, productConfigId],
+    [productGid, productConfigId, storageId],
   );
 
   const handleRetry = useCallback(async () => {
@@ -418,6 +471,7 @@ export function Sdl3dRawCaptureUploader({
           message: data.message ?? "Retry failed.",
           captureId,
           retryable: false,
+          validationJson: null,
         });
         return;
       }
@@ -429,7 +483,13 @@ export function Sdl3dRawCaptureUploader({
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Retry failed.";
-      setState({ kind: "error", message, captureId, retryable: false });
+      setState({
+        kind: "error",
+        message,
+        captureId,
+        retryable: false,
+        validationJson: null,
+      });
     }
   }, [state]);
 
@@ -444,6 +504,22 @@ export function Sdl3dRawCaptureUploader({
     state.kind === "uploading" && state.total > 0
       ? Math.round((state.loaded / state.total) * 100)
       : null;
+
+  // Parse the validation report only when we have something to show. The
+  // worker writes a string-encoded `ValidationReport`; bad JSON is treated
+  // as "no report" rather than crashing the panel.
+  const validationReport = useMemo<ValidationReport | null>(() => {
+    const json =
+      state.kind === "done" || state.kind === "error"
+        ? state.validationJson
+        : null;
+    if (!json) return null;
+    try {
+      return JSON.parse(json) as ValidationReport;
+    } catch {
+      return null;
+    }
+  }, [state]);
 
   const body = (
     <BlockStack gap="200">
@@ -539,9 +615,19 @@ export function Sdl3dRawCaptureUploader({
 
         {state.kind === "done" ? (
           <Banner tone="success" title="Capture processed">
-            <Text as="p" variant="bodySm">
-              {`${state.frameCount} frames live. The viewer should refresh below in a moment.`}
-            </Text>
+            <BlockStack gap="200">
+              <Text as="p" variant="bodySm">
+                {`${state.frameCount} frames live. The viewer should refresh below in a moment.`}
+              </Text>
+              {validationReport && validationReport.issues.length > 0 ? (
+                <>
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    Some input frames needed fixing up — the pipeline handled them, but you may want to clean up your source folder before the next capture:
+                  </Text>
+                  <ValidationIssueList report={validationReport} />
+                </>
+              ) : null}
+            </BlockStack>
           </Banner>
         ) : null}
 
@@ -561,9 +647,19 @@ export function Sdl3dRawCaptureUploader({
               onAction: () => setState({ kind: "idle" }),
             }}
           >
-            <Text as="p" variant="bodySm">
-              {state.message}
-            </Text>
+            <BlockStack gap="200">
+              <Text as="p" variant="bodySm">
+                {state.message}
+              </Text>
+              {validationReport && validationReport.issues.length > 0 ? (
+                <>
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    Validation found these issues with the input frames:
+                  </Text>
+                  <ValidationIssueList report={validationReport} />
+                </>
+              ) : null}
+            </BlockStack>
           </Banner>
         ) : null}
     </BlockStack>

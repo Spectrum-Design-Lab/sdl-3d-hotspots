@@ -41,6 +41,7 @@ function captureToWire(row: {
   frameCountTarget: number;
   frameCountActual: number | null;
   errorMessage: string | null;
+  validationJson: string | null;
   startedAt: Date | null;
   completedAt: Date | null;
   createdAt: Date;
@@ -55,6 +56,9 @@ function captureToWire(row: {
     frameCountTarget: row.frameCountTarget,
     frameCountActual: row.frameCountActual,
     errorMessage: row.errorMessage,
+    // Slice 9 PR #1 — structured pre-flight validation report (or null).
+    // Parsed client-side so the uploader can render per-issue rows.
+    validationJson: row.validationJson,
     startedAt: row.startedAt?.toISOString() ?? null,
     completedAt: row.completedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),

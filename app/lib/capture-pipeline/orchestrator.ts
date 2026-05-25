@@ -39,6 +39,7 @@ import { scanDirectory } from "./scanner";
 import { sampleFrames } from "./sampler";
 import { convertFrames } from "./converter";
 import { uploadFrames } from "./uploader";
+import { validateCaptureFrames } from "./validator";
 
 /** Job payload pushed onto pg-boss by API actions or smoke tests. */
 export type ProcessCaptureJobData = {
@@ -94,6 +95,7 @@ async function markFailed(
   ctx: PrismaClient,
   captureId: string,
   errorMessage: string,
+  validationJson?: string | null,
 ): Promise<void> {
   await ctx.capture.update({
     where: { id: captureId },
@@ -101,6 +103,7 @@ async function markFailed(
       status: "FAILED",
       errorMessage,
       completedAt: new Date(),
+      ...(validationJson !== undefined ? { validationJson } : {}),
     },
   });
 }
@@ -167,10 +170,35 @@ export async function processCapture(
     }
     const primary = scans.reduce((a, b) => (a.frames.length >= b.frames.length ? a : b));
 
+    // 3b. Pre-flight validation. Runs *before* the heavy sharp + upload steps
+    //     so a merchant gets an actionable error in seconds instead of after
+    //     a full pipeline cycle. Hard-fail cases (no parseable frames, fewer
+    //     than half the target count) short-circuit with the validator's
+    //     summary as the capture's errorMessage. Soft-warns (duplicates,
+    //     unparseable filenames the scanner skipped) get persisted into
+    //     validationJson and the pipeline proceeds.
+    const selectedCount =
+      capture.frameCountTarget || DEFAULT_PIPELINE.selectedFrames;
+    const validation = validateCaptureFrames(primary.productKey, primary.frames, {
+      selectedCount,
+      skippedFilenames: primary.skippedFilenames,
+    });
+    const validationJson = JSON.stringify(validation.report);
+    if (validation.hardFail) {
+      await markFailed(
+        ctx.prisma,
+        captureId,
+        validation.summary ??
+          "Validation failed: capture input could not be processed.",
+        validationJson,
+      );
+      return;
+    }
+
     // 4. Sample evenly to the target frame count.
     const sampled = sampleFrames(ctx, primary.frames, {
       totalFrames: DEFAULT_PIPELINE.totalFrames,
-      selectedCount: capture.frameCountTarget || DEFAULT_PIPELINE.selectedFrames,
+      selectedCount,
     });
     if (sampled.length === 0) {
       throw new Error("Sampler returned 0 frames — raw set was empty or unparseable.");
@@ -237,6 +265,9 @@ export async function processCapture(
         frameCountActual: frames.length,
         processedManifestKey: manifestKey,
         completedAt: new Date(),
+        // Persist the soft-warn report only — clean runs leave the column
+        // null so the UI can show a plain "all good" banner.
+        ...(validation.report.issues.length > 0 ? { validationJson } : {}),
         ...((capture.rawSizeBytes ?? 0) === 0
           ? { rawSizeBytes: zipBuffer.byteLength }
           : {}),

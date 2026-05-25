@@ -11,7 +11,16 @@ export type ScanResult = {
   productKey: string;
   frames: Frame[];
   sourceDir: string;
+  /**
+   * Image files (correct extension) that the scanner couldn't assign a
+   * frame index to — typically because the filename didn't match a
+   * `FRAME_PATTERN` *and* didn't end in digits. The validator turns
+   * these into `naming_error` issues for the merchant.
+   */
+  skippedFilenames: string[];
 };
+
+const DEFAULT_PRODUCT_KEY = "capture";
 
 function parseFilename(
   filename: string,
@@ -34,12 +43,19 @@ function extractFrameNumber(filename: string): number | null {
   return match ? parseInt(match[1], 10) : null;
 }
 
-async function scanSubDirectory(
+/**
+ * Walk one flat directory, grouping image files by inferred product key.
+ * Used both for top-level files in `sourceDir` and for each immediate
+ * subdirectory — same fallback logic everywhere so a merchant's flat-ZIP
+ * upload doesn't drop frames the subdirectory branch would have kept.
+ */
+async function scanFlatDirectory(
   dirPath: string,
-  folderName: string,
-): Promise<Map<string, Frame[]>> {
+  fallbackKey: string,
+): Promise<{ grouped: Map<string, Frame[]>; skipped: string[] }> {
   const entries = await readdir(dirPath, { withFileTypes: true });
   const grouped = new Map<string, Frame[]>();
+  const skipped: string[] = [];
 
   for (const entry of entries) {
     if (!entry.isFile()) continue;
@@ -47,9 +63,12 @@ async function scanSubDirectory(
     if (!SUPPORTED_EXTENSIONS.has(ext)) continue;
 
     const parsed = parseFilename(entry.name);
-    const productKey = parsed?.productKey ?? folderName;
+    const productKey = parsed?.productKey ?? fallbackKey;
     const frameIndex = parsed?.frameIndex ?? extractFrameNumber(entry.name);
-    if (frameIndex === null) continue;
+    if (frameIndex === null) {
+      skipped.push(entry.name);
+      continue;
+    }
 
     const frames = grouped.get(productKey) ?? [];
     frames.push({
@@ -60,19 +79,41 @@ async function scanSubDirectory(
     grouped.set(productKey, frames);
   }
 
-  return grouped;
+  return { grouped, skipped };
 }
 
 function buildResults(
   grouped: Map<string, Frame[]>,
   sourceDir: string,
+  skippedFilenames: string[],
 ): ScanResult[] {
   const results: ScanResult[] = [];
   for (const [productKey, frames] of grouped) {
     frames.sort((a, b) => a.index - b.index);
-    results.push({ productKey, frames, sourceDir });
+    results.push({ productKey, frames, sourceDir, skippedFilenames: [] });
   }
   results.sort((a, b) => a.productKey.localeCompare(b.productKey));
+
+  if (results.length === 0) {
+    // Emit a stub so the orchestrator + validator can still surface a
+    // skipped-only failure ("everything in the zip had unparseable names").
+    return [
+      {
+        productKey: DEFAULT_PRODUCT_KEY,
+        frames: [],
+        sourceDir,
+        skippedFilenames,
+      },
+    ];
+  }
+
+  // Attribute all skipped filenames to the primary (largest) bucket — they
+  // can't be assigned to a productKey, so the bucket the orchestrator picks
+  // up "owns" the warning.
+  const primary = results.reduce((a, b) =>
+    a.frames.length >= b.frames.length ? a : b,
+  );
+  primary.skippedFilenames = skippedFilenames;
   return results;
 }
 
@@ -82,36 +123,33 @@ export async function scanDirectory(
 ): Promise<ScanResult[]> {
   const entries = await readdir(sourceDir, { withFileTypes: true });
   const grouped = new Map<string, Frame[]>();
+  const skipped: string[] = [];
 
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      const subResults = await scanSubDirectory(
+      const sub = await scanFlatDirectory(
         path.join(sourceDir, entry.name),
         entry.name,
       );
-      for (const [key, frames] of subResults) {
+      for (const [key, frames] of sub.grouped) {
         const existing = grouped.get(key) ?? [];
         existing.push(...frames);
         grouped.set(key, existing);
       }
-      continue;
+      skipped.push(...sub.skipped);
     }
-
-    if (!entry.isFile()) continue;
-    const ext = path.extname(entry.name).toLowerCase();
-    if (!SUPPORTED_EXTENSIONS.has(ext)) continue;
-
-    const parsed = parseFilename(entry.name);
-    if (!parsed) continue;
-
-    const frames = grouped.get(parsed.productKey) ?? [];
-    frames.push({
-      filename: entry.name,
-      index: parsed.frameIndex,
-      sourcePath: path.join(sourceDir, entry.name),
-    });
-    grouped.set(parsed.productKey, frames);
   }
 
-  return buildResults(grouped, sourceDir);
+  // Top-level loose files use the same fallback as subdirectories so a flat
+  // merchant ZIP (the orchestrator's `extractZip` flattens entries via
+  // `path.basename`) doesn't silently drop everything.
+  const topLevel = await scanFlatDirectory(sourceDir, DEFAULT_PRODUCT_KEY);
+  for (const [key, frames] of topLevel.grouped) {
+    const existing = grouped.get(key) ?? [];
+    existing.push(...frames);
+    grouped.set(key, existing);
+  }
+  skipped.push(...topLevel.skipped);
+
+  return buildResults(grouped, sourceDir, skipped);
 }

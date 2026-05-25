@@ -46,6 +46,7 @@ type Props = {
     errorMessage: string | null;
     frameCountActual: number | null;
     frameCountTarget: number;
+    validationJson?: string | null;
   } | null;
   /** Called when any flow completes (capture done, folder selected, or
    *  Shopify Files browser selection committed). Parent revalidates. */

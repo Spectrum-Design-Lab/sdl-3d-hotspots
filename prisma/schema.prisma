@@ -143,6 +143,11 @@ model Capture {
   frameCountActual      Int?
   processedManifestKey  String?
   errorMessage          String?
+  // Slice 9 PR #1 — pre-flight validation report, serialized JSON. Null
+  // when no validation has happened yet (older captures) or when the
+  // input was perfect (no issues at all). When set, the uploader UI
+  // surfaces structured warnings alongside the success/failure banner.
+  validationJson        String?
   startedAt             DateTime?
   completedAt           DateTime?
   createdAt             DateTime  @default(now())

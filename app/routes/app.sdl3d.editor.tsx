@@ -358,6 +358,9 @@ export async function loader({ request }: { request: Request }) {
         errorMessage: config.captures[0].errorMessage,
         frameCountActual: config.captures[0].frameCountActual,
         frameCountTarget: config.captures[0].frameCountTarget,
+        // Slice 9 PR #1 — restored across reloads so the uploader can
+        // re-surface warnings/errors from the last completed/failed run.
+        validationJson: config.captures[0].validationJson,
       }
       : null,
     availableStorages: availableStorages as ShopStorageSummary[],
