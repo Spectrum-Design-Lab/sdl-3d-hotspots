@@ -60,12 +60,38 @@ export async function getBoss(): Promise<PgBoss> {
   return global.__pgBossStartPromise;
 }
 
+/**
+ * Slice 9 PR #3 — retry/backoff baseline for every capture job.
+ *
+ * - retryLimit 2 ⇒ up to 3 total worker invocations per capture before
+ *   the merchant has to manually retry from the dead-letter UI.
+ * - retryBackoff true with a base retryDelay of 30 s gives ~30 s / ~60 s
+ *   waits between attempts (pg-boss formula). Worst-case three runs of
+ *   a 30-60 s pipeline = a few minutes; safe budget for a Docker
+ *   container that may have transiently lost network.
+ *
+ * Callers can override per-enqueue (e.g. a high-priority reprocess) by
+ * passing their own SendOptions subset.
+ */
+export type EnqueueOptions = {
+  retryLimit?: number;
+  retryDelay?: number;
+  retryBackoff?: boolean;
+};
+
+const DEFAULT_ENQUEUE_OPTIONS: EnqueueOptions = {
+  retryLimit: 2,
+  retryDelay: 30,
+  retryBackoff: true,
+};
+
 export async function enqueue<T extends object>(
   name: JobName,
   data: T,
+  options: EnqueueOptions = {},
 ): Promise<string | null> {
   const boss = await getBoss();
-  return boss.send(name, data);
+  return boss.send(name, data, { ...DEFAULT_ENQUEUE_OPTIONS, ...options });
 }
 
 export type QueueJob<T> = { id: string; data: T };

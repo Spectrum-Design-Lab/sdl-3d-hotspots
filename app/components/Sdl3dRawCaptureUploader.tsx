@@ -77,6 +77,10 @@ type LocalState =
       validationJson: string | null;
     }
   | {
+      kind: "cancelled";
+      captureId: string;
+    }
+  | {
       kind: "error";
       message: string;
       captureId?: string;
@@ -224,6 +228,10 @@ export function Sdl3dRawCaptureUploader({
       };
     }
 
+    if (initialCapture.status === "CANCELLED") {
+      return { kind: "cancelled", captureId: initialCapture.id };
+    }
+
     // PENDING / UPLOADING — signRawUpload ran but recordRawUpload never did,
     // which means the upload was abandoned (tab closed, network died, etc.).
     // Don't pretend the worker is doing anything; let the merchant start over.
@@ -278,6 +286,10 @@ export function Sdl3dRawCaptureUploader({
             retryable: true,
             validationJson: cap.validationJson,
           });
+          return;
+        }
+        if (cap.status === "CANCELLED") {
+          setState({ kind: "cancelled", captureId });
           return;
         }
         setState((prev) =>
@@ -493,6 +505,42 @@ export function Sdl3dRawCaptureUploader({
     }
   }, [state]);
 
+  // Slice 9 PR #3 — cancel an in-flight capture. Only meaningful after a
+  // captureId exists on the row (uploading / recording / processing); the
+  // pre-capture zip phase is a pure client operation the merchant can
+  // already abort by clicking away. PENDING/UPLOADING/QUEUED captures
+  // are flipped to CANCELLED immediately by the API; PROCESSING captures
+  // wait for the orchestrator's next isCancelled check between steps.
+  const handleCancel = useCallback(async () => {
+    if (state.kind !== "uploading" && state.kind !== "recording" && state.kind !== "processing") {
+      return;
+    }
+    const captureId = state.captureId;
+    try {
+      const fd = new FormData();
+      fd.set("intent", "cancel");
+      fd.set("captureId", captureId);
+      await fetch("/api/sdl3d/captures", {
+        method: "POST",
+        body: fd,
+        credentials: "include",
+      });
+      // Reflect optimistically — the poller will catch up if PROCESSING
+      // needs the orchestrator to finalise. Once the worker writes
+      // CANCELLED the polling effect picks it up too.
+      setState({ kind: "cancelled", captureId });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Cancel failed.";
+      setState({
+        kind: "error",
+        message,
+        captureId,
+        retryable: true,
+        validationJson: null,
+      });
+    }
+  }, [state]);
+
   const isWorking =
     state.kind === "zipping" ||
     state.kind === "signing" ||
@@ -584,11 +632,16 @@ export function Sdl3dRawCaptureUploader({
 
         {state.kind === "uploading" ? (
           <BlockStack gap="100">
-            <Text as="span" variant="bodySm" tone="subdued">
-              {uploadProgressPct !== null
-                ? `Uploading to your bucket… ${uploadProgressPct}%`
-                : "Uploading to your bucket…"}
-            </Text>
+            <InlineStack align="space-between" blockAlign="center">
+              <Text as="span" variant="bodySm" tone="subdued">
+                {uploadProgressPct !== null
+                  ? `Uploading to your bucket… ${uploadProgressPct}%`
+                  : "Uploading to your bucket…"}
+              </Text>
+              <Button variant="plain" tone="critical" onClick={handleCancel}>
+                Cancel
+              </Button>
+            </InlineStack>
             <ProgressBar size="small" progress={uploadProgressPct ?? 0} />
           </BlockStack>
         ) : null}
@@ -603,13 +656,32 @@ export function Sdl3dRawCaptureUploader({
         ) : null}
 
         {state.kind === "processing" ? (
-          <Banner tone="info">
+          <Banner
+            tone="info"
+            action={{ content: "Cancel", onAction: handleCancel }}
+          >
             <InlineStack gap="200" blockAlign="center">
               <Spinner size="small" accessibilityLabel="Processing on worker" />
               <Text as="span" variant="bodySm">
                 {`Processing on the worker (status: ${state.status.toLowerCase()})… target ${state.frameCountTarget} frames. Safe to leave this page; the job runs server-side.`}
               </Text>
             </InlineStack>
+          </Banner>
+        ) : null}
+
+        {state.kind === "cancelled" ? (
+          <Banner
+            tone="warning"
+            title="Capture cancelled"
+            secondaryAction={{
+              content: "Dismiss",
+              onAction: () => setState({ kind: "idle" }),
+            }}
+          >
+            <Text as="p" variant="bodySm">
+              The capture was cancelled. The worker will skip any remaining
+              steps and clean up. You can upload a fresh batch any time.
+            </Text>
           </Banner>
         ) : null}
 

@@ -79,16 +79,65 @@ async function extractZip(zipBuffer: Buffer, destDir: string): Promise<string[]>
   return written;
 }
 
-/** Atomic claim — only transitions QUEUED → PROCESSING. Returns true if we won the race. */
+/**
+ * Atomic claim — only transitions QUEUED/PENDING/UPLOADING → PROCESSING.
+ * Returns true if we won the race. Slice 9 PR #3 bumps `attempts` on every
+ * successful claim so the dashboard can surface retry counts without
+ * peeking at pg-boss internals; also explicitly excludes CANCELLED so a
+ * merchant-cancelled capture never re-enters the pipeline if pg-boss
+ * happens to re-deliver the job during the cancel window.
+ */
 async function claimCapture(
   ctx: PrismaClient,
   captureId: string,
 ): Promise<boolean> {
   const result = await ctx.capture.updateMany({
-    where: { id: captureId, status: { in: ["QUEUED", "PENDING", "UPLOADING"] } },
-    data: { status: "PROCESSING", startedAt: new Date(), errorMessage: null },
+    where: {
+      id: captureId,
+      status: { in: ["QUEUED", "PENDING", "UPLOADING"] },
+      cancelledAt: null,
+    },
+    data: {
+      status: "PROCESSING",
+      startedAt: new Date(),
+      errorMessage: null,
+      attempts: { increment: 1 },
+    },
   });
   return result.count > 0;
+}
+
+/**
+ * Re-read the capture row mid-pipeline to honor merchant cancellation. Each
+ * heavy step (extract, validate, sample, convert, upload, write) calls this
+ * first and bails out cleanly if `cancelledAt` was set after the claim. We
+ * mark `completedAt` so the dead-letter UI can sort cancelled rows by when
+ * they stopped, not when they started.
+ */
+async function isCancelled(
+  ctx: PrismaClient,
+  captureId: string,
+): Promise<boolean> {
+  const row = await ctx.capture.findUnique({
+    where: { id: captureId },
+    select: { cancelledAt: true, status: true },
+  });
+  if (!row) return true; // row vanished — treat as cancelled to bail out safely
+  return row.cancelledAt !== null || row.status === "CANCELLED";
+}
+
+async function finaliseCancelled(
+  ctx: PrismaClient,
+  captureId: string,
+): Promise<void> {
+  await ctx.capture.update({
+    where: { id: captureId },
+    data: {
+      status: "CANCELLED",
+      completedAt: new Date(),
+    },
+  });
+  console.log(`[capture-pipeline] capture ${captureId} cancelled mid-pipeline; bailing out.`);
 }
 
 async function markFailed(
@@ -149,9 +198,19 @@ export async function processCapture(
       throw new Error(`ProductConfig ${capture.productConfigId} not found.`);
     }
 
+    if (await isCancelled(ctx.prisma, captureId)) {
+      await finaliseCancelled(ctx.prisma, captureId);
+      return;
+    }
+
     // 1. Download raw.zip from merchant bucket.
     const stream = await ctx.storage.getObject(capture.rawKey);
     const zipBuffer = await streamToBuffer(stream as NodeJS.ReadableStream);
+
+    if (await isCancelled(ctx.prisma, captureId)) {
+      await finaliseCancelled(ctx.prisma, captureId);
+      return;
+    }
 
     // 2. Extract into temp dir.
     const extracted = await extractZip(zipBuffer, rawDir);
@@ -204,6 +263,11 @@ export async function processCapture(
       throw new Error("Sampler returned 0 frames — raw set was empty or unparseable.");
     }
 
+    if (await isCancelled(ctx.prisma, captureId)) {
+      await finaliseCancelled(ctx.prisma, captureId);
+      return;
+    }
+
     // 5. Convert with sharp.
     const converted = await convertFrames(ctx, sampled, {
       format: DEFAULT_PIPELINE.outputFormat,
@@ -212,6 +276,11 @@ export async function processCapture(
       productFolder: captureId,
       concurrency: 4,
     });
+
+    if (await isCancelled(ctx.prisma, captureId)) {
+      await finaliseCancelled(ctx.prisma, captureId);
+      return;
+    }
 
     // 6. Upload converted frames back to the merchant's bucket.
     const keyPrefix = processedFramesKeyPrefix(ctx.shopId, captureId);

@@ -57,11 +57,26 @@ export async function loader({ request }: { request: Request }) {
   const shop = await ensureShop(session.shop);
   const definitions = await getSdl3dDefinitions(admin);
 
-  const [configCount, presetCount, syncRunCount, publishedCount] = await Promise.all([
+  const [configCount, presetCount, syncRunCount, publishedCount, deadLetterCaptures] = await Promise.all([
     prisma.productConfig.count({ where: { shopId: shop.id } }),
     prisma.preset.count({ where: { shopId: shop.id } }),
     prisma.syncRun.count({ where: { shopId: shop.id } }),
     prisma.productConfig.count({ where: { shopId: shop.id, status: "PUBLISHED" } }),
+    // Slice 9 PR #3 — dead-letter list. FAILED and CANCELLED captures are
+    // terminal states the merchant can act on (reprocess or delete).
+    // Scoped to the shop via productConfig.shopId; ordered newest first so
+    // the most recent failure is easiest to triage.
+    prisma.capture.findMany({
+      where: {
+        productConfig: { shopId: shop.id },
+        status: { in: ["FAILED", "CANCELLED"] },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+      include: {
+        productConfig: { select: { shopifyProductGid: true } },
+      },
+    }),
   ]);
 
   return {
@@ -74,6 +89,14 @@ export async function loader({ request }: { request: Request }) {
     presetCount,
     syncRunCount,
     publishedCount,
+    deadLetterCaptures: deadLetterCaptures.map((c) => ({
+      id: c.id,
+      status: c.status as "FAILED" | "CANCELLED",
+      productGid: c.productConfig.shopifyProductGid,
+      errorMessage: c.errorMessage,
+      attempts: c.attempts,
+      updatedAt: c.updatedAt.toISOString(),
+    })),
     definitions: definitions.map((d) => ({
       id: d.id,
       namespace: d.namespace,
@@ -108,6 +131,10 @@ export default function Sdl3dSettingsRoute() {
     failed?: number;
     errors?: Array<{ productGid: string; message: string }>;
   }>>();
+  // Slice 9 PR #3 — dead-letter actions (reprocess uses existing retry
+  // intent; delete uses new deleteCapture intent). Separate fetcher so
+  // toast feedback doesn't collide with the other settings fetchers.
+  const captureOpsFetcher = useFetcher<ActionData<{ deleted?: boolean }>>();
 
   const [logoInput, setLogoInput] = useState(data.logoUrl);
   const [republishModalOpen, setRepublishModalOpen] = useState(false);
@@ -188,6 +215,43 @@ export default function Sdl3dSettingsRoute() {
     // Partial failure with per-product errors: leave the modal open so
     // the merchant sees which products failed.
   }, [republishFetcher.state, republishFetcher.data]);
+
+  useEffect(() => {
+    if (captureOpsFetcher.state !== "idle" || !captureOpsFetcher.data) return;
+    const result = captureOpsFetcher.data;
+    if (result.ok && result.deleted) {
+      setToast({ message: "Capture removed." });
+    } else if (result.ok) {
+      setToast({ message: "Capture re-queued. The worker will pick it up." });
+    } else if (result.message) {
+      setToast({ message: result.message, error: true });
+    }
+  }, [captureOpsFetcher.state, captureOpsFetcher.data]);
+
+  const handleReprocessCapture = useCallback(
+    (captureId: string) => {
+      const fd = new FormData();
+      fd.set("intent", "retry");
+      fd.set("captureId", captureId);
+      captureOpsFetcher.submit(fd, { method: "post", action: "/api/sdl3d/captures" });
+    },
+    [captureOpsFetcher],
+  );
+
+  const handleDeleteCapture = useCallback(
+    (captureId: string) => {
+      if (typeof window !== "undefined" && !window.confirm("Permanently delete this capture row? The processed frames in your bucket are not removed.")) {
+        return;
+      }
+      const fd = new FormData();
+      fd.set("intent", "deleteCapture");
+      fd.set("captureId", captureId);
+      captureOpsFetcher.submit(fd, { method: "post", action: "/api/sdl3d/captures" });
+    },
+    [captureOpsFetcher],
+  );
+
+  const isCaptureOpsBusy = captureOpsFetcher.state !== "idle";
 
   const handleLogoSubmit = useCallback(() => {
     const fd = new FormData();
@@ -459,6 +523,80 @@ export default function Sdl3dSettingsRoute() {
               </BlockStack>
             </Card>
           </Layout.Section>
+
+          {/* Slice 9 PR #3 — dead-letter captures. Shows the 20 most recent
+              FAILED or CANCELLED captures with reprocess + delete actions.
+              The list is hidden entirely when empty so the settings page
+              stays uncluttered for healthy shops. */}
+          {data.deadLetterCaptures.length > 0 ? (
+            <Layout.Section>
+              <Card>
+                <BlockStack gap="300">
+                  <Text as="h2" variant="headingMd">Failed captures</Text>
+                  <Text as="p" tone="subdued">
+                    Captures that errored out or were cancelled. Reprocess to
+                    re-run the pipeline, or delete to clear the row.
+                  </Text>
+                  <ResourceList
+                    resourceName={{ singular: "capture", plural: "captures" }}
+                    items={data.deadLetterCaptures}
+                    renderItem={(capture) => {
+                      const shortGid = capture.productGid.split("/").pop() ?? capture.productGid;
+                      const subtitle =
+                        capture.status === "CANCELLED"
+                          ? "Cancelled by merchant"
+                          : capture.errorMessage ?? "Capture failed";
+                      return (
+                        <ResourceItem
+                          id={capture.id}
+                          onClick={() => undefined}
+                          accessibilityLabel={`Capture ${capture.id}`}
+                        >
+                          <BlockStack gap="100">
+                            <InlineStack gap="200" blockAlign="center">
+                              <Text as="span" variant="bodyMd" fontWeight="semibold">
+                                Product {shortGid}
+                              </Text>
+                              <Badge tone={capture.status === "FAILED" ? "critical" : "warning"}>
+                                {capture.status}
+                              </Badge>
+                              {capture.attempts > 1 ? (
+                                <Badge>{`${capture.attempts} attempts`}</Badge>
+                              ) : null}
+                            </InlineStack>
+                            <Text as="p" variant="bodySm" tone="subdued">
+                              {subtitle}
+                            </Text>
+                            <Text as="p" variant="bodySm" tone="subdued">
+                              {new Date(capture.updatedAt).toLocaleString()}
+                            </Text>
+                            <InlineStack gap="200">
+                              <Button
+                                size="slim"
+                                onClick={() => handleReprocessCapture(capture.id)}
+                                disabled={isCaptureOpsBusy}
+                              >
+                                Reprocess
+                              </Button>
+                              <Button
+                                size="slim"
+                                tone="critical"
+                                variant="plain"
+                                onClick={() => handleDeleteCapture(capture.id)}
+                                disabled={isCaptureOpsBusy}
+                              >
+                                Delete
+                              </Button>
+                            </InlineStack>
+                          </BlockStack>
+                        </ResourceItem>
+                      );
+                    }}
+                  />
+                </BlockStack>
+              </Card>
+            </Layout.Section>
+          ) : null}
 
           {/* Metafield definitions — ResourceList with status Badges. */}
           <Layout.Section>

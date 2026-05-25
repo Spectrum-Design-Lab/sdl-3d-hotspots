@@ -42,6 +42,8 @@ function captureToWire(row: {
   frameCountActual: number | null;
   errorMessage: string | null;
   validationJson: string | null;
+  attempts: number;
+  cancelledAt: Date | null;
   startedAt: Date | null;
   completedAt: Date | null;
   createdAt: Date;
@@ -59,6 +61,10 @@ function captureToWire(row: {
     // Slice 9 PR #1 — structured pre-flight validation report (or null).
     // Parsed client-side so the uploader can render per-issue rows.
     validationJson: row.validationJson,
+    // Slice 9 PR #3 — retry counter + cancellation timestamp so the
+    // dashboard / dead-letter UI / uploader can surface lifecycle state.
+    attempts: row.attempts,
+    cancelledAt: row.cancelledAt?.toISOString() ?? null,
     startedAt: row.startedAt?.toISOString() ?? null,
     completedAt: row.completedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
@@ -134,6 +140,10 @@ export async function action({ request }: ActionFunctionArgs) {
         return handleRecordRawUpload(auth, formData);
       case "retry":
         return handleRetry(auth, formData);
+      case "cancel":
+        return handleCancel(auth, formData);
+      case "deleteCapture":
+        return handleDeleteCapture(auth, formData);
       default:
         return json({ ok: false, message: "Unknown captures intent." }, 400);
     }
@@ -351,4 +361,91 @@ async function handleRetry(
   }
 
   return json({ ok: true, capture: captureToWire(updated) });
+}
+
+/**
+ * Slice 9 PR #3 — merchant-initiated cancellation.
+ *
+ * Sets `cancelledAt`. The orchestrator re-reads the row between heavy
+ * pipeline steps and finalises the capture as CANCELLED on its next
+ * cycle. For captures that haven't yet been claimed (PENDING / UPLOADING
+ * / QUEUED) we flip the status here immediately — the worker's claim
+ * filter excludes `cancelledAt: null`, so the job will land on a dead
+ * row and exit. Terminal-status captures (COMPLETED / FAILED / already-
+ * CANCELLED) are no-ops with a success response so the UI can stay
+ * idempotent.
+ */
+async function handleCancel(
+  auth: AuthenticatedAdmin,
+  formData: FormData,
+): Promise<Response> {
+  const captureId = String(formData.get("captureId") || "").trim();
+  if (!captureId) return json({ ok: false, message: "Missing captureId." }, 400);
+
+  const capture = await prisma.capture.findUnique({
+    where: { id: captureId },
+    include: { productConfig: true },
+  });
+  if (!capture || capture.productConfig.shopId !== auth.shop.id) {
+    return json({ ok: false, message: "Capture not found." }, 404);
+  }
+  if (
+    capture.status === "COMPLETED" ||
+    capture.status === "FAILED" ||
+    capture.status === "CANCELLED"
+  ) {
+    return json({ ok: true, capture: captureToWire(capture), alreadyTerminal: true });
+  }
+
+  // PROCESSING captures need the orchestrator to wind down between steps,
+  // so we only set cancelledAt and let the worker finalise the status.
+  // PENDING/UPLOADING/QUEUED captures will never be claimed (claim filter
+  // excludes cancelledAt != null) — flip to CANCELLED right now so the
+  // dashboard reflects the merchant's decision immediately.
+  const isInFlight = capture.status === "PROCESSING";
+  const updated = await prisma.capture.update({
+    where: { id: capture.id },
+    data: {
+      cancelledAt: new Date(),
+      ...(isInFlight ? {} : { status: "CANCELLED", completedAt: new Date() }),
+    },
+  });
+  return json({ ok: true, capture: captureToWire(updated) });
+}
+
+/**
+ * Slice 9 PR #3 — dead-letter cleanup. Removes a capture row from the DB
+ * entirely (cascades from ProductConfig). Only allowed for terminal-status
+ * captures to avoid racing the worker; cancel first if the capture is
+ * still in-flight.
+ */
+async function handleDeleteCapture(
+  auth: AuthenticatedAdmin,
+  formData: FormData,
+): Promise<Response> {
+  const captureId = String(formData.get("captureId") || "").trim();
+  if (!captureId) return json({ ok: false, message: "Missing captureId." }, 400);
+
+  const capture = await prisma.capture.findUnique({
+    where: { id: captureId },
+    include: { productConfig: true },
+  });
+  if (!capture || capture.productConfig.shopId !== auth.shop.id) {
+    return json({ ok: false, message: "Capture not found." }, 404);
+  }
+  if (
+    capture.status !== "COMPLETED" &&
+    capture.status !== "FAILED" &&
+    capture.status !== "CANCELLED"
+  ) {
+    return json(
+      {
+        ok: false,
+        message: "Cancel the capture before deleting it. In-flight captures cannot be removed.",
+      },
+      409,
+    );
+  }
+  await prisma.capture.delete({ where: { id: capture.id } });
+  return json({ ok: true, deleted: true, captureId });
 }

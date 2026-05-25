@@ -148,6 +148,16 @@ model Capture {
   // input was perfect (no issues at all). When set, the uploader UI
   // surfaces structured warnings alongside the success/failure banner.
   validationJson        String?
+  // Slice 9 PR #3 — worker bumps this each time it claims the row, so the
+  // dashboard can surface "attempt 2 of 3" / "retried twice" without
+  // touching pg-boss internals.
+  attempts              Int       @default(0)
+  // Slice 9 PR #3 — merchant-initiated cancellation. Set non-null by the
+  // cancel API; the orchestrator re-reads the row between heavy steps
+  // and bails out if this is populated. Distinct from `completedAt`
+  // because the run never finished — used by the settings dead-letter
+  // surface to separate cancelled vs. failed captures.
+  cancelledAt           DateTime?
   startedAt             DateTime?
   completedAt           DateTime?
   createdAt             DateTime  @default(now())
