@@ -65,6 +65,7 @@ model ShopStorage {
 
   shop     Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
   captures Capture[]
+  preferredByConfigs ProductConfig[] @relation("ProductConfigPreferredStorage")
 
   @@unique([shopId, provider])
   @@index([shopId])
@@ -118,9 +119,17 @@ model ProductConfig {
   hotspots Hotspot[]
   captures Capture[]
 
+  // Slice 8 — per-product storage preference. Null means "use shop default"
+  // (current behaviour). Capture pipeline checks this before falling back to
+  // ShopStorage.isDefault. SET NULL on storage deletion = product silently
+  // falls back to default rather than orphaning the config.
+  preferredStorageId String?
+  preferredStorage   ShopStorage? @relation("ProductConfigPreferredStorage", fields: [preferredStorageId], references: [id], onDelete: SetNull)
+
   @@unique([shopId, shopifyProductGid])
   @@index([shopId])
   @@index([shopifyProductGid])
+  @@index([preferredStorageId])
 }
 
 model Capture {

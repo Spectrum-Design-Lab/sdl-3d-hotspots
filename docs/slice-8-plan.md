@@ -820,10 +820,20 @@ hotspot rework cluster:
   delete (3D editor only — 360 has no single-delete path) and bulk
   delete (both editors), listing affected titles + reminding the
   merchant Ctrl+Z still works.
-- **Per-product storage assignment column in the dashboard** —
-  ResourceList column showing each product's last capture bucket +
-  per-product override. Broader dashboard-density review needed
-  first; defer until the hotspot cluster is in.
+- ~~**Per-product storage assignment column in the dashboard**~~ —
+  **shipped 2026-05-22.** Dashboard `ProductResourceRow` grew a third
+  meta-line: `Storage: <bucket> (<source>)` where source is
+  `product override`, `from last capture`, or `shop default`. A
+  `Storage` shortcutAction on each row opens a `ChoiceList` modal —
+  pick a `ShopStorage` row or "Use shop default" (clears the
+  preference). Backed by new `ProductConfig.preferredStorageId`
+  column (migration `20260522040000_product_preferred_storage`,
+  `ON DELETE SET NULL` so storage removal falls back gracefully).
+  New `setPreferredStorage` intent on `api.sdl3d.config.tsx`; the
+  capture API now consults `preferredStorageId` before falling back
+  to `ShopStorage.isDefault` so new uploads honour the override
+  automatically. Orphaned (productMissing) rows show no Storage
+  action — they have no product to store frames for.
 - **Bucket folder re-validation** — optional "Validate frames"
   button on the folder picker. Only if a merchant hits a
   malformed folder.

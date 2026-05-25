@@ -24,6 +24,7 @@ import {
   Box,
   Button,
   Card,
+  ChoiceList,
   EmptyState,
   Filters,
   Frame,
@@ -61,16 +62,31 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       totalConfigs: 0,
       publishedCount: 0,
       enabledCount: 0,
+      availableStorages: [],
+      defaultStorageId: null,
     };
   }
 
-  const [configs, syncRuns, totalConfigs, publishedCount, enabledCount] = await Promise.all([
+  const [configs, syncRuns, totalConfigs, publishedCount, enabledCount, allStorages] = await Promise.all([
     prisma.productConfig.findMany({
       where: { shopId: shop.id },
       orderBy: { updatedAt: "desc" },
       take: 50,
       include: {
         _count: { select: { hotspots: true } },
+        // Slice 8 storage column — per-product preferred storage (if set)
+        // + the most recent successful capture (its storage = what the
+        // product's frames actually live on right now). The display logic
+        // resolves the effective storage from these in `enrichedConfigs`.
+        preferredStorage: { select: { id: true, bucket: true, provider: true } },
+        captures: {
+          where: { status: "SUCCESS" },
+          orderBy: { completedAt: "desc" },
+          take: 1,
+          select: {
+            storage: { select: { id: true, bucket: true, provider: true } },
+          },
+        },
       },
     }),
     prisma.syncRun.findMany({
@@ -81,7 +97,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     prisma.productConfig.count({ where: { shopId: shop.id } }),
     prisma.productConfig.count({ where: { shopId: shop.id, status: "PUBLISHED" } }),
     prisma.productConfig.count({ where: { shopId: shop.id, enabled: true } }),
+    prisma.shopStorage.findMany({
+      where: { shopId: shop.id },
+      orderBy: [{ isDefault: "desc" }, { provider: "asc" }],
+      select: { id: true, bucket: true, provider: true, isDefault: true },
+    }),
   ]);
+
+  const defaultStorage = allStorages.find((s) => s.isDefault) ?? null;
 
   const productGids = configs.map((c) => c.shopifyProductGid);
   const cachedProducts = await prisma.productCache.findMany({
@@ -218,6 +241,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const enrichedConfigs = configs.map((c) => {
     const cached = cacheMap.get(c.shopifyProductGid);
     const isMissing = missingGids.has(c.shopifyProductGid) && !cached;
+    // Effective storage resolution (Slice 8 dashboard polish):
+    //   preferredStorage (per-product override, set via dashboard Modal)
+    //   → most recent SUCCESS capture's storage (what frames live on now)
+    //   → shop's default storage (fallback for new captures)
+    //   → null (no storage configured yet — Settings → Storage prompts)
+    const lastCaptureStorage = c.captures[0]?.storage ?? null;
+    const effective = c.preferredStorage ?? lastCaptureStorage ?? defaultStorage;
     return {
       id: c.id,
       shopifyProductGid: c.shopifyProductGid,
@@ -231,6 +261,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       hasModel: Boolean(c.modelFileShopifyGid),
       hotspotCount: c._count.hotspots,
       updatedAt: c.updatedAt.toISOString(),
+      preferredStorageId: c.preferredStorageId,
+      effectiveStorage: effective
+        ? { id: effective.id, bucket: effective.bucket, provider: effective.provider }
+        : null,
+      effectiveStorageSource: c.preferredStorage
+        ? ("override" as const)
+        : lastCaptureStorage
+          ? ("lastCapture" as const)
+          : defaultStorage
+            ? ("default" as const)
+            : ("none" as const),
     };
   });
 
@@ -247,6 +288,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     totalConfigs,
     publishedCount,
     enabledCount,
+    availableStorages: allStorages,
+    defaultStorageId: defaultStorage?.id ?? null,
   };
 };
 
@@ -446,6 +489,16 @@ function FeatureCard({ title, body }: { title: string; body: string }) {
 
 type StatusFilter = "all" | "PUBLISHED" | "DRAFT";
 
+type DashStorageRef = {
+  id: string;
+  bucket: string;
+  provider: string;
+};
+
+type DashStorageSummary = DashStorageRef & {
+  isDefault: boolean;
+};
+
 type DashConfig = {
   id: string;
   shopifyProductGid: string;
@@ -459,6 +512,9 @@ type DashConfig = {
   hasModel: boolean;
   hotspotCount: number;
   updatedAt: string;
+  preferredStorageId: string | null;
+  effectiveStorage: DashStorageRef | null;
+  effectiveStorageSource: "override" | "lastCapture" | "default" | "none";
 };
 
 type DashSyncRun = {
@@ -475,6 +531,8 @@ type DashData = {
   totalConfigs: number;
   publishedCount: number;
   enabledCount: number;
+  availableStorages: DashStorageSummary[];
+  defaultStorageId: string | null;
 };
 
 function Dashboard({ data }: { data: DashData }) {
@@ -494,7 +552,17 @@ function Dashboard({ data }: { data: DashData }) {
     message?: string;
     deletedCount?: number;
   }>();
+  const setStorageFetcher = useFetcher<{
+    ok: boolean;
+    message?: string;
+    productGid?: string;
+    preferredStorageId?: string | null;
+  }>();
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  // Slice 8 — storage override Modal. Held against the active config so
+  // closing/reopening starts the dropdown from the persisted preference.
+  const [storageModalConfig, setStorageModalConfig] = useState<DashConfig | null>(null);
+  const [storageModalChoice, setStorageModalChoice] = useState<string>("");
   const [toast, setToast] = useState<{ message: string; isError?: boolean } | null>(null);
 
   // Look up titles for the "Removed X" toast — fetcher only returns the GID.
@@ -525,6 +593,40 @@ function Dashboard({ data }: { data: DashData }) {
       { method: "post", action: "/api/sdl3d/config" },
     );
   }, [deleteBulkFetcher]);
+
+  const handleOpenStorage = useCallback((config: DashConfig) => {
+    setStorageModalConfig(config);
+    // "" sentinel maps to "use shop default" on submit; otherwise the
+    // existing preference shows pre-selected so the merchant sees what
+    // they previously chose.
+    setStorageModalChoice(config.preferredStorageId ?? "");
+  }, []);
+
+  const handleStorageSubmit = useCallback(() => {
+    if (!storageModalConfig) return;
+    setStorageFetcher.submit(
+      {
+        intent: "setPreferredStorage",
+        productGid: storageModalConfig.shopifyProductGid,
+        storageId: storageModalChoice, // "" clears the override
+      },
+      { method: "post", action: "/api/sdl3d/config" },
+    );
+  }, [setStorageFetcher, storageModalConfig, storageModalChoice]);
+
+  const seenStorageRef = useRef<unknown>(null);
+  useEffect(() => {
+    if (setStorageFetcher.state !== "idle" || !setStorageFetcher.data) return;
+    if (seenStorageRef.current === setStorageFetcher.data) return;
+    seenStorageRef.current = setStorageFetcher.data;
+    const res = setStorageFetcher.data;
+    if (res.ok) {
+      setStorageModalConfig(null);
+      setToast({ message: res.message ?? "Storage preference saved." });
+    } else if (res.message) {
+      setToast({ message: res.message, isError: true });
+    }
+  }, [setStorageFetcher.state, setStorageFetcher.data]);
 
   // Surface fetcher results once per response (ref-guarded to avoid the
   // useRevalidator dep trap — see feedback_react_router_revalidator.md).
@@ -699,6 +801,8 @@ function Dashboard({ data }: { data: DashData }) {
                       key={config.id}
                       config={config}
                       onRemove={handleRemove}
+                      onSetStorage={handleOpenStorage}
+                      storageAvailable={data.availableStorages.length > 0}
                     />
                   )}
                 />
@@ -781,6 +885,69 @@ function Dashboard({ data }: { data: DashData }) {
         </Modal.Section>
       </Modal>
 
+      {/* Slice 8 — per-product storage override Modal. Lists every
+          configured ShopStorage row + a "Use shop default" option.
+          On submit, api.sdl3d.config.tsx setPreferredStorage stamps the
+          choice on ProductConfig and api.sdl3d.captures.tsx reads it
+          before falling back to ShopStorage.isDefault on the next upload. */}
+      <Modal
+        open={storageModalConfig !== null}
+        onClose={() => (setStorageFetcher.state !== "idle" ? undefined : setStorageModalConfig(null))}
+        title={
+          storageModalConfig
+            ? `Storage for "${storageModalConfig.productTitle}"`
+            : "Storage"
+        }
+        primaryAction={{
+          content: "Save",
+          loading: setStorageFetcher.state !== "idle",
+          onAction: handleStorageSubmit,
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            disabled: setStorageFetcher.state !== "idle",
+            onAction: () => setStorageModalConfig(null),
+          },
+        ]}
+      >
+        <Modal.Section>
+          {storageModalConfig ? (
+            <BlockStack gap="300">
+              <Text as="p" tone="subdued" variant="bodySm">
+                Where this product's captured frames upload to. The
+                shop default applies unless you set a product-level
+                override here.
+              </Text>
+              <ChoiceList
+                title="Bucket"
+                titleHidden
+                allowMultiple={false}
+                selected={[storageModalChoice]}
+                onChange={(values) => setStorageModalChoice(values[0] ?? "")}
+                choices={[
+                  {
+                    label: data.availableStorages.find((s) => s.isDefault)
+                      ? `Use shop default (${data.availableStorages.find((s) => s.isDefault)?.bucket})`
+                      : "Use shop default (none configured)",
+                    value: "",
+                  },
+                  ...data.availableStorages.map((s) => ({
+                    label: `${s.bucket} — ${s.provider}${s.isDefault ? " · default" : ""}`,
+                    value: s.id,
+                  })),
+                ]}
+              />
+              {data.availableStorages.length === 0 ? (
+                <Text as="p" tone="subdued" variant="bodySm">
+                  No storage rows configured yet. Open Settings → Storage to connect a bucket.
+                </Text>
+              ) : null}
+            </BlockStack>
+          ) : null}
+        </Modal.Section>
+      </Modal>
+
       {toast ? (
         <Toast
           content={toast.message}
@@ -811,9 +978,13 @@ function StatCard({ value, label }: { value: number; label: string }) {
 function ProductResourceRow({
   config,
   onRemove,
+  onSetStorage,
+  storageAvailable,
 }: {
   config: DashConfig;
   onRemove: (config: DashConfig) => void;
+  onSetStorage: (config: DashConfig) => void;
+  storageAvailable: boolean;
 }) {
   const editorUrl = `/app/sdl3d/editor?product=${encodeURIComponent(config.shopifyProductGid)}`;
 
@@ -831,18 +1002,41 @@ function ProductResourceRow({
     />
   );
 
-  // Per-row Remove is gated to productMissing rows only — Decision #6 in the
-  // Slice 6 plan. Live configs are protected from accidental deletion from
-  // the dashboard surface.
-  const shortcutActions = config.productMissing
-    ? [
-        {
-          content: "Remove",
-          accessibilityLabel: `Remove ${config.productTitle}`,
-          onAction: () => onRemove(config),
-        },
-      ]
-    : undefined;
+  // Slice 6 PR #1 Decision #6: Remove only shows for orphaned rows.
+  // Slice 8 dashboard polish: live (non-orphan) rows get a "Storage"
+  // shortcut that opens the override Modal. Both are gated separately
+  // so an orphaned row can't get a Storage action — it has no product
+  // to store frames for.
+  const shortcutActions: { content: string; accessibilityLabel?: string; onAction: () => void }[] = [];
+  if (config.productMissing) {
+    shortcutActions.push({
+      content: "Remove",
+      accessibilityLabel: `Remove ${config.productTitle}`,
+      onAction: () => onRemove(config),
+    });
+  } else if (storageAvailable) {
+    shortcutActions.push({
+      content: "Storage",
+      accessibilityLabel: `Set storage for ${config.productTitle}`,
+      onAction: () => onSetStorage(config),
+    });
+  }
+
+  // Storage line copy varies on the resolution source so the merchant can
+  // tell *why* this product points at a particular bucket without opening
+  // the Modal.
+  let storageLabel: string;
+  if (!config.effectiveStorage) {
+    storageLabel = "Storage: not configured";
+  } else {
+    const tag =
+      config.effectiveStorageSource === "override"
+        ? "(product override)"
+        : config.effectiveStorageSource === "lastCapture"
+          ? "(from last capture)"
+          : "(shop default)";
+    storageLabel = `Storage: ${config.effectiveStorage.bucket} ${tag}`;
+  }
 
   return (
     <ResourceItem
@@ -850,7 +1044,7 @@ function ProductResourceRow({
       url={editorUrl}
       accessibilityLabel={`Open ${config.productTitle} in editor`}
       media={thumbnail}
-      shortcutActions={shortcutActions}
+      shortcutActions={shortcutActions.length ? shortcutActions : undefined}
     >
       <BlockStack gap="100">
         <InlineStack gap="200" blockAlign="center" wrap={false}>
@@ -873,6 +1067,11 @@ function ProductResourceRow({
             {new Date(config.updatedAt).toLocaleDateString()}
           </span>
         </Text>
+        {!config.productMissing ? (
+          <Text as="p" tone="subdued" variant="bodySm">
+            {storageLabel}
+          </Text>
+        ) : null}
       </BlockStack>
     </ResourceItem>
   );

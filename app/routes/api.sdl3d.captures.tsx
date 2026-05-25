@@ -150,9 +150,10 @@ async function handleSignRawUpload(
   }
 
   // Slice 6 PR #3: if the editor sent a storage override, validate it belongs
-  // to this shop and use it. Otherwise fall back to the shop's default row.
+  // to this shop and use it. Otherwise — Slice 8 — fall back to the
+  // product's per-product preferred storage, then to the shop's default.
   // Either way the resolved id is stamped on the Capture so the worker reads
-  // from that specific bucket even if the merchant flips the default later.
+  // from that specific bucket even if the merchant flips defaults later.
   let storageId: string | null;
   if (overrideStorageId) {
     const overrideRow = await prisma.shopStorage.findFirst({
@@ -171,7 +172,13 @@ async function handleSignRawUpload(
     }
     storageId = overrideRow.id;
   } else {
-    storageId = await getDefaultStorageRowId(auth.shop.id);
+    const productConfig = await prisma.productConfig.findUnique({
+      where: {
+        shopId_shopifyProductGid: { shopId: auth.shop.id, shopifyProductGid: productGid },
+      },
+      select: { preferredStorageId: true },
+    });
+    storageId = productConfig?.preferredStorageId ?? (await getDefaultStorageRowId(auth.shop.id));
   }
 
   if (!storageId) {

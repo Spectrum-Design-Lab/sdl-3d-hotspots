@@ -80,6 +80,8 @@ export async function action({ request }: ActionFunctionArgs) {
         return handleSetViewerType(shop, productGid, formData);
       case "deleteConfig":
         return handleDeleteConfig(shop, productGid);
+      case "setPreferredStorage":
+        return handleSetPreferredStorage(shop, productGid, formData);
       default:
         return error("Unknown config intent.");
     }
@@ -231,6 +233,46 @@ async function handleDeleteConfig(shop: { id: string }, productGid: string) {
     productGid,
     wasPublished: config.status === "PUBLISHED",
     message: "Removed.",
+  });
+}
+
+/**
+ * Slice 8 dashboard polish — per-product storage preference. Null
+ * `storageId` clears the override and future captures fall back to the
+ * shop default. Validates that the provided storage belongs to this
+ * shop so a malformed/stolen id can't redirect captures elsewhere.
+ */
+async function handleSetPreferredStorage(
+  shop: { id: string },
+  productGid: string,
+  formData: FormData,
+) {
+  const raw = String(formData.get("storageId") || "").trim();
+  const nextId = raw || null;
+
+  if (nextId) {
+    const valid = await prisma.shopStorage.findFirst({
+      where: { id: nextId, shopId: shop.id },
+      select: { id: true },
+    });
+    if (!valid) {
+      return error("Selected storage not found for this shop.", 404);
+    }
+  }
+
+  const updated = await prisma.productConfig.update({
+    where: {
+      shopId_shopifyProductGid: { shopId: shop.id, shopifyProductGid: productGid },
+    },
+    data: { preferredStorageId: nextId },
+    select: { id: true, preferredStorageId: true },
+  });
+
+  return json({
+    ok: true,
+    productGid,
+    preferredStorageId: updated.preferredStorageId,
+    message: nextId ? "Storage preference saved." : "Using shop default storage.",
   });
 }
 
