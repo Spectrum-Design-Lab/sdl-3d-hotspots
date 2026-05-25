@@ -796,11 +796,16 @@ hotspot rework cluster:
   the edge case before promoting it to UI. Standard playbook for
   embedded-app stacking: `isolation` + low explicit z-index + CSS
   var escape hatch, deliberately not entering a z-index arms race.
-- **"Republish all products with default BG" bulk action** — closes
-  the staleness footgun in viewer-settings PR #3 (shop-default BG
-  resolved at publish-time). Settings page action button → walks
-  every product with a published config → re-runs the publish path.
-  Small UI, predictable backend. Slice 8 finisher.
+- ~~**"Republish all products with default BG" bulk action**~~ —
+  **shipped 2026-05-22.** New `republishAll` intent on
+  `api.sdl3d.config.tsx` walks `ProductConfig` rows where
+  `status = PUBLISHED` and calls `publishConfigToMetafields` per
+  config. Settings page Default Background card grew a "Republish
+  all published products" button + Polaris Modal confirm + per-
+  product error list when partial failure occurs. Sequential calls
+  (pilot scale); if a future tenant has hundreds of products,
+  promote to a pg-boss background job. Also unsticks any other
+  publish-time resolution (custom-icon GIDs, mediaImageUrl GIDs).
 - **Preset apply with per-hotspot dedup + delete confirmations** —
   decided spec is locked in the Slice 7 plan's out-of-scope
   section. Modal with checkbox list; duplicate detection via

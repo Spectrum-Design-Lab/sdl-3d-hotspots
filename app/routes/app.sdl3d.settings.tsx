@@ -36,6 +36,8 @@ import {
   Frame,
   InlineStack,
   Layout,
+  List,
+  Modal,
   Page,
   ResourceItem,
   ResourceList,
@@ -55,10 +57,11 @@ export async function loader({ request }: { request: Request }) {
   const shop = await ensureShop(session.shop);
   const definitions = await getSdl3dDefinitions(admin);
 
-  const [configCount, presetCount, syncRunCount] = await Promise.all([
+  const [configCount, presetCount, syncRunCount, publishedCount] = await Promise.all([
     prisma.productConfig.count({ where: { shopId: shop.id } }),
     prisma.preset.count({ where: { shopId: shop.id } }),
     prisma.syncRun.count({ where: { shopId: shop.id } }),
+    prisma.productConfig.count({ where: { shopId: shop.id, status: "PUBLISHED" } }),
   ]);
 
   return {
@@ -70,6 +73,7 @@ export async function loader({ request }: { request: Request }) {
     configCount,
     presetCount,
     syncRunCount,
+    publishedCount,
     definitions: definitions.map((d) => ({
       id: d.id,
       namespace: d.namespace,
@@ -98,8 +102,15 @@ export default function Sdl3dSettingsRoute() {
   const metafieldFetcher = useFetcher<ActionData<{ results?: MetafieldResult[] }>>();
   const onboardingFetcher = useFetcher<ActionData<{ resetOnboarding?: boolean }>>();
   const bgColorFetcher = useFetcher<ActionData<{ defaultViewerBackgroundColor?: string | null }>>();
+  const republishFetcher = useFetcher<ActionData<{
+    total?: number;
+    successful?: number;
+    failed?: number;
+    errors?: Array<{ productGid: string; message: string }>;
+  }>>();
 
   const [logoInput, setLogoInput] = useState(data.logoUrl);
+  const [republishModalOpen, setRepublishModalOpen] = useState(false);
   const [bgColorInput, setBgColorInput] = useState(data.defaultViewerBackgroundColor);
   const [themeChoice, setThemeChoice] = useState<("light" | "dark")[]>(
     data.darkMode ? ["dark"] : ["light"],
@@ -159,6 +170,25 @@ export default function Sdl3dSettingsRoute() {
     }
   }, [bgColorFetcher.state, bgColorFetcher.data]);
 
+  // Slice 8 finisher — bulk republish. Closes the staleness footgun
+  // from the shop-default BG publish-time resolver. Errors don't open
+  // a toast (the modal stays open to show per-product detail); success
+  // closes the modal and toasts the count.
+  useEffect(() => {
+    if (republishFetcher.state !== "idle" || !republishFetcher.data) return;
+    const result = republishFetcher.data;
+    if (result.ok && result.failed === 0) {
+      setRepublishModalOpen(false);
+      setToast({ message: result.message ?? "Republish complete." });
+    } else if (result.ok === false && result.message && !result.errors?.length) {
+      // Top-level failure (no per-product detail) — surface as toast.
+      setRepublishModalOpen(false);
+      setToast({ message: result.message, error: true });
+    }
+    // Partial failure with per-product errors: leave the modal open so
+    // the merchant sees which products failed.
+  }, [republishFetcher.state, republishFetcher.data]);
+
   const handleLogoSubmit = useCallback(() => {
     const fd = new FormData();
     fd.set("intent", "saveLogo");
@@ -197,10 +227,18 @@ export default function Sdl3dSettingsRoute() {
     onboardingFetcher.submit(fd, { method: "post", action: "/api/sdl3d/onboarding" });
   }, [onboardingFetcher]);
 
+  const handleRepublishAll = useCallback(() => {
+    const fd = new FormData();
+    fd.set("intent", "republishAll");
+    republishFetcher.submit(fd, { method: "post", action: "/api/sdl3d/config" });
+  }, [republishFetcher]);
+
   const isSavingLogo = logoFetcher.state !== "idle";
   const isSavingTheme = darkModeFetcher.state !== "idle";
   const isRunningSetup = metafieldFetcher.state !== "idle";
   const isResettingOnboarding = onboardingFetcher.state !== "idle";
+  const isRepublishing = republishFetcher.state !== "idle";
+  const republishResult = republishFetcher.data;
 
   const metafieldResults = metafieldFetcher.data?.results ?? [];
 
@@ -345,6 +383,33 @@ export default function Sdl3dSettingsRoute() {
                     </Button>
                   ) : null}
                 </InlineStack>
+
+                {/* Slice 8 finisher — bulk republish. Re-runs the
+                    publish path for every PUBLISHED product so the
+                    shop-default BG (and any other publish-time
+                    resolution like custom-icon GIDs) propagates to
+                    already-published metafields. Disabled when there
+                    are no published products. */}
+                <Box paddingBlockStart="200" borderBlockStartWidth="025" borderColor="border">
+                  <BlockStack gap="200">
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      Already-published products keep the colour they had at publish time. Use this to refresh every published product to the current default in one pass.
+                    </Text>
+                    <InlineStack gap="200" blockAlign="center">
+                      <Button
+                        onClick={() => setRepublishModalOpen(true)}
+                        disabled={data.publishedCount === 0 || isRepublishing}
+                      >
+                        Republish all published products
+                      </Button>
+                      <Text as="span" variant="bodySm" tone="subdued">
+                        {data.publishedCount === 0
+                          ? "No published products yet."
+                          : `${data.publishedCount} published product${data.publishedCount === 1 ? "" : "s"}.`}
+                      </Text>
+                    </InlineStack>
+                  </BlockStack>
+                </Box>
               </BlockStack>
             </Card>
           </Layout.Section>
@@ -502,6 +567,69 @@ export default function Sdl3dSettingsRoute() {
           duration={3500}
         />
       ) : null}
+
+      <Modal
+        open={republishModalOpen}
+        onClose={() => {
+          if (isRepublishing) return;
+          setRepublishModalOpen(false);
+        }}
+        title="Republish all published products"
+        primaryAction={{
+          content: republishResult?.errors?.length ? "Close" : "Republish",
+          onAction: republishResult?.errors?.length
+            ? () => setRepublishModalOpen(false)
+            : handleRepublishAll,
+          loading: isRepublishing,
+          disabled: isRepublishing,
+        }}
+        secondaryActions={
+          republishResult?.errors?.length
+            ? undefined
+            : [
+                {
+                  content: "Cancel",
+                  onAction: () => setRepublishModalOpen(false),
+                  disabled: isRepublishing,
+                },
+              ]
+        }
+      >
+        <Modal.Section>
+          {republishResult?.errors?.length ? (
+            <BlockStack gap="300">
+              <Text as="p">
+                Republished {republishResult.successful} of {republishResult.total} products. {republishResult.failed} failed:
+              </Text>
+              <List type="bullet">
+                {republishResult.errors.map((e) => (
+                  <List.Item key={e.productGid}>
+                    <Text as="span" variant="bodySm" fontWeight="medium">
+                      {e.productGid.replace("gid://shopify/Product/", "Product ")}
+                    </Text>
+                    {" — "}
+                    <Text as="span" variant="bodySm" tone="critical">
+                      {e.message}
+                    </Text>
+                  </List.Item>
+                ))}
+              </List>
+              <Text as="p" variant="bodySm" tone="subdued">
+                Successful products were republished with the current shop defaults. You can re-open the failed products' editors and publish them individually to retry.
+              </Text>
+            </BlockStack>
+          ) : (
+            <BlockStack gap="300">
+              <Text as="p">
+                This will re-run the publish path for {data.publishedCount} published product{data.publishedCount === 1 ? "" : "s"}, refreshing the shop-default background colour and any other publish-time values (custom icons, hotspot media URLs) on already-published storefronts.
+              </Text>
+              <Text as="p" variant="bodySm" tone="subdued">
+                Storefront viewers see the updated values on next page load. No data is lost — this only writes the resolved values to product metafields.
+              </Text>
+            </BlockStack>
+          )}
+        </Modal.Section>
+      </Modal>
     </Frame>
   );
 }

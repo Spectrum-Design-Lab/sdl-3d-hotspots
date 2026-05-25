@@ -1,6 +1,7 @@
 /**
  * API route for product config operations:
- *   saveDraft, publish, setViewerType, deleteConfig, deleteOrphanedConfigs
+ *   saveDraft, publish, setViewerType, deleteConfig, deleteOrphanedConfigs,
+ *   republishAll
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
@@ -57,9 +58,12 @@ export async function action({ request }: ActionFunctionArgs) {
     const formData = await request.formData();
     const intent = String(formData.get("intent") || "");
 
-    // Bulk intent has no productGid; handle before the per-product check.
+    // Bulk intents have no productGid; handle before the per-product check.
     if (intent === "deleteOrphanedConfigs") {
       return handleDeleteOrphanedConfigs(admin, shop);
+    }
+    if (intent === "republishAll") {
+      return handleRepublishAll(admin, session.shop, shop);
     }
 
     const productGid = String(formData.get("productGid") || "");
@@ -227,6 +231,75 @@ async function handleDeleteConfig(shop: { id: string }, productGid: string) {
     productGid,
     wasPublished: config.status === "PUBLISHED",
     message: "Removed.",
+  });
+}
+
+/**
+ * Bulk republish — re-runs the publish path for every PUBLISHED config in
+ * the shop. Closes the staleness footgun from Slice 8 viewer-settings PR
+ * #3 (shop-default BG resolved at publish-time, so changing the shop
+ * default doesn't update already-published products until they republish).
+ * Same mechanism unsticks anything else the publish path resolves at
+ * publish-time (icon GIDs, mediaImageUrl GIDs).
+ *
+ * Sequential calls to publishConfigToMetafields per config — pilot
+ * merchant scale is fine; if a future tenant has hundreds of products
+ * this could move to a background job. Errors don't halt the batch;
+ * each product gets one attempt and the result list reports outcomes.
+ */
+async function handleRepublishAll(
+  admin: AdminGraphqlClient,
+  shopDomain: string,
+  shop: { id: string },
+) {
+  const configs = await prisma.productConfig.findMany({
+    where: { shopId: shop.id, status: "PUBLISHED" },
+    select: { id: true, shopifyProductGid: true },
+  });
+
+  if (configs.length === 0) {
+    return json({
+      ok: true,
+      total: 0,
+      successful: 0,
+      failed: 0,
+      errors: [],
+      message: "No published products to republish.",
+    });
+  }
+
+  let successful = 0;
+  const errors: Array<{ productGid: string; message: string }> = [];
+
+  for (const config of configs) {
+    try {
+      await publishConfigToMetafields({
+        admin,
+        shopDomain,
+        productConfigId: config.id,
+        storefrontMode: "metafield",
+      });
+      successful++;
+    } catch (err) {
+      errors.push({
+        productGid: config.shopifyProductGid,
+        message: err instanceof Error ? err.message : "Unknown publish error.",
+      });
+    }
+  }
+
+  const failed = errors.length;
+  const summary = failed === 0
+    ? `Republished ${successful} product${successful === 1 ? "" : "s"}.`
+    : `Republished ${successful} of ${configs.length}; ${failed} failed.`;
+
+  return json({
+    ok: failed === 0,
+    total: configs.length,
+    successful,
+    failed,
+    errors,
+    message: summary,
   });
 }
 
