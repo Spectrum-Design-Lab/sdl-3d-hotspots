@@ -1,4 +1,4 @@
-import { useBlocker, useFetcher, useLoaderData, useNavigate, useRevalidator, useRouteError, isRouteErrorResponse } from "react-router";
+import { useBlocker, useFetcher, useLoaderData, useNavigate, useRevalidator, useRouteError, useSearchParams, isRouteErrorResponse } from "react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
@@ -497,6 +497,55 @@ export default function Sdl3dEditorRoute() {
   // is now only triggered from inside this Modal's "Browse Shopify Files"
   // tab via the onOpenShopifyFilesBrowser callback.
   const [showMediaSourceModal, setShowMediaSourceModal] = useState(false);
+
+  // Slice 9 PR #2 — deep-link entry from the onboarding wizard.
+  //
+  // The wizard's "Open editor to upload" CTA lands here with
+  // `?openMediaUpload=1`. Two cases to handle:
+  //   (a) merchant already had a product selected (rare on first visit, but
+  //       possible if they bounced back to the wizard) → open the media
+  //       modal directly.
+  //   (b) no product selected (the normal first-run case) → open the
+  //       product browser, then re-open the media modal *after* the product
+  //       picker triggers a fresh navigation. ProductBrowserModal's
+  //       `handleSelectProduct` rebuilds the URL from scratch and drops
+  //       `openMediaUpload`, so the intent has to survive in
+  //       sessionStorage (per-tab, fine for our one-merchant scenario)
+  //       rather than the URL.
+  const SESSION_KEY = "sdl3d:openMediaUploadPending";
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoOpenedMediaUploadRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (autoOpenedMediaUploadRef.current) return;
+
+    const fromUrl = searchParams.get("openMediaUpload") === "1";
+    if (fromUrl) {
+      window.sessionStorage.setItem(SESSION_KEY, "1");
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("openMediaUpload");
+          return next;
+        },
+        { replace: true },
+      );
+    }
+
+    const pending = window.sessionStorage.getItem(SESSION_KEY) === "1";
+    if (!pending) return;
+
+    if (!loaderData.selectedProduct) {
+      // Open the picker — once the merchant picks, the page navigates and
+      // we re-enter this effect with a selected product.
+      setShowProductBrowser(true);
+      return;
+    }
+
+    autoOpenedMediaUploadRef.current = true;
+    window.sessionStorage.removeItem(SESSION_KEY);
+    setShowMediaSourceModal(true);
+  }, [searchParams, setSearchParams, loaderData.selectedProduct]);
   const [showPresetBrowser, setShowPresetBrowser] = useState(false);
   const [showPresetSaveDialog, setShowPresetSaveDialog] = useState(false);
   const [presetSaveHotspots3d, setPresetSaveHotspots3d] = useState<EditableHotspot[]>([]);

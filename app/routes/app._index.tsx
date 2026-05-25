@@ -14,7 +14,7 @@
  * aria-modal, focus-trap, and return-focus out of the box.
  */
 import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
-import { useLoaderData, useFetcher, useRouteError, isRouteErrorResponse } from "react-router";
+import { useLoaderData, useFetcher, useNavigate, useRouteError, isRouteErrorResponse } from "react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import {
@@ -337,11 +337,28 @@ const STEPS = [
 
 function OnboardingModal() {
   const fetcher = useFetcher();
+  const navigate = useNavigate();
   const [step, setStep] = useState(0);
 
   const current = STEPS[step];
   const isLast = step === STEPS.length - 1;
   const isBusy = fetcher.state !== "idle";
+
+  // Slice 9 PR #2 — once "Open editor to upload" fires we need to wait for
+  // the completeOnboarding mutation to succeed (the dashboard's loader
+  // checks `Shop.onboardingComplete`; navigating before the row updates
+  // would just re-render the wizard). The fetcher resolves to
+  // `data.ok === true` on success — we navigate inside the effect below.
+  const [pendingUploadNav, setPendingUploadNav] = useState(false);
+  useEffect(() => {
+    if (!pendingUploadNav) return;
+    if (fetcher.state !== "idle") return;
+    const data = fetcher.data as { ok?: boolean } | undefined;
+    if (data && data.ok) {
+      navigate("/app/sdl3d/editor?openMediaUpload=1");
+      setPendingUploadNav(false);
+    }
+  }, [pendingUploadNav, fetcher.state, fetcher.data, navigate]);
 
   const handleNext = useCallback(() => {
     if (isLast) {
@@ -365,10 +382,34 @@ function OnboardingModal() {
     );
   }, [fetcher]);
 
+  // Slice 9 PR #2 — deep-link from the wizard's upload step into the
+  // editor with the media-source modal pre-opened. Completes onboarding
+  // first so the dashboard loader doesn't bounce the merchant back to
+  // the wizard.
+  const handleOpenEditorUpload = useCallback(() => {
+    setPendingUploadNav(true);
+    fetcher.submit(
+      { intent: "completeOnboarding" },
+      { method: "post", action: "/api/sdl3d/onboarding" },
+    );
+  }, [fetcher]);
+
+  const isUploadStep = current.id === "upload-model";
+
   const secondaryActions = [
     step > 0
       ? { content: "Back", onAction: handleBack, disabled: isBusy }
       : { content: "Skip", onAction: handleSkip, disabled: isBusy },
+    ...(isUploadStep
+      ? [
+          {
+            content: "Open editor to upload",
+            onAction: handleOpenEditorUpload,
+            disabled: isBusy,
+            loading: pendingUploadNav && isBusy,
+          },
+        ]
+      : []),
   ];
 
   const progressPct = Math.round(((step + 1) / STEPS.length) * 100);
