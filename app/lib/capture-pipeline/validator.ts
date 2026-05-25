@@ -86,11 +86,12 @@ export function validateCaptureFrames(
   if (uniqueCount === 0) {
     hardFail = true;
     summary =
-      `No frames could be parsed from the upload. Frame filenames should end with a sequence number (e.g. \`frame_001.jpg\` or \`shot-072.png\`). Rename the files and re-upload.`;
+      `No usable frames in this upload. Frame filenames need to end with a sequence number — e.g. \`frame_001.jpg\` or \`shot-072.png\`. Rename the files and re-upload.`;
   } else if (uniqueCount < minimumViable) {
     hardFail = true;
+    const frameWord = uniqueCount === 1 ? "frame" : "frames";
     summary =
-      `Only ${uniqueCount} parseable frame${uniqueCount === 1 ? "" : "s"} — need at least ${minimumViable} for a smooth ${selectedCount}-frame turntable. Add more frames and re-upload.`;
+      `Your upload contained ${uniqueCount} ${frameWord}, but a ${selectedCount}-frame turntable needs at least ${minimumViable} unique source frames to look smooth. Add more frames to the same capture and re-upload.`;
   } else if (issues.length > 0) {
     const dupeCount = issues.filter((i) => i.type === "duplicate").length;
     const namingCount = issues.filter((i) => i.type === "naming_error").length;

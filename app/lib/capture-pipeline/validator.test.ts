@@ -20,7 +20,7 @@ describe("validateCaptureFrames — hard-fail floors", () => {
   it("hard-fails when no frames parsed", () => {
     const outcome = validateCaptureFrames("capture", [], { selectedCount: 72 });
     expect(outcome.hardFail).toBe(true);
-    expect(outcome.summary).toMatch(/no frames could be parsed/i);
+    expect(outcome.summary).toMatch(/no usable frames/i);
     expect(outcome.report.valid).toBe(false);
     expect(outcome.report.totalFound).toBe(0);
   });
@@ -30,8 +30,8 @@ describe("validateCaptureFrames — hard-fail floors", () => {
       selectedCount: 72,
     });
     expect(outcome.hardFail).toBe(true);
-    expect(outcome.summary).toMatch(/only 20 parseable frames/i);
-    expect(outcome.summary).toMatch(/at least 36/);
+    expect(outcome.summary).toMatch(/your upload contained 20 frames/i);
+    expect(outcome.summary).toMatch(/at least 36 unique source frames/i);
   });
 
   it("hard-fails at the exact minimum-1 boundary", () => {

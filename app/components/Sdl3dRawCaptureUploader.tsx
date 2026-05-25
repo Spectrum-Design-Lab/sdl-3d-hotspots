@@ -202,6 +202,11 @@ export function Sdl3dRawCaptureUploader({
   initialCapture = null,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Separate folder-picker input so the merchant can drop a whole capture
+  // directory in one click on browsers that support `webkitdirectory`
+  // (Chrome/Edge/Firefox/Safari — broadly supported in practice). The
+  // existing inputRef stays for individual files + .zip selection.
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
   const completedFiredRef = useRef(false);
 
   const [state, setState] = useState<LocalState>(() => {
@@ -455,6 +460,7 @@ export function Sdl3dRawCaptureUploader({
         });
       } finally {
         if (inputRef.current) inputRef.current.value = "";
+        if (folderInputRef.current) folderInputRef.current.value = "";
       }
     },
     [productGid, productConfigId, storageId],
@@ -594,15 +600,49 @@ export function Sdl3dRawCaptureUploader({
             if (e.target.files) handleFileChange(e.target.files);
           }}
         />
+        {/*
+          webkitdirectory + directory: lets the merchant select a whole
+          folder. `directory` is the standards-track name; `webkitdirectory`
+          is the de-facto cross-browser one. We mark both via JSX-cast
+          because the React DOM types don't yet include the standard
+          `directory` attribute. Files arriving here have webkit-relative
+          paths but `handleFileChange` only needs name + size, so the
+          same handler works for both inputs.
+        */}
+        <input
+          ref={folderInputRef}
+          type="file"
+          multiple
+          // @ts-expect-error — webkitdirectory not in HTMLInputElement TS types
+          webkitdirectory=""
+          directory=""
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files) handleFileChange(e.target.files);
+          }}
+        />
 
-        <InlineStack>
+        <InlineStack gap="200">
+          {/*
+            Slice 9 polish — `loading` without `disabled`. Polaris Button's
+            loading state already blocks the onClick, and crucially the
+            element stays focusable. Pairing `disabled` with `loading` was
+            dropping focus when work kicked off, escaping the Polaris
+            Modal's focus trap and letting keystrokes reach the editor
+            underneath.
+          */}
           <Button
             variant="primary"
-            disabled={isWorking}
-            loading={isWorking && state.kind !== "processing"}
+            loading={isWorking}
             onClick={() => inputRef.current?.click()}
           >
-            {isWorking ? "Working…" : "Upload raw captures"}
+            {isWorking ? "Working…" : "Upload files or .zip"}
+          </Button>
+          <Button
+            loading={isWorking}
+            onClick={() => folderInputRef.current?.click()}
+          >
+            Upload folder
           </Button>
         </InlineStack>
 

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Frame } from "@spectrum-design-lab/shared";
 import { IMMUTABLE_CACHE_CONTROL } from "../storage.server";
-import type { ProcessingContext } from "./types";
+import { CaptureCancelledError, type ProcessingContext } from "./types";
 
 export type UploadOptions = {
   /**
@@ -19,6 +19,9 @@ export type UploadOptions = {
   publicBaseUrl?: string | null;
   /** Parallel uploads (defaults to 6). */
   concurrency?: number;
+  /** Slice 9 polish — see ConvertOptions.shouldCancel. */
+  shouldCancel?: () => Promise<boolean>;
+  captureId?: string;
 };
 
 export type UploadResult = {
@@ -104,6 +107,9 @@ export async function uploadFrames(
   let completed = 0;
 
   for (let i = 0; i < frames.length; i += concurrency) {
+    if (opts.shouldCancel && (await opts.shouldCancel())) {
+      throw new CaptureCancelledError(opts.captureId ?? "unknown");
+    }
     const batch = frames.slice(i, i + concurrency);
     const batchResults = await Promise.all(
       batch.map((frame) => uploadFrame(ctx, frame, opts, publicBase)),

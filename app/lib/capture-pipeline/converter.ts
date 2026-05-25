@@ -2,7 +2,7 @@ import sharp from "sharp";
 import path from "node:path";
 import { mkdir } from "node:fs/promises";
 import type { Frame, ImageFormat } from "@spectrum-design-lab/shared";
-import type { ProcessingContext } from "./types";
+import { CaptureCancelledError, type ProcessingContext } from "./types";
 
 export type ConvertOptions = {
   format: ImageFormat;
@@ -12,6 +12,16 @@ export type ConvertOptions = {
   productFolder: string;
   /** Parallel sharp jobs (defaults to 4). */
   concurrency?: number;
+  /**
+   * Slice 9 polish — async predicate called between concurrency batches.
+   * Returns true ⇒ caller wants us to stop. We throw a sentinel error so
+   * the orchestrator can route the row to CANCELLED instead of FAILED.
+   * Granularity is one batch (≈4 frames, sub-second on typical hardware),
+   * which is plenty for an interactive Cancel button.
+   */
+  shouldCancel?: () => Promise<boolean>;
+  /** Captureid for the cancellation error message. */
+  captureId?: string;
 };
 
 async function convertFrame(
@@ -61,6 +71,9 @@ export async function convertFrames(
   let completed = 0;
 
   for (let i = 0; i < frames.length; i += concurrency) {
+    if (opts.shouldCancel && (await opts.shouldCancel())) {
+      throw new CaptureCancelledError(opts.captureId ?? "unknown");
+    }
     const batch = frames.slice(i, i + concurrency);
     const batchResults = await Promise.all(
       batch.map((frame, batchIdx) =>

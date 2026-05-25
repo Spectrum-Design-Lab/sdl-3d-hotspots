@@ -17,3 +17,16 @@ export type ProcessingContext = {
   shopify: AdminGraphqlClient;
   prisma: PrismaClient;
 };
+
+/**
+ * Sentinel error thrown by convert / upload loops when the merchant has
+ * cancelled mid-batch. Caught by the orchestrator's outer try and routed
+ * through `finaliseCancelled` instead of `markFailed` so the row ends up
+ * CANCELLED (not FAILED) with no error message.
+ */
+export class CaptureCancelledError extends Error {
+  constructor(captureId: string) {
+    super(`Capture ${captureId} was cancelled mid-pipeline.`);
+    this.name = "CaptureCancelledError";
+  }
+}

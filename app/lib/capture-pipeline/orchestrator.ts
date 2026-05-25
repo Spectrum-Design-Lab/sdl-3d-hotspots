@@ -34,7 +34,7 @@ import {
   type CaptureStatus,
 } from "../captures-shared";
 import type { ImageSequenceFrame } from "../sdl3d-shared";
-import type { ProcessingContext } from "./types";
+import { CaptureCancelledError, type ProcessingContext } from "./types";
 import { scanDirectory } from "./scanner";
 import { sampleFrames } from "./sampler";
 import { convertFrames } from "./converter";
@@ -268,6 +268,12 @@ export async function processCapture(
       return;
     }
 
+    // Shared cancellation predicate handed to convert + upload so they can
+    // interrupt themselves between batches (~1 batch latency, sub-second
+    // on default concurrency). Without this, cancelling during convert
+    // would wait the full sharp pass (20-40 s on 72 frames).
+    const shouldCancel = () => isCancelled(ctx.prisma, captureId);
+
     // 5. Convert with sharp.
     const converted = await convertFrames(ctx, sampled, {
       format: DEFAULT_PIPELINE.outputFormat,
@@ -275,6 +281,8 @@ export async function processCapture(
       outputDir: convertedDir,
       productFolder: captureId,
       concurrency: 4,
+      shouldCancel,
+      captureId,
     });
 
     if (await isCancelled(ctx.prisma, captureId)) {
@@ -284,7 +292,11 @@ export async function processCapture(
 
     // 6. Upload converted frames back to the merchant's bucket.
     const keyPrefix = processedFramesKeyPrefix(ctx.shopId, captureId);
-    const uploaded = await uploadFrames(ctx, converted, { keyPrefix });
+    const uploaded = await uploadFrames(ctx, converted, {
+      keyPrefix,
+      shouldCancel,
+      captureId,
+    });
 
     // 7. Write imageSequenceJson into the ProductConfig.
     const frames: ImageSequenceFrame[] = uploaded.frames.map((f, i) => ({
@@ -347,6 +359,14 @@ export async function processCapture(
       `[capture-pipeline] capture ${captureId} completed: ${frames.length} frames at ${uploaded.cdnBaseUrl}`,
     );
   } catch (err) {
+    // Mid-batch cancellation from convert/upload — route to CANCELLED
+    // instead of FAILED so the dead-letter UI groups it correctly and
+    // the merchant doesn't see a scary error message for an action they
+    // took deliberately.
+    if (err instanceof CaptureCancelledError) {
+      await finaliseCancelled(ctx.prisma, captureId);
+      return;
+    }
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[capture-pipeline] capture ${captureId} FAILED:`, message);
     await markFailed(ctx.prisma, captureId, message);
