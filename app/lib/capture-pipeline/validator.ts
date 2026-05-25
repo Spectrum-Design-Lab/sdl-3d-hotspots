@@ -16,11 +16,73 @@
  * `@spectrum-design-lab/shared` so the same wire format works between the
  * unified app, sdl-platform's ops dashboard, and any future tooling.
  */
-import type {
-  Frame,
-  ValidationIssue,
-  ValidationReport,
+import {
+  FRAME_PATTERNS,
+  SUPPORTED_EXTENSIONS,
+  type Frame,
+  type ValidationIssue,
+  type ValidationReport,
 } from "@spectrum-design-lab/shared";
+
+/**
+ * Pure-logic mirror of the scanner's filename parsing — kept here so it can
+ * run in the browser (no fs imports) for pre-flight validation in the
+ * uploader UI. Server-side scanner uses the same FRAME_PATTERNS + trailing-
+ * digit fallback so a file the merchant sees pass pre-flight will also
+ * parse on the worker.
+ */
+function parseFrameFromFilename(
+  filename: string,
+): { productKey: string; index: number } | null {
+  for (const pattern of FRAME_PATTERNS) {
+    const match = filename.match(pattern);
+    if (match) {
+      return { productKey: match[1], index: parseInt(match[2], 10) };
+    }
+  }
+  const dot = filename.lastIndexOf(".");
+  const base = dot === -1 ? filename : filename.slice(0, dot);
+  const trailing = base.match(/(\d+)$/);
+  if (trailing) {
+    return { productKey: "capture", index: parseInt(trailing[1], 10) };
+  }
+  return null;
+}
+
+export type ParsedFrameSet = {
+  frames: Frame[];
+  /** Image-extension files we couldn't assign a frame index to. */
+  skipped: string[];
+};
+
+/**
+ * Client-side equivalent of `scanDirectory` for a flat list of filenames
+ * (typically the basenames from a `FileList`). Discards files without a
+ * supported image extension; collects unparseable ones into `skipped`.
+ *
+ * Returns Frames with `sourcePath: ""` since the browser has no path —
+ * the validator only reads `filename` + `index`, so this is harmless.
+ */
+export function parseFilenamesForFrames(filenames: string[]): ParsedFrameSet {
+  const frames: Frame[] = [];
+  const skipped: string[] = [];
+
+  for (const filename of filenames) {
+    const dot = filename.lastIndexOf(".");
+    const ext = dot === -1 ? "" : filename.slice(dot).toLowerCase();
+    if (!SUPPORTED_EXTENSIONS.has(ext)) continue;
+
+    const parsed = parseFrameFromFilename(filename);
+    if (!parsed) {
+      skipped.push(filename);
+      continue;
+    }
+
+    frames.push({ filename, index: parsed.index, sourcePath: "" });
+  }
+
+  return { frames, skipped };
+}
 
 export type CaptureValidationOptions = {
   /** Number of frames the sampler will pick. Sets the hard-fail floor. */

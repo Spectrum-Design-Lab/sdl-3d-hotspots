@@ -29,7 +29,11 @@ import {
   Text,
 } from "@shopify/polaris";
 import type { ValidationIssue, ValidationReport } from "@spectrum-design-lab/shared";
-import type { CaptureStatus } from "../lib/captures-shared";
+import { type CaptureStatus, DEFAULT_FRAME_COUNT_TARGET } from "../lib/captures-shared";
+import {
+  parseFilenamesForFrames,
+  validateCaptureFrames,
+} from "../lib/capture-pipeline/validator";
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_DURATION_MS = 1000 * 60 * 15; // 15 minutes hard stop
@@ -355,12 +359,47 @@ export function Sdl3dRawCaptureUploader({
         let zipBlob: Blob;
         let sizeBytes: number;
 
+        // Slice 9 polish — client-side pre-flight. Runs before any zipping
+        // or bucket-touching so a bad capture (wrong filenames, too few
+        // frames) is rejected in milliseconds and never lands a `raw.zip`
+        // on the merchant's CDN. Server-side validator still runs as
+        // defense-in-depth for cases the browser can't predict
+        // (e.g. mid-flight corruption).
+        let preflightFilenames: string[];
         if (files.length === 1 && ZIP_TYPE_RE.test(files[0].name)) {
-          zipBlob = files[0];
-          sizeBytes = files[0].size;
+          // Peek into the zip's central directory without unpacking it.
+          // For the zip path we read the file's metadata once here, then
+          // hand the original Blob to the uploader untouched.
+          try {
+            const JSZip = (await import("jszip")).default;
+            const peek = await JSZip.loadAsync(files[0]);
+            preflightFilenames = Object.entries(peek.files)
+              .filter(([, entry]) => !entry.dir)
+              .map(([relPath]) => {
+                // Strip macOS metadata noise the orchestrator's extractZip
+                // also drops, so pre-flight counts match the worker's.
+                if (relPath.includes("__MACOSX")) return "";
+                const base = relPath.split("/").pop() ?? relPath;
+                if (base.startsWith("._")) return "";
+                return base;
+              })
+              .filter((name) => name.length > 0);
+          } catch (err) {
+            const message =
+              err instanceof Error ? err.message : "Could not read zip file.";
+            setState({
+              kind: "error",
+              message: `Couldn't read the zip file: ${message}. Try re-exporting the archive.`,
+              retryable: false,
+              validationJson: null,
+            });
+            return;
+          }
         } else {
-          const images = files.filter((f) => IMAGE_EXT_RE.test(f.name));
-          if (images.length === 0) {
+          preflightFilenames = files
+            .filter((f) => IMAGE_EXT_RE.test(f.name))
+            .map((f) => f.name);
+          if (preflightFilenames.length === 0) {
             setState({
               kind: "error",
               message:
@@ -370,6 +409,30 @@ export function Sdl3dRawCaptureUploader({
             });
             return;
           }
+        }
+
+        const parsed = parseFilenamesForFrames(preflightFilenames);
+        const preflight = validateCaptureFrames("capture", parsed.frames, {
+          selectedCount: DEFAULT_FRAME_COUNT_TARGET,
+          skippedFilenames: parsed.skipped,
+        });
+        if (preflight.hardFail) {
+          setState({
+            kind: "error",
+            message:
+              preflight.summary ??
+              "These frames can't be processed. Adjust your capture and try again.",
+            retryable: false,
+            validationJson: JSON.stringify(preflight.report),
+          });
+          return;
+        }
+
+        if (files.length === 1 && ZIP_TYPE_RE.test(files[0].name)) {
+          zipBlob = files[0];
+          sizeBytes = files[0].size;
+        } else {
+          const images = files.filter((f) => IMAGE_EXT_RE.test(f.name));
           setState({ kind: "zipping", processed: 0, total: images.length });
           const result = await buildZip(images, (processed, total) =>
             setState({ kind: "zipping", processed, total }),
@@ -622,29 +685,27 @@ export function Sdl3dRawCaptureUploader({
           }}
         />
 
-        <InlineStack gap="200">
-          {/*
-            Slice 9 polish — `loading` without `disabled`. Polaris Button's
-            loading state already blocks the onClick, and crucially the
-            element stays focusable. Pairing `disabled` with `loading` was
-            dropping focus when work kicked off, escaping the Polaris
-            Modal's focus trap and letting keystrokes reach the editor
-            underneath.
-          */}
-          <Button
-            variant="primary"
-            loading={isWorking}
-            onClick={() => inputRef.current?.click()}
-          >
-            {isWorking ? "Working…" : "Upload files or .zip"}
-          </Button>
-          <Button
-            loading={isWorking}
-            onClick={() => folderInputRef.current?.click()}
-          >
-            Upload folder
-          </Button>
-        </InlineStack>
+        {/*
+          Slice 9 polish — hide the picker buttons entirely while work is
+          in flight. Without this we end up with two simultaneous loading
+          indicators (the buttons' spinners + the progress section below)
+          which reads as "broken / stuck" rather than "one thing in
+          progress." Showing only the progress section turns the Card
+          into a focused status surface.
+        */}
+        {!isWorking ? (
+          <InlineStack gap="200">
+            <Button
+              variant="primary"
+              onClick={() => inputRef.current?.click()}
+            >
+              Upload files or .zip
+            </Button>
+            <Button onClick={() => folderInputRef.current?.click()}>
+              Upload folder
+            </Button>
+          </InlineStack>
+        ) : null}
 
         {state.kind === "zipping" ? (
           <BlockStack gap="100">

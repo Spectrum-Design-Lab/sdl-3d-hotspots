@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Frame } from "@spectrum-design-lab/shared";
-import { validateCaptureFrames } from "./validator";
+import { parseFilenamesForFrames, validateCaptureFrames } from "./validator";
 
 function frame(index: number, filename = `frame_${String(index).padStart(3, "0")}.jpg`): Frame {
   return {
@@ -108,6 +108,64 @@ describe("validateCaptureFrames — soft warnings", () => {
       selectedCount: 72,
     });
     expect(outcome.report.issues.filter((i) => i.type === "duplicate")).toHaveLength(0);
+  });
+});
+
+describe("parseFilenamesForFrames — client pre-flight", () => {
+  it("parses FRAME_PATTERN filenames", () => {
+    const result = parseFilenamesForFrames([
+      "MyProduct_frame_001.jpg",
+      "MyProduct_frame_002.jpg",
+      "MyProduct_frame_003.jpg",
+    ]);
+    expect(result.frames).toHaveLength(3);
+    expect(result.skipped).toHaveLength(0);
+    expect(result.frames.map((f) => f.index).sort((a, b) => a - b)).toEqual([1, 2, 3]);
+  });
+
+  it("falls back to trailing digits for non-FRAME_PATTERN names", () => {
+    const result = parseFilenamesForFrames(["0001.jpg", "0002.jpg", "0003.jpg"]);
+    expect(result.frames).toHaveLength(3);
+    expect(result.skipped).toHaveLength(0);
+    expect(result.frames.map((f) => f.index)).toEqual([1, 2, 3]);
+  });
+
+  it("collects unparseable image filenames as skipped", () => {
+    const result = parseFilenamesForFrames([
+      "frame_001.jpg",
+      "thumbnail.jpg",
+      "preview.png",
+    ]);
+    expect(result.frames).toHaveLength(1);
+    expect(result.skipped.sort()).toEqual(["preview.png", "thumbnail.jpg"]);
+  });
+
+  it("silently drops files without a supported image extension", () => {
+    const result = parseFilenamesForFrames([
+      "frame_001.jpg",
+      "manifest.json",
+      "notes.txt",
+    ]);
+    expect(result.frames).toHaveLength(1);
+    expect(result.skipped).toHaveLength(0);
+  });
+
+  it("returns empty Frame.sourcePath (browser has no path)", () => {
+    const result = parseFilenamesForFrames(["frame_001.jpg"]);
+    expect(result.frames[0].sourcePath).toBe("");
+  });
+
+  it("pairs with validateCaptureFrames to hard-fail a small upload", () => {
+    const filenames = Array.from({ length: 5 }, (_, i) =>
+      `frame_${String(i + 1).padStart(3, "0")}.jpg`,
+    );
+    const parsed = parseFilenamesForFrames(filenames);
+    const outcome = validateCaptureFrames("capture", parsed.frames, {
+      selectedCount: 72,
+      skippedFilenames: parsed.skipped,
+    });
+    expect(outcome.hardFail).toBe(true);
+    expect(outcome.summary).toMatch(/contained 5 frames/i);
   });
 });
 
