@@ -63,6 +63,10 @@ import { useUndoRedo } from "../components/useUndoRedo";
 import { FileBrowserModal } from "../components/FileBrowserModal";
 import { ProductBrowserModal } from "../components/ProductBrowserModal";
 import { PresetBrowserModal, type PresetSummary } from "../components/PresetBrowserModal";
+import {
+  PresetApplyDedupModal,
+  type PresetApplyCandidate,
+} from "../components/PresetApplyDedupModal";
 import { Sdl3dMediaSourceModal } from "../components/Sdl3dMediaSourceModal";
 import type { Tone, RightTab } from "../components/Sdl3dEditorUI";
 
@@ -495,6 +499,12 @@ export default function Sdl3dEditorRoute() {
   const [presetSaveHotspots3d, setPresetSaveHotspots3d] = useState<EditableHotspot[]>([]);
   const [presetSaveHotspots360, setPresetSaveHotspots360] = useState<Hotspot360[]>([]);
   const [presetSaveName, setPresetSaveName] = useState("");
+  // Slice 8 — per-hotspot dedup picker that opens after the merchant
+  // chooses preset(s) in PresetBrowserModal. Held as two separate states
+  // so 3D and 360 modes keep distinct payload shapes through to merge.
+  const [dedup3dCandidates, setDedup3dCandidates] = useState<PresetApplyCandidate<EditableHotspot>[] | null>(null);
+  const [dedup360Candidates, setDedup360Candidates] = useState<PresetApplyCandidate<Hotspot360>[] | null>(null);
+  const [dedupSourceCount, setDedupSourceCount] = useState(0);
 
   useEffect(() => {
     setToastMessage(loaderData.flash || "");
@@ -1159,129 +1169,185 @@ export default function Sdl3dEditorRoute() {
     setShowPresetSaveDialog(true);
   }, []);
 
+  // Slice 8 — apply presets opens a dedup picker first. Builds the
+  // shaped candidate list (cross-mode conversion lives here) and stashes
+  // it in state; the merchant chooses the subset to add in
+  // PresetApplyDedupModal, then handleConfirmPresetDedup merges only the
+  // checked payloads. Title + body carry through unchanged so the dedup
+  // helper sees the same text both sides will see post-apply.
   const handleApplyPresets = useCallback((appliedPresets: PresetSummary[]) => {
-    let added = 0;
     const fc = loaderData.config.frameCount || 0;
 
     if (viewerType === "IMAGE_360") {
-      // Applying to 360 mode: use 360 hotspots directly, convert 3D hotspots
-      let new360: Hotspot360[] = [];
+      const candidates: PresetApplyCandidate<Hotspot360>[] = [];
+      let candidateIdx = 0;
       for (const preset of appliedPresets) {
-        // First try native 360 hotspots
+        // Native 360 hotspots first; fall through to 3D conversion if absent.
+        let consumed = false;
         if (preset.hotspotsJson360) {
           try {
             const parsed = JSON.parse(preset.hotspotsJson360);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              new360 = new360.concat(parsed.map((h: Partial<Hotspot360>) => ({
-                id: `hs360_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                sortOrder: 0,
-                visible: Boolean(h.visible ?? true),
-                title: String(h.title ?? "Hotspot"),
-                body: String(h.body ?? ""),
-                style: String(h.style ?? "card"),
-                color: h.color ?? null,
-                visibleFrameStart: h.visibleFrameStart ?? 0,
-                visibleFrameEnd: h.visibleFrameEnd ?? Math.max(0, fc - 1),
-                keyframes: Array.isArray(h.keyframes) ? h.keyframes : [],
-                ctaLabel: h.ctaLabel ?? null,
-                ctaUrl: h.ctaUrl ?? null,
-              })));
-              continue;
+              for (const h of parsed as Partial<Hotspot360>[]) {
+                const payload: Hotspot360 = {
+                  id: `hs360_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                  sortOrder: 0,
+                  visible: Boolean(h.visible ?? true),
+                  title: String(h.title ?? "Hotspot"),
+                  body: String(h.body ?? ""),
+                  style: String(h.style ?? "card"),
+                  color: h.color ?? null,
+                  visibleFrameStart: h.visibleFrameStart ?? 0,
+                  visibleFrameEnd: h.visibleFrameEnd ?? Math.max(0, fc - 1),
+                  keyframes: Array.isArray(h.keyframes) ? h.keyframes : [],
+                  ctaLabel: h.ctaLabel ?? null,
+                  ctaUrl: h.ctaUrl ?? null,
+                };
+                candidates.push({
+                  id: `${preset.id}-${candidateIdx++}`,
+                  title: payload.title,
+                  body: payload.body,
+                  presetName: preset.name,
+                  payload,
+                });
+              }
+              consumed = true;
             }
           } catch { /* fall through to 3D conversion */ }
         }
-        // Convert 3D hotspots to 360 format (shared fields carry over, position defaults)
-        try {
-          const parsed = JSON.parse(preset.hotspotsJson);
-          if (Array.isArray(parsed)) {
-            new360 = new360.concat(parsed.map((h: Record<string, unknown>) => ({
-              id: `hs360_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-              sortOrder: 0,
-              visible: Boolean(h.visible ?? true),
-              title: String(h.title ?? "Hotspot"),
-              body: String(h.body ?? ""),
-              style: String(h.style ?? "card"),
-              color: (h.color as string) ?? null,
-              visibleFrameStart: 0,
-              visibleFrameEnd: Math.max(0, fc - 1),
-              keyframes: [{ frame: 0, x: 50, y: 50 }],
-              ctaLabel: (h.ctaLabel as string) ?? null,
-              ctaUrl: (h.ctaUrl as string) ?? null,
-            })));
-          }
-        } catch { /* ignore */ }
+        if (!consumed) {
+          try {
+            const parsed = JSON.parse(preset.hotspotsJson);
+            if (Array.isArray(parsed)) {
+              for (const h of parsed as Record<string, unknown>[]) {
+                const payload: Hotspot360 = {
+                  id: `hs360_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                  sortOrder: 0,
+                  visible: Boolean(h.visible ?? true),
+                  title: String(h.title ?? "Hotspot"),
+                  body: String(h.body ?? ""),
+                  style: String(h.style ?? "card"),
+                  color: (h.color as string) ?? null,
+                  visibleFrameStart: 0,
+                  visibleFrameEnd: Math.max(0, fc - 1),
+                  keyframes: [{ frame: 0, x: 50, y: 50 }],
+                  ctaLabel: (h.ctaLabel as string) ?? null,
+                  ctaUrl: (h.ctaUrl as string) ?? null,
+                };
+                candidates.push({
+                  id: `${preset.id}-${candidateIdx++}`,
+                  title: payload.title,
+                  body: payload.body,
+                  presetName: preset.name,
+                  payload,
+                });
+              }
+            }
+          } catch { /* ignore */ }
+        }
       }
-      if (new360.length > 0) {
-        added = new360.length;
-        const merged = [...hotspots360, ...new360].map((h, i) => ({ ...h, sortOrder: i + 1 }));
-        setHotspots360(merged);
+      if (candidates.length === 0) {
+        setToastMessage("Selected preset(s) had no hotspots to add.");
+        return;
       }
+      setDedupSourceCount(appliedPresets.length);
+      setDedup360Candidates(candidates);
     } else {
-      // Applying to 3D mode: use 3D hotspots directly, convert 360 hotspots
-      let new3d: EditableHotspot[] = [];
+      const candidates: PresetApplyCandidate<EditableHotspot>[] = [];
+      let candidateIdx = 0;
       for (const preset of appliedPresets) {
-        // First try native 3D hotspots
+        let consumed = false;
         try {
           const parsed = JSON.parse(preset.hotspotsJson);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            new3d = new3d.concat(parsed.map((h: Partial<EditableHotspot>) => ({
-              id: makeId(),
-              sortOrder: 0,
-              visible: Boolean(h.visible ?? true),
-              title: String(h.title ?? "Hotspot"),
-              body: String(h.body ?? ""),
-              icon: h.icon ?? null,
-              style: String(h.style ?? "card"),
-              color: h.color ?? "#3b82f6",
-              animation: normalizeHotspotAnimation(h.animation),
-              mediaImageUrl: h.mediaImageUrl ?? null,
-              mediaVideoUrl: h.mediaVideoUrl ?? null,
-              position: String(h.position ?? "0m 0m 0m"),
-              normal: h.normal ?? null,
-              focusTarget: h.focusTarget ?? null,
-              focusOrbit: h.focusOrbit ?? null,
-              ctaLabel: h.ctaLabel ?? null,
-              ctaUrl: h.ctaUrl ?? null,
-            })));
-            continue;
-          }
-        } catch { /* fall through to 360 conversion */ }
-        // Convert 360 hotspots to 3D format (shared fields carry over, position defaults)
-        if (preset.hotspotsJson360) {
-          try {
-            const parsed = JSON.parse(preset.hotspotsJson360);
-            if (Array.isArray(parsed)) {
-              new3d = new3d.concat(parsed.map((h: Record<string, unknown>) => ({
+            for (const h of parsed as Partial<EditableHotspot>[]) {
+              const payload: EditableHotspot = {
                 id: makeId(),
                 sortOrder: 0,
                 visible: Boolean(h.visible ?? true),
                 title: String(h.title ?? "Hotspot"),
                 body: String(h.body ?? ""),
-                icon: "plus",
+                icon: h.icon ?? null,
                 style: String(h.style ?? "card"),
-                color: (h.color as string) ?? "#3b82f6",
-                position: "0m 0m 0m",
-                normal: null,
-                focusTarget: null,
-                focusOrbit: null,
-                ctaLabel: (h.ctaLabel as string) ?? null,
-                ctaUrl: (h.ctaUrl as string) ?? null,
-              })));
+                color: h.color ?? "#3b82f6",
+                animation: normalizeHotspotAnimation(h.animation),
+                mediaImageUrl: h.mediaImageUrl ?? null,
+                mediaVideoUrl: h.mediaVideoUrl ?? null,
+                position: String(h.position ?? "0m 0m 0m"),
+                normal: h.normal ?? null,
+                focusTarget: h.focusTarget ?? null,
+                focusOrbit: h.focusOrbit ?? null,
+                ctaLabel: h.ctaLabel ?? null,
+                ctaUrl: h.ctaUrl ?? null,
+              };
+              candidates.push({
+                id: `${preset.id}-${candidateIdx++}`,
+                title: payload.title,
+                body: payload.body,
+                presetName: preset.name,
+                payload,
+              });
+            }
+            consumed = true;
+          }
+        } catch { /* fall through to 360 conversion */ }
+        if (!consumed && preset.hotspotsJson360) {
+          try {
+            const parsed = JSON.parse(preset.hotspotsJson360);
+            if (Array.isArray(parsed)) {
+              for (const h of parsed as Record<string, unknown>[]) {
+                const payload: EditableHotspot = {
+                  id: makeId(),
+                  sortOrder: 0,
+                  visible: Boolean(h.visible ?? true),
+                  title: String(h.title ?? "Hotspot"),
+                  body: String(h.body ?? ""),
+                  icon: "plus",
+                  style: String(h.style ?? "card"),
+                  color: (h.color as string) ?? "#3b82f6",
+                  position: "0m 0m 0m",
+                  normal: null,
+                  focusTarget: null,
+                  focusOrbit: null,
+                  ctaLabel: (h.ctaLabel as string) ?? null,
+                  ctaUrl: (h.ctaUrl as string) ?? null,
+                };
+                candidates.push({
+                  id: `${preset.id}-${candidateIdx++}`,
+                  title: payload.title,
+                  body: payload.body,
+                  presetName: preset.name,
+                  payload,
+                });
+              }
             }
           } catch { /* ignore */ }
         }
       }
-      if (new3d.length > 0) {
-        added = new3d.length;
-        const merged = [...hotspots, ...new3d];
-        setHotspots(normalizeSortOrder(merged));
+      if (candidates.length === 0) {
+        setToastMessage("Selected preset(s) had no hotspots to add.");
+        return;
       }
+      setDedupSourceCount(appliedPresets.length);
+      setDedup3dCandidates(candidates);
     }
+  }, [viewerType, loaderData.config.frameCount]);
 
-    if (added > 0) {
-      setToastMessage(`Applied ${added} hotspot${added === 1 ? "" : "s"} from ${appliedPresets.length} preset${appliedPresets.length === 1 ? "" : "s"}.`);
+  const handleConfirmDedup3d = useCallback((selected: EditableHotspot[]) => {
+    if (selected.length > 0) {
+      const merged = [...hotspots, ...selected];
+      setHotspots(normalizeSortOrder(merged));
+      setToastMessage(`Applied ${selected.length} hotspot${selected.length === 1 ? "" : "s"} from ${dedupSourceCount} preset${dedupSourceCount === 1 ? "" : "s"}.`);
     }
-  }, [hotspots, hotspots360, viewerType, loaderData.config.frameCount]);
+  }, [hotspots, dedupSourceCount]);
+
+  const handleConfirmDedup360 = useCallback((selected: Hotspot360[]) => {
+    if (selected.length > 0) {
+      const merged = [...hotspots360, ...selected].map((h, i) => ({ ...h, sortOrder: i + 1 }));
+      setHotspots360(merged);
+      setToastMessage(`Applied ${selected.length} hotspot${selected.length === 1 ? "" : "s"} from ${dedupSourceCount} preset${dedupSourceCount === 1 ? "" : "s"}.`);
+    }
+  }, [hotspots360, dedupSourceCount]);
 
   const handleExportConfig = useCallback(() => {
     const exportData: ConfigExport = {
@@ -2010,6 +2076,29 @@ export default function Sdl3dEditorRoute() {
         onClose={() => setShowPresetBrowser(false)}
         onApply={handleApplyPresets}
       />
+
+      {/* ── Preset Apply Dedup Picker (Slice 8) — opens after the
+          merchant picks preset(s) in PresetBrowserModal. Per-hotspot
+          checkbox + duplicate detection. Only one of the two
+          (3D / 360) is non-null at a time, gated by viewerType. ── */}
+      {dedup3dCandidates ? (
+        <PresetApplyDedupModal<EditableHotspot>
+          open={true}
+          onClose={() => setDedup3dCandidates(null)}
+          candidates={dedup3dCandidates}
+          existing={hotspots.map((h) => ({ title: h.title, body: h.body }))}
+          onConfirm={handleConfirmDedup3d}
+        />
+      ) : null}
+      {dedup360Candidates ? (
+        <PresetApplyDedupModal<Hotspot360>
+          open={true}
+          onClose={() => setDedup360Candidates(null)}
+          candidates={dedup360Candidates}
+          existing={hotspots360.map((h) => ({ title: h.title, body: h.body }))}
+          onConfirm={handleConfirmDedup360}
+        />
+      ) : null}
 
       {/* Save Hotspots as Preset — Polaris Modal (Slice 5C PR #5g). The
           fetcher form sits inside Modal.Section so we still get free
