@@ -1,13 +1,43 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Outlet, useLoaderData, useRouteError } from "react-router";
+import { Link, Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { NavMenu } from "@shopify/app-bridge-react";
 import { AppProvider as PolarisAppProvider } from "@shopify/polaris";
+import type { LinkLikeComponentProps } from "@shopify/polaris/build/ts/src/utilities/link";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import "@shopify/polaris/build/esm/styles.css";
 
 import { authenticate } from "../shopify.server";
+
+/**
+ * Polaris `linkComponent` adapter. Without this, every Polaris component
+ * with a `url` prop (ResourceItem, Button, Link, etc.) renders as a raw
+ * `<a href>` and triggers a full-page navigation. Inside the embedded
+ * Shopify admin iframe that drops the App Bridge session — the next
+ * request hits `auth.$.tsx` and the merchant gets the OAuth login form
+ * even though they're already authenticated. Routing internal URLs
+ * through React Router's `<Link>` keeps navigation client-side and
+ * preserves the session. External URLs (https/mailto/tel/anchor)
+ * passthrough to a plain `<a>` so they still open as expected.
+ */
+function PolarisLink({ url, children, external, target, ...rest }: LinkLikeComponentProps) {
+  const isExternal = external || /^(?:https?:|mailto:|tel:|#)/.test(url);
+  if (isExternal) {
+    const safeTarget = target ?? (external ? "_blank" : undefined);
+    const rel = safeTarget === "_blank" ? "noopener noreferrer" : undefined;
+    return (
+      <a href={url} target={safeTarget} rel={rel} {...rest}>
+        {children}
+      </a>
+    );
+  }
+  return (
+    <Link to={url} {...(rest as Omit<LinkLikeComponentProps, "url" | "children" | "external" | "target">)}>
+      {children}
+    </Link>
+  );
+}
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
@@ -35,7 +65,7 @@ export default function App() {
         <a href="/app/sdl3d/storage">Storage</a>
         <a href="/app/sdl3d/settings">Settings</a>
       </NavMenu>
-      <PolarisAppProvider i18n={enTranslations}>
+      <PolarisAppProvider i18n={enTranslations} linkComponent={PolarisLink}>
         <Outlet />
       </PolarisAppProvider>
     </AppProvider>
