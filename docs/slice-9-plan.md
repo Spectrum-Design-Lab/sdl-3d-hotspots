@@ -1,13 +1,51 @@
 # Slice 9 — Unified upload: merchant captures frames from the embedded admin
 
-> **STATUS: PLANNED.** Author SDL + Claude, 2026-05-22. Scoped at the
-> tail of the Slice 8 session after the dashboard polish, hotspot
-> dedup, delete confirmations, bulk republish, and TAE bundle work
-> all shipped. Picks up the unified-app pivot's final unfinished
-> loop: merchants currently can't ingest raw capture frames without
-> SDL operating the `sdl-platform` dashboard against their bucket.
-> Slice 9 closes that — merchant uploads from the embedded admin,
-> the pipeline runs in-app, no SDL operator in the middle.
+> **STATUS: RE-SCOPED 2026-05-25.** Original plan (below, preserved
+> for context) assumed PR #1 (queue + worker) and most of PR #2
+> (admin upload UI) were greenfield. Recon showed both already
+> shipped in Slices 3–7 — pg-boss + worker, full orchestrator,
+> `Capture` model, sign/record/retry API, Polaris uploader, and the
+> 3-tab `Sdl3dMediaSourceModal` are all live. One plan-vs-reality
+> contradiction noted: the shipped flow uses signed-URL
+> direct-to-bucket (chosen in Slice 3), not multipart-to-admin-server
+> as decision #1 proposed. That decision is overridden by what's
+> already in production — kept signed-URL.
+>
+> **Re-scoped to the actual gaps:** validation surfacing, onboarding
+> wizard hook, and job lifecycle ops. See "Re-scoped PRs" below.
+
+## What was already shipped before Slice 9 started
+
+Verified 2026-05-25 against `main`:
+
+- **Queue + worker**: [app/lib/queue.server.ts](../app/lib/queue.server.ts)
+  boots pg-boss with `JOB_NAMES.PROCESS_CAPTURE`; [worker/index.ts](../worker/index.ts)
+  registers the handler and is launched alongside the web tier by
+  [scripts/start.js](../scripts/start.js).
+- **Orchestrator**: [app/lib/capture-pipeline/orchestrator.ts](../app/lib/capture-pipeline/orchestrator.ts)
+  runs the full pipeline — claim → download raw.zip from the merchant's
+  bucket → extract → scan → sample (72 frames) → sharp convert →
+  upload converted frames → write `imageSequenceJson` on `ProductConfig`
+  → write a manifest.json next to the frames. Failure is captured in
+  `Capture.status=FAILED` + `errorMessage` and never re-thrown.
+- **API**: [app/routes/api.sdl3d.captures.tsx](../app/routes/api.sdl3d.captures.tsx)
+  with `signRawUpload`, `recordRawUpload`, `retry`, plus GET by
+  `captureId` or `productGid` for polling.
+- **Upload UI**: [app/components/Sdl3dRawCaptureUploader.tsx](../app/components/Sdl3dRawCaptureUploader.tsx)
+  zips a folder selection in-browser via JSZip, signs, PUTs to the
+  merchant's bucket, records, polls. Polaris-styled (Slice 5C),
+  embedded mode (Slice 7).
+- **Surface in editor**: [app/components/Sdl3dMediaSourceModal.tsx](../app/components/Sdl3dMediaSourceModal.tsx)
+  "Upload to CDN" tab opens from the Media inspector inside the
+  editor. Per-product storage override flows through (Slice 6 PR #3 +
+  Slice 8).
+- **`Capture` model + statuses**: PENDING / UPLOADING / QUEUED /
+  PROCESSING / COMPLETED / FAILED. Captures-shared exports the enum,
+  bucket-key helpers, and `DEFAULT_FRAME_COUNT_TARGET=72`.
+
+End-to-end the merchant can already upload a ZIP and watch frames
+land. The remaining friction is what the original plan called PR #3
++ PR #4 + PR #5 — those are this slice.
 
 ## Why now
 
@@ -86,10 +124,138 @@ concrete reason.
    a different count, expose `frameCountTarget` as an upload-form
    field in v2; not v1.
 
-## Implementation order
+## Re-scoped PRs (the actual Slice 9 work)
 
-Five PRs, ~5–8 days if no surprises. Order is "queue + worker first,
-then UI on top, then ops polish."
+Three PRs. PR #1 / #2 of the original plan are dropped — already shipped.
+
+### PR #1 — Pre-flight validation surfacing
+
+Today validation is silent. The orchestrator only throws on the
+"floor" cases (zip has 0 supported files, scanner found 0 frames,
+sampler returned 0 frames). Less catastrophic-but-still-broken
+inputs (filenames the scanner can't parse, duplicates, sequence gaps
+that survive sampling, frame count too low for a smooth turntable)
+fail late or silently degrade.
+
+**Changes**:
+- Port [packages/core-360/src/validator.ts](../../sdl-platform/packages/core-360/src/validator.ts)
+  → `app/lib/capture-pipeline/validator.ts`. It returns a
+  `ValidationReport` with structured issues (missing_frame, duplicate,
+  naming_error). The orchestrator calls it right after `scanDirectory`
+  before any sharp work.
+- Hard-fail rules (block heavy work, mark FAILED with actionable
+  message): zero parseable frames, frame count < target/2 (e.g.
+  fewer than 36 frames for the default 72 target — sampled output
+  would be aliased/jumpy).
+- Soft-warn rules (proceed, but record in validationJson so the UI
+  can show them): missing frames in a sequence the sampler will
+  paper over, duplicates dropped by `byIndex`, naming-error frames
+  the scanner skipped.
+- Schema: add `Capture.validationJson String?` (TEXT, holds the
+  serialized report). Migration `20260525000000_capture_validation_json`.
+- API: surface `validationJson` through `api.sdl3d.captures.tsx`
+  responses and the GET endpoint.
+- UI: extend the uploader's `processing` / `done` / `error` banners
+  to show issues. Hard-fail = critical Banner with the specific
+  filename-pattern hint. Soft-warn = info Banner with a "Proceed"
+  affordance baked into the "done" state ("72 frames live — 8 raw
+  frames were duplicates and got de-duped").
+
+**Files**:
+- `app/lib/capture-pipeline/validator.ts` (new)
+- `app/lib/capture-pipeline/orchestrator.ts` — wire validation call,
+  decide hard-fail vs. soft-warn, persist `validationJson`
+- `prisma/schema.prisma` — `Capture.validationJson String?`
+- `app/routes/api.sdl3d.captures.tsx` — include `validationJson` in
+  `captureToWire`
+- `app/components/Sdl3dRawCaptureUploader.tsx` — render
+  warnings/errors with structure (filename, issue type)
+- Tests: `app/lib/capture-pipeline/validator.test.ts` for the
+  classification rules
+
+### PR #2 — Onboarding wizard hook
+
+The 5-step onboarding wizard ([app/routes/app._index.tsx](../app/routes/app._index.tsx) STEPS
+array) introduces the app but doesn't drop the merchant into the
+upload flow. Today they have to: skip the wizard → find the editor
+→ pick a product → open Media → find the Upload tab. That's the
+wall the unified-app pivot promised to remove.
+
+**Changes**:
+- Add an "Upload your first capture" step to the wizard with a CTA
+  that deep-links into the editor with the upload modal pre-opened
+  for the picked product.
+- Reuse the wizard's existing product picker — once they pick, the
+  editor URL becomes
+  `/app/sdl3d/editor?productGid=<gid>&openMediaUpload=1`.
+- Editor reads `openMediaUpload=1` on mount and opens
+  `Sdl3dMediaSourceModal` with the "Upload to CDN" tab active.
+- After the capture completes, the wizard's "completed" step
+  congratulates and links them to the editor.
+
+**Files**:
+- `app/routes/app._index.tsx` — extend `STEPS`, add a product-picker
+  inside the new step
+- `app/routes/app.sdl3d.editor.tsx` — read `openMediaUpload` query
+  param, open the modal on mount
+- No schema changes
+
+### PR #3 — Job lifecycle ops
+
+Backoff, retries, dead-letter, cancellation. Not pilot-blocking but
+the difference between "robust enough for one merchant" and "robust
+enough to leave running without watching it."
+
+**Changes**:
+- pg-boss `retryLimit: 2` with exponential backoff (configured at
+  `boss.work()` call site in `worker/index.ts` or per-job at enqueue
+  via `boss.send` options).
+- Schema: `Capture.attempts Int @default(0)` (worker increments at
+  each pickup) + `Capture.cancelledAt DateTime?` + a new
+  `CANCELLED` status. Migration
+  `20260525100000_capture_attempts_cancelled`.
+- Dead-letter surface: Settings → "Failed captures" section listing
+  recent FAILED rows with `Reprocess` (calls existing `retry`
+  intent) and `Delete capture` (cascades — `ProductConfig.captures`
+  has `onDelete: Cascade`).
+- Cancellation: while a capture is `PENDING`, `UPLOADING`, `QUEUED`,
+  or `PROCESSING`, the uploader UI shows a "Cancel" button that
+  POSTs a new `intent=cancel` to the captures API. The worker
+  re-reads the capture row before each major step (validate /
+  convert / upload / write) and bails out if `cancelledAt` is set.
+
+**Files**:
+- `prisma/schema.prisma` — `Capture.attempts`, `Capture.cancelledAt`
+- `app/lib/captures-shared.ts` — add `CANCELLED` to the enum
+- `worker/index.ts` — pass pg-boss `boss.work` options for retry
+  limit + backoff
+- `app/lib/capture-pipeline/orchestrator.ts` — bump `attempts` on
+  claim, re-check cancellation between steps
+- `app/routes/api.sdl3d.captures.tsx` — `intent=cancel`,
+  `intent=deleteCapture`, include `attempts`/`cancelledAt` in wire
+- `app/routes/app.sdl3d.settings.tsx` — Failed captures section
+- `app/components/Sdl3dRawCaptureUploader.tsx` — Cancel button +
+  CANCELLED state rendering
+
+## Out of scope (re-scoped)
+
+- **`Capture.jobId` correlation column** (original PR #1): pg-boss
+  manages its own job-row state and the existing pipeline never
+  needs to look up "which job processed this capture" — would add a
+  column nothing reads. Dropped.
+- **Dedicated `/app/sdl3d/upload` route** (original PR #2): the
+  in-editor Modal flow is the canonical surface and the onboarding
+  hook (PR #2 above) takes care of the deep-link case. A standalone
+  page would duplicate UI without adding a use case.
+- **Multipart-to-admin-server upload path** (original decision #1):
+  contradicted by the shipped signed-URL flow, which is working at
+  the pilot. Revisit only if a tenant arrives where signed URLs
+  break (e.g. a corporate proxy that strips the auth header).
+
+## Original plan (preserved for context, superseded above)
+
+> Five PRs, ~5–8 days if no surprises. Order is "queue + worker first,
+> then UI on top, then ops polish."
 
 ### PR #1 — pg-boss queue + worker boot
 
