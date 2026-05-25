@@ -39,15 +39,49 @@ export function isTerminalStatus(status: string): boolean {
 /** Default target frame count (matches `DEFAULT_PIPELINE.selectedFrames`). */
 export const DEFAULT_FRAME_COUNT_TARGET = 72;
 
-/** Bucket key for the raw zip a merchant uploads. */
-export function rawCaptureKey(shopId: string, captureId: string): string {
-  return `${shopId}/captures/${captureId}/raw.zip`;
+/**
+ * Bucket key for the raw zip a merchant uploads.
+ *
+ * `folderOrId` is either the merchant-supplied (slugified) folderName or
+ * the capture's cuid id as a fallback. The caller decides — pass
+ * `capture.folderName ?? capture.id`.
+ */
+export function rawCaptureKey(shopId: string, folderOrId: string): string {
+  return `${shopId}/captures/${folderOrId}/raw.zip`;
 }
 
 /** Bucket key prefix for processed frames produced from one capture. */
 export function processedFramesKeyPrefix(
   shopId: string,
-  captureId: string,
+  folderOrId: string,
 ): string {
-  return `${shopId}/captures/${captureId}/frames`;
+  return `${shopId}/captures/${folderOrId}/frames`;
+}
+
+/** Maximum length of the merchant-supplied folder name. Mirrors the
+ *  bucket-key sanity limit and keeps the URL within typical CDN length
+ *  caps when combined with the shopId + frames prefix. */
+export const FOLDER_NAME_MAX_LENGTH = 64;
+
+/**
+ * Normalize an arbitrary merchant string into a URL-safe bucket folder
+ * name: lowercase, alphanumeric + hyphen + underscore only, hyphen
+ * collapses, max 64 chars. Returns `null` for empty / whitespace-only
+ * input so callers can branch on "blank → use captureId fallback."
+ *
+ * Used in both the client uploader (for live feedback) and the server
+ * signRawUpload action (the authoritative slug). Keep the rules in
+ * sync — divergence would let the client think a name is valid that
+ * the server rejects.
+ */
+export function slugifyFolderName(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const slug = trimmed
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, FOLDER_NAME_MAX_LENGTH);
+  return slug.length > 0 ? slug : null;
 }

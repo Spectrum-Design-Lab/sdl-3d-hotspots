@@ -19,7 +19,9 @@ import {
 } from "../lib/storage.server";
 import {
   DEFAULT_FRAME_COUNT_TARGET,
+  FOLDER_NAME_MAX_LENGTH,
   rawCaptureKey,
+  slugifyFolderName,
   type CaptureStatus,
 } from "../lib/captures-shared";
 import { enqueue, JOB_NAMES } from "../lib/queue.server";
@@ -158,9 +160,46 @@ async function handleSignRawUpload(
   const rawSizeBytesRaw = String(formData.get("rawSizeBytes") || "").trim();
   const frameCountTargetRaw = String(formData.get("frameCountTarget") || "").trim();
   const overrideStorageId = String(formData.get("storageId") || "").trim() || null;
+  const folderNameRaw = String(formData.get("folderName") || "");
 
   if (!productGid) {
     return json({ ok: false, message: "Missing productGid." }, 400);
+  }
+
+  // Slice 9 polish — optional merchant-supplied bucket folder name.
+  // Slugified to URL-safe form here (authoritative); empty / whitespace-
+  // only input ⇒ null, and the bucket key falls back to the captureId.
+  const folderName = slugifyFolderName(folderNameRaw);
+  if (folderName !== null && folderName.length === 0) {
+    return json(
+      {
+        ok: false,
+        message: `Folder name must contain at least one letter, digit, hyphen, or underscore (max ${FOLDER_NAME_MAX_LENGTH} chars).`,
+      },
+      400,
+    );
+  }
+  if (folderName !== null) {
+    // Shop-scoped uniqueness check: a duplicate would overwrite a
+    // previous capture's frames in the bucket *and* hijack any
+    // storefront URLs already pointing at them. Cheaper to reject than
+    // to silently corrupt published configs.
+    const collision = await prisma.capture.findFirst({
+      where: {
+        folderName,
+        productConfig: { shopId: auth.shop.id },
+      },
+      select: { id: true },
+    });
+    if (collision) {
+      return json(
+        {
+          ok: false,
+          message: `A capture already uses the folder name "${folderName}". Pick a different name or delete the old capture from Settings → Failed captures first.`,
+        },
+        409,
+      );
+    }
   }
 
   // Slice 6 PR #3: if the editor sent a storage override, validate it belongs
@@ -234,10 +273,14 @@ async function handleSignRawUpload(
       rawKey: "", // filled in after id is known
       rawSizeBytes: Number.isFinite(rawSizeBytes ?? NaN) ? rawSizeBytes : null,
       frameCountTarget,
+      folderName,
     },
   });
 
-  const rawKey = rawCaptureKey(auth.shop.id, capture.id);
+  // Bucket key uses the folder name when provided; falls back to the cuid
+  // so unnamed captures stay unique. The orchestrator computes the
+  // processed-frames prefix the same way.
+  const rawKey = rawCaptureKey(auth.shop.id, folderName ?? capture.id);
   await prisma.capture.update({
     where: { id: capture.id },
     data: { rawKey },

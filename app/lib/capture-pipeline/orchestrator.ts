@@ -290,8 +290,15 @@ export async function processCapture(
       return;
     }
 
-    // 6. Upload converted frames back to the merchant's bucket.
-    const keyPrefix = processedFramesKeyPrefix(ctx.shopId, captureId);
+    // 6. Upload converted frames back to the merchant's bucket. Bucket
+    //    folder mirrors what signRawUpload used for raw.zip — merchant's
+    //    slug if they provided one, else the capture's cuid. Keeping the
+    //    same prefix means a merchant browsing the bucket sees raw.zip
+    //    and frames/ side-by-side per capture.
+    const keyPrefix = processedFramesKeyPrefix(
+      ctx.shopId,
+      capture.folderName ?? captureId,
+    );
     const uploaded = await uploadFrames(ctx, converted, {
       keyPrefix,
       shouldCancel,

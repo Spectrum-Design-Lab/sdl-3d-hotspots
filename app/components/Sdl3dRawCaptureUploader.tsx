@@ -27,9 +27,15 @@ import {
   ProgressBar,
   Spinner,
   Text,
+  TextField,
 } from "@shopify/polaris";
 import type { ValidationIssue, ValidationReport } from "@spectrum-design-lab/shared";
-import { type CaptureStatus, DEFAULT_FRAME_COUNT_TARGET } from "../lib/captures-shared";
+import {
+  type CaptureStatus,
+  DEFAULT_FRAME_COUNT_TARGET,
+  FOLDER_NAME_MAX_LENGTH,
+  slugifyFolderName,
+} from "../lib/captures-shared";
 import {
   parseFilenamesForFrames,
   validateCaptureFrames,
@@ -212,6 +218,16 @@ export function Sdl3dRawCaptureUploader({
   // existing inputRef stays for individual files + .zip selection.
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const completedFiredRef = useRef(false);
+
+  // Slice 9 polish — merchant-supplied bucket folder name (optional).
+  // The server slugifies authoritatively; we slugify here too for live
+  // preview so the merchant sees the actual key segment they're about
+  // to commit to (no surprise "MyProduct → my-product" on submit).
+  const [folderNameInput, setFolderNameInput] = useState("");
+  const folderNamePreview = useMemo(
+    () => slugifyFolderName(folderNameInput),
+    [folderNameInput],
+  );
 
   const [state, setState] = useState<LocalState>(() => {
     if (!initialCapture) return { kind: "idle" };
@@ -448,6 +464,9 @@ export function Sdl3dRawCaptureUploader({
         signForm.set("productConfigId", productConfigId);
         signForm.set("rawSizeBytes", String(sizeBytes));
         if (storageId) signForm.set("storageId", storageId);
+        // Slice 9 polish — optional folder name. Server re-slugifies and
+        // enforces shop-scoped uniqueness; sending the raw input is fine.
+        if (folderNameInput.trim()) signForm.set("folderName", folderNameInput);
         const signRes = await fetch("/api/sdl3d/captures", {
           method: "POST",
           body: signForm,
@@ -526,7 +545,7 @@ export function Sdl3dRawCaptureUploader({
         if (folderInputRef.current) folderInputRef.current.value = "";
       }
     },
-    [productGid, productConfigId, storageId],
+    [productGid, productConfigId, storageId, folderNameInput],
   );
 
   const handleRetry = useCallback(async () => {
@@ -694,17 +713,36 @@ export function Sdl3dRawCaptureUploader({
           into a focused status surface.
         */}
         {!isWorking ? (
-          <InlineStack gap="200">
-            <Button
-              variant="primary"
-              onClick={() => inputRef.current?.click()}
-            >
-              Upload files or .zip
-            </Button>
-            <Button onClick={() => folderInputRef.current?.click()}>
-              Upload folder
-            </Button>
-          </InlineStack>
+          <BlockStack gap="200">
+            {/* Slice 9 polish — optional bucket folder name. Live slug
+                preview keeps the merchant from guessing how the input
+                gets normalized; collisions are caught server-side on
+                submit. */}
+            <TextField
+              label="Folder name (optional)"
+              value={folderNameInput}
+              onChange={setFolderNameInput}
+              maxLength={FOLDER_NAME_MAX_LENGTH}
+              autoComplete="off"
+              placeholder="e.g. PRD-0042 or sneaker-prototype-v3"
+              helpText={
+                folderNamePreview
+                  ? `Bucket path will be …/captures/${folderNamePreview}/`
+                  : "Leave blank to use an auto-generated ID. Letters, digits, hyphens, and underscores only."
+              }
+            />
+            <InlineStack gap="200">
+              <Button
+                variant="primary"
+                onClick={() => inputRef.current?.click()}
+              >
+                Upload files or .zip
+              </Button>
+              <Button onClick={() => folderInputRef.current?.click()}>
+                Upload folder
+              </Button>
+            </InlineStack>
+          </BlockStack>
         ) : null}
 
         {state.kind === "zipping" ? (

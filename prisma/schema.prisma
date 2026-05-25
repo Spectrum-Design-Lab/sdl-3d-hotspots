@@ -158,6 +158,12 @@ model Capture {
   // because the run never finished — used by the settings dead-letter
   // surface to separate cancelled vs. failed captures.
   cancelledAt           DateTime?
+  // Slice 9 polish — optional merchant-provided slug used as the bucket
+  // folder name (lowercase a-z0-9_-, max 64 chars). When set, bucket
+  // keys become `<shopId>/captures/<folderName>/...`; when null, the
+  // cuid `id` is used. Uniqueness within a shop is enforced at the API
+  // layer (signRawUpload) since Capture has no direct shopId column.
+  folderName            String?
   startedAt             DateTime?
   completedAt           DateTime?
   createdAt             DateTime  @default(now())
