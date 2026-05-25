@@ -23,8 +23,11 @@ database.sqlite
 
 /extensions/*/dist
 
-# TAE bundle outputs — generated from extensions/product-3d-viewer/src/
+# TAE bundle outputs — generated from tae-src/product-3d-viewer/
 # by `npm run build:tae` (esbuild). Source of truth is the .ts files.
+# Sources live OUTSIDE the extension folder because Shopify's TAE
+# validator rejects any non-standard directory (assets/blocks/
+# locales/snippets only) inside extensions/<name>/.
 /extensions/product-3d-viewer/assets/viewer.js
 /extensions/product-3d-viewer/assets/viewer-3d.js
 /extensions/product-3d-viewer/assets/viewer-360.js

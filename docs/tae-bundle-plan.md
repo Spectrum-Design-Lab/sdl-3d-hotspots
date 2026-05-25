@@ -76,12 +76,16 @@ later step surfaces a concrete reason.
    Fails CI on regression. Catches accidental schema imports
    (Zod adds ~12 KB minified).
 
-8. **Source layout.** New directory:
+8. **Source layout.** New directory at project root (**not** under
+   `extensions/` — Shopify's TAE validator rejects any directory
+   inside an extension other than `assets`, `blocks`, `locales`,
+   `snippets`):
    ```
-   extensions/product-3d-viewer/src/
+   tae-src/product-3d-viewer/
      viewer.ts          # bootstrap + shared utils on window._sdl3d
      viewer-3d.ts       # 3D model viewer (model-viewer wrapper)
      viewer-360.ts      # 360 image sequence viewer
+     media.ts           # shared icon + media-html builders
      types.ts           # local types not worth promoting to shared
    ```
    Assets directory continues to hold:
@@ -144,13 +148,13 @@ In `sdl-3d-hotspots/`:
 
 In `sdl-3d-hotspots/`:
 
-- Create `extensions/product-3d-viewer/src/` directory.
+- Create `tae-src/product-3d-viewer/` directory.
 - Add `package.json` script `build:tae`:
   ```json
   "build:tae": "npm run build:tae:viewer && npm run build:tae:3d && npm run build:tae:360",
-  "build:tae:viewer": "esbuild extensions/product-3d-viewer/src/viewer.ts --bundle --format=iife --target=es2018 --minify --outfile=extensions/product-3d-viewer/assets/viewer.js",
-  "build:tae:3d": "esbuild extensions/product-3d-viewer/src/viewer-3d.ts --bundle --format=iife --target=es2018 --minify --outfile=extensions/product-3d-viewer/assets/viewer-3d.js",
-  "build:tae:360": "esbuild extensions/product-3d-viewer/src/viewer-360.ts --bundle --format=iife --target=es2018 --minify --outfile=extensions/product-3d-viewer/assets/viewer-360.js"
+  "build:tae:viewer": "esbuild tae-src/product-3d-viewer/viewer.ts --bundle --format=iife --target=es2018 --minify --outfile=extensions/product-3d-viewer/assets/viewer.js",
+  "build:tae:3d": "esbuild tae-src/product-3d-viewer/viewer-3d.ts --bundle --format=iife --target=es2018 --minify --outfile=extensions/product-3d-viewer/assets/viewer-3d.js",
+  "build:tae:360": "esbuild tae-src/product-3d-viewer/viewer-360.ts --bundle --format=iife --target=es2018 --minify --outfile=extensions/product-3d-viewer/assets/viewer-360.js"
   ```
 - Add `predeploy` script that runs `build:tae` before
   `shopify app deploy`:
