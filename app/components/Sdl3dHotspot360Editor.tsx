@@ -23,6 +23,8 @@ import {
   Collapsible,
   Icon,
   InlineStack,
+  List,
+  Modal,
   Select,
   Text,
   TextField,
@@ -252,6 +254,9 @@ export function Sdl3dHotspot360Editor({
   const isAdvanced = editorMode === "advanced";
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  // Slice 8 — confirmation modal for bulk delete. 360 editor has no
+  // single-delete path; rows go through the checkbox batch flow only.
+  const [pendingDelete, setPendingDelete] = useState<{ ids: string[]; titles: string[] } | null>(null);
 
   const checkedCount = checkedIds.size;
 
@@ -265,11 +270,23 @@ export function Sdl3dHotspot360Editor({
   }
 
   function batchDelete() {
-    onChange(hotspots.filter((h) => !checkedIds.has(h.id)));
+    const selected = hotspots.filter((h) => checkedIds.has(h.id));
+    if (selected.length === 0) return;
+    setPendingDelete({
+      ids: selected.map((h) => h.id),
+      titles: selected.map((h) => h.title || "Untitled hotspot"),
+    });
+  }
+
+  function confirmBatchDelete() {
+    if (!pendingDelete) return;
+    const idSet = new Set(pendingDelete.ids);
+    onChange(hotspots.filter((h) => !idSet.has(h.id)));
     setCheckedIds(new Set());
-    if (selectedHotspotId && checkedIds.has(selectedHotspotId)) {
+    if (selectedHotspotId && idSet.has(selectedHotspotId)) {
       onSelectHotspot(null);
     }
+    setPendingDelete(null);
   }
 
   function batchToggleVisible(visible: boolean) {
@@ -316,6 +333,7 @@ export function Sdl3dHotspot360Editor({
   }
 
   return (
+    <>
     <BlockStack gap="300">
       {/* Header: count + Apply Preset / Add */}
       <InlineStack align="space-between" blockAlign="center" wrap={false}>
@@ -672,6 +690,39 @@ export function Sdl3dHotspot360Editor({
         })}
       </div>
     </BlockStack>
+
+    {/* Slice 8 — bulk delete confirmation. 360 editor has no single
+        delete path so this only covers the checkbox-batch case. Same
+        copy + structure as Sdl3dHotspotEditor's destructive modal so
+        merchant sees a consistent confirmation across surfaces. */}
+    <Modal
+      open={pendingDelete !== null}
+      onClose={() => setPendingDelete(null)}
+      title={pendingDelete ? `Delete ${pendingDelete.ids.length} hotspot${pendingDelete.ids.length === 1 ? "" : "s"}?` : ""}
+      primaryAction={{
+        content: "Delete",
+        destructive: true,
+        onAction: confirmBatchDelete,
+      }}
+      secondaryActions={[{ content: "Cancel", onAction: () => setPendingDelete(null) }]}
+    >
+      <Modal.Section>
+        {pendingDelete ? (
+          <BlockStack gap="200">
+            <Text as="p">The following hotspots will be removed:</Text>
+            <List type="bullet">
+              {pendingDelete.titles.map((t, i) => (
+                <List.Item key={i}>{t}</List.Item>
+              ))}
+            </List>
+            <Text as="p" tone="subdued" variant="bodySm">
+              You can undo this with Ctrl+Z if you change your mind.
+            </Text>
+          </BlockStack>
+        ) : null}
+      </Modal.Section>
+    </Modal>
+    </>
   );
 }
 

@@ -806,11 +806,20 @@ hotspot rework cluster:
   (pilot scale); if a future tenant has hundreds of products,
   promote to a pg-boss background job. Also unsticks any other
   publish-time resolution (custom-icon GIDs, mediaImageUrl GIDs).
-- **Preset apply with per-hotspot dedup + delete confirmations** —
-  decided spec is locked in the Slice 7 plan's out-of-scope
-  section. Modal with checkbox list; duplicate detection via
-  exact-title OR ≥70% Jaccard on tokenized body. Pair with single +
-  bulk delete-confirmation Modals.
+- ~~**Preset apply with per-hotspot dedup + delete confirmations**~~ —
+  **shipped 2026-05-22.** New `PresetApplyDedupModal` opens after the
+  merchant picks preset(s) in `PresetBrowserModal`; each candidate
+  hotspot gets a checkbox + (if matched) `Badge tone="attention"`
+  "Similar to existing '<title>'". Dedup helper at
+  `app/lib/hotspot-dedup.ts` with 17 unit tests — exact-title OR
+  Jaccard body ≥ 0.70 on tokenized words. Quick actions: Select all /
+  none / non-duplicates + `N of M selected` badge. Duplicates start
+  unchecked; non-dupes checked. Cross-mode conversion (3D→360 and
+  back) lives in `handleApplyPresets` so candidates feed the modal
+  pre-shaped. Pair landed: destructive Polaris Modal on both single
+  delete (3D editor only — 360 has no single-delete path) and bulk
+  delete (both editors), listing affected titles + reminding the
+  merchant Ctrl+Z still works.
 - **Per-product storage assignment column in the dashboard** —
   ResourceList column showing each product's last capture bucket +
   per-product override. Broader dashboard-density review needed

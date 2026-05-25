@@ -24,6 +24,8 @@ import {
   ButtonGroup,
   Checkbox,
   InlineStack,
+  List,
+  Modal,
   Select,
   Text,
   TextField,
@@ -183,6 +185,15 @@ export function Sdl3dHotspotEditor({
 
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  // Slice 8 — delete confirmation. Single + bulk delete both go through
+  // this state; modal renders against `pendingDelete.kind`. Titles are
+  // captured at confirmation-open time so the modal copy matches what
+  // the merchant saw on the row even if state shifts in between.
+  const [pendingDelete, setPendingDelete] = useState<
+    | { kind: "single"; id: string; title: string }
+    | { kind: "bulk"; ids: string[]; titles: string[] }
+    | null
+  >(null);
 
   function replaceHotspots(next: EditableHotspot[]) {
     const normalized = normalizeSortOrder(next);
@@ -227,10 +238,18 @@ export function Sdl3dHotspotEditor({
 
   function removeSelected() {
     if (!selected) return;
-    const next = safeHotspots.filter((item) => item.id !== selected.id);
+    setPendingDelete({
+      kind: "single",
+      id: selected.id,
+      title: selected.title || "Untitled hotspot",
+    });
+  }
+
+  function doRemoveSingle(id: string) {
+    const next = safeHotspots.filter((item) => item.id !== id);
     setCheckedIds((prev) => {
       const copy = new Set(prev);
-      copy.delete(selected.id);
+      copy.delete(id);
       return copy;
     });
     replaceHotspots(next);
@@ -260,9 +279,30 @@ export function Sdl3dHotspotEditor({
   }
 
   function batchDelete() {
-    const next = safeHotspots.filter((h) => !checkedIds.has(h.id));
+    const selected = safeHotspots.filter((h) => checkedIds.has(h.id));
+    if (selected.length === 0) return;
+    setPendingDelete({
+      kind: "bulk",
+      ids: selected.map((h) => h.id),
+      titles: selected.map((h) => h.title || "Untitled hotspot"),
+    });
+  }
+
+  function doBatchDelete(ids: string[]) {
+    const idSet = new Set(ids);
+    const next = safeHotspots.filter((h) => !idSet.has(h.id));
     setCheckedIds(new Set());
     replaceHotspots(next);
+  }
+
+  function confirmPendingDelete() {
+    if (!pendingDelete) return;
+    if (pendingDelete.kind === "single") {
+      doRemoveSingle(pendingDelete.id);
+    } else {
+      doBatchDelete(pendingDelete.ids);
+    }
+    setPendingDelete(null);
   }
 
   function batchToggleVisible(visible: boolean) {
@@ -294,6 +334,7 @@ export function Sdl3dHotspotEditor({
   }, []);
 
   return (
+    <>
     <BlockStack gap="300">
       {/* Header: count + Add / Apply Preset */}
       <InlineStack align="space-between" blockAlign="center" wrap={false}>
@@ -597,6 +638,49 @@ export function Sdl3dHotspotEditor({
         </Text>
       )}
     </BlockStack>
+
+    {/* Slice 8 — destructive-action confirmation. Renders both the
+        single-delete and bulk-delete cases from one Modal; the body
+        varies on `pendingDelete.kind`. Undo (Ctrl+Z) is still
+        available after confirm — this is just the friction layer. */}
+    <Modal
+      open={pendingDelete !== null}
+      onClose={() => setPendingDelete(null)}
+      title={
+        pendingDelete?.kind === "bulk"
+          ? `Delete ${pendingDelete.ids.length} hotspot${pendingDelete.ids.length === 1 ? "" : "s"}?`
+          : pendingDelete?.kind === "single"
+            ? `Delete hotspot '${pendingDelete.title}'?`
+            : ""
+      }
+      primaryAction={{
+        content: "Delete",
+        destructive: true,
+        onAction: confirmPendingDelete,
+      }}
+      secondaryActions={[{ content: "Cancel", onAction: () => setPendingDelete(null) }]}
+    >
+      <Modal.Section>
+        {pendingDelete?.kind === "bulk" ? (
+          <BlockStack gap="200">
+            <Text as="p">The following hotspots will be removed:</Text>
+            <List type="bullet">
+              {pendingDelete.titles.map((t, i) => (
+                <List.Item key={i}>{t}</List.Item>
+              ))}
+            </List>
+            <Text as="p" tone="subdued" variant="bodySm">
+              You can undo this with Ctrl+Z if you change your mind.
+            </Text>
+          </BlockStack>
+        ) : pendingDelete?.kind === "single" ? (
+          <Text as="p">
+            This will remove the hotspot from the product. You can undo with Ctrl+Z.
+          </Text>
+        ) : null}
+      </Modal.Section>
+    </Modal>
+    </>
   );
 }
 
