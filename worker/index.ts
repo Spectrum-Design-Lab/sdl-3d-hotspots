@@ -6,6 +6,11 @@
  * Slice 2: scaffolding only. The `processCapture` handler is wired but its
  * implementation is a stub until Slice 3 lands the Capture model + API.
  */
+
+// Sentry init must be the first import — same rule as the web tier
+// (entry.server.tsx). Side-effect import.
+import "../app/lib/sentry.server";
+
 import {
   JOB_NAMES,
   registerWorker,
@@ -16,6 +21,7 @@ import {
   runProcessCaptureJob,
   type ProcessCaptureJobData,
 } from "../app/lib/capture-pipeline/orchestrator";
+import { captureException, flushSentry } from "../app/lib/sentry.server";
 
 const WORKER_NAME = "sdl-3d-hotspots-worker";
 
@@ -32,6 +38,16 @@ async function handleProcessCapture(
       `[${WORKER_NAME}] completed job ${job.id} in ${Date.now() - startedAt}ms`,
     );
   } catch (err) {
+    // The orchestrator catches its own pipeline errors and routes them
+    // to Capture.status=FAILED + Sentry — anything escaping to this
+    // outer catch is a queue/handler-level failure (e.g. shopify
+    // auth boot crashed). Still worth reporting so we get visibility
+    // into "worker crashed mid-job, pg-boss will retry."
+    captureException(err, {
+      scope: "worker",
+      tags: { job: JOB_NAMES.PROCESS_CAPTURE },
+      extra: { jobId: job.id, durationMs: Date.now() - startedAt },
+    });
     console.error(`[${WORKER_NAME}] job ${job.id} failed:`, err);
     throw err;
   }
@@ -55,6 +71,10 @@ async function shutdown(signal: string): Promise<void> {
   } catch (err) {
     console.error(`[${WORKER_NAME}] error during shutdown:`, err);
   }
+  // Give Sentry a few seconds to flush any in-flight events before the
+  // process exits — otherwise the very last error (often the one that
+  // caused the shutdown) can be lost.
+  await flushSentry(3000);
   process.exit(0);
 }
 
@@ -65,6 +85,7 @@ process.on("SIGTERM", () => {
   void shutdown("SIGTERM");
 });
 process.on("unhandledRejection", (reason) => {
+  captureException(reason, { scope: "worker", tags: { kind: "unhandledRejection" } });
   console.error(`[${WORKER_NAME}] unhandledRejection:`, reason);
 });
 

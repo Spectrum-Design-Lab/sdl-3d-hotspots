@@ -40,6 +40,31 @@ import { sampleFrames } from "./sampler";
 import { convertFrames } from "./converter";
 import { uploadFrames } from "./uploader";
 import { validateCaptureFrames } from "./validator";
+import { captureException } from "../sentry.server";
+
+/**
+ * Structured per-step pipeline log. One JSON line per major step
+ * (claim/download/extract/scan/validate/sample/convert/upload/write).
+ * Stdout in the container; a log scraper or Sentry breadcrumb can
+ * reconstruct the timeline of any capture from these.
+ */
+function pipelineLog(
+  step: string,
+  captureId: string,
+  outcome: "start" | "ok" | "skip" | "fail",
+  extra: Record<string, unknown> = {},
+): void {
+  console.log(
+    JSON.stringify({
+      evt: "capture-pipeline",
+      step,
+      captureId,
+      outcome,
+      ts: new Date().toISOString(),
+      ...extra,
+    }),
+  );
+}
 
 /** Job payload pushed onto pg-boss by API actions or smoke tests. */
 export type ProcessCaptureJobData = {
@@ -169,19 +194,24 @@ export async function processCapture(
   ctx: ProcessingContext,
   captureId: string,
 ): Promise<void> {
+  const pipelineStarted = Date.now();
+  pipelineLog("claim", captureId, "start");
   const claimed = await claimCapture(ctx.prisma, captureId);
   const current = await ctx.prisma.capture.findUnique({ where: { id: captureId } });
   if (!current) {
+    pipelineLog("claim", captureId, "skip", { reason: "not-found" });
     console.warn(`[capture-pipeline] capture ${captureId} not found; nothing to do.`);
     return;
   }
   if (!claimed) {
     const status = current.status as CaptureStatus;
+    pipelineLog("claim", captureId, "skip", { reason: "not-claimable", status });
     console.log(
       `[capture-pipeline] capture ${captureId} not claimable (status=${status}); skipping.`,
     );
     return;
   }
+  pipelineLog("claim", captureId, "ok", { attempts: current.attempts + 1 });
 
   const capture = current;
   const tempDir = await mkdtemp(path.join(os.tmpdir(), `sdl3d-capture-${captureId}-`));
@@ -204,8 +234,14 @@ export async function processCapture(
     }
 
     // 1. Download raw.zip from merchant bucket.
+    pipelineLog("download", captureId, "start", { rawKey: capture.rawKey });
+    const downloadStart = Date.now();
     const stream = await ctx.storage.getObject(capture.rawKey);
     const zipBuffer = await streamToBuffer(stream as NodeJS.ReadableStream);
+    pipelineLog("download", captureId, "ok", {
+      bytes: zipBuffer.byteLength,
+      ms: Date.now() - downloadStart,
+    });
 
     if (await isCancelled(ctx.prisma, captureId)) {
       await finaliseCancelled(ctx.prisma, captureId);
@@ -213,7 +249,13 @@ export async function processCapture(
     }
 
     // 2. Extract into temp dir.
+    pipelineLog("extract", captureId, "start");
+    const extractStart = Date.now();
     const extracted = await extractZip(zipBuffer, rawDir);
+    pipelineLog("extract", captureId, "ok", {
+      files: extracted.length,
+      ms: Date.now() - extractStart,
+    });
     if (extracted.length === 0) {
       throw new Error(
         "Raw zip contained no supported image files. Expected .jpg/.jpeg/.png/.webp (single folder of turntable frames).",
@@ -238,11 +280,17 @@ export async function processCapture(
     //     validationJson and the pipeline proceeds.
     const selectedCount =
       capture.frameCountTarget || DEFAULT_PIPELINE.selectedFrames;
+    pipelineLog("validate", captureId, "start");
     const validation = validateCaptureFrames(primary.productKey, primary.frames, {
       selectedCount,
       skippedFilenames: primary.skippedFilenames,
     });
     const validationJson = JSON.stringify(validation.report);
+    pipelineLog("validate", captureId, validation.hardFail ? "fail" : "ok", {
+      hardFail: validation.hardFail,
+      issues: validation.report.issues.length,
+      uniqueFrames: validation.report.totalFound,
+    });
     if (validation.hardFail) {
       await markFailed(
         ctx.prisma,
@@ -275,6 +323,8 @@ export async function processCapture(
     const shouldCancel = () => isCancelled(ctx.prisma, captureId);
 
     // 5. Convert with sharp.
+    pipelineLog("convert", captureId, "start", { frames: sampled.length });
+    const convertStart = Date.now();
     const converted = await convertFrames(ctx, sampled, {
       format: DEFAULT_PIPELINE.outputFormat,
       quality: DEFAULT_PIPELINE.quality,
@@ -284,6 +334,7 @@ export async function processCapture(
       shouldCancel,
       captureId,
     });
+    pipelineLog("convert", captureId, "ok", { ms: Date.now() - convertStart });
 
     if (await isCancelled(ctx.prisma, captureId)) {
       await finaliseCancelled(ctx.prisma, captureId);
@@ -299,11 +350,17 @@ export async function processCapture(
       ctx.shopId,
       capture.folderName ?? captureId,
     );
+    pipelineLog("upload", captureId, "start", {
+      frames: converted.length,
+      keyPrefix,
+    });
+    const uploadStart = Date.now();
     const uploaded = await uploadFrames(ctx, converted, {
       keyPrefix,
       shouldCancel,
       captureId,
     });
+    pipelineLog("upload", captureId, "ok", { ms: Date.now() - uploadStart });
 
     // 7. Write imageSequenceJson into the ProductConfig.
     const frames: ImageSequenceFrame[] = uploaded.frames.map((f, i) => ({
@@ -362,6 +419,11 @@ export async function processCapture(
       },
     });
 
+    pipelineLog("complete", captureId, "ok", {
+      frames: frames.length,
+      cdnBaseUrl: uploaded.cdnBaseUrl,
+      totalMs: Date.now() - pipelineStarted,
+    });
     console.log(
       `[capture-pipeline] capture ${captureId} completed: ${frames.length} frames at ${uploaded.cdnBaseUrl}`,
     );
@@ -371,10 +433,16 @@ export async function processCapture(
     // the merchant doesn't see a scary error message for an action they
     // took deliberately.
     if (err instanceof CaptureCancelledError) {
+      pipelineLog("cancelled", captureId, "ok");
       await finaliseCancelled(ctx.prisma, captureId);
       return;
     }
     const message = err instanceof Error ? err.message : String(err);
+    pipelineLog("fail", captureId, "fail", { error: message });
+    captureException(err, {
+      scope: "capture-pipeline",
+      tags: { captureId, shopId: ctx.shopId },
+    });
     console.error(`[capture-pipeline] capture ${captureId} FAILED:`, message);
     await markFailed(ctx.prisma, captureId, message);
     // Intentionally not re-thrown — see jsdoc on this function.
