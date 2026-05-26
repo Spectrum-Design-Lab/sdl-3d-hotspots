@@ -1068,11 +1068,95 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   min-width: 90px;
 }
 
+/* Legacy native-range scrubber — kept selector available in case a
+   future render path falls back to <input type="range">. Live UI uses
+   `.sdl-360-timeline` below. */
 .sdl-360-preview__scrubber {
   flex: 1;
   height: 4px;
   accent-color: #3b82f6;
   cursor: pointer;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Slice 9 follow-up — 360 frame timeline.
+   Replaces the native range scrubber with a custom track that overlays
+   the selected hotspot's keyframes (blue dots) and visible-range band
+   (green). The track is a relatively-positioned strip; everything else
+   is absolutely positioned by percentage along its width.
+   ───────────────────────────────────────────────────────────────────── */
+.sdl-360-timeline {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+}
+
+.sdl-360-timeline__track {
+  position: relative;
+  width: 100%;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  touch-action: none; /* let pointer events drive drag instead of scroll */
+}
+
+/* Visible-range band — green, sits inside the track. */
+.sdl-360-timeline__band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(34, 197, 94, 0.55);
+  pointer-events: none;
+  border-radius: 7px;
+}
+
+/* Keyframe dot — sits on top of the band/track. Hover/focus enlarges
+   so it's tappable. translateX(-50%) centers the dot on its frame. */
+.sdl-360-timeline__keyframe {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  padding: 0;
+  z-index: 2;
+}
+
+.sdl-360-timeline__keyframe:hover,
+.sdl-360-timeline__keyframe:focus-visible {
+  width: 16px;
+  height: 16px;
+  outline: none;
+  background: #60a5fa;
+}
+
+/* Playhead — white handle marking currentFrame. Slightly taller than
+   the track so it pokes out top + bottom. Pointer events disabled so
+   clicks fall through to the track (drag-anywhere behavior). */
+.sdl-360-timeline__handle {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 3px;
+  background: #ffffff;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.sdl-360-timeline__handle:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+  pointer-events: auto;
 }
 
 /* 360 hotspot overlays */

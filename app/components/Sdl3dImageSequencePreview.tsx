@@ -289,6 +289,12 @@ export function Sdl3dImageSequencePreview({
   );
 
   const currentFrameData = frames[currentFrame];
+
+  // Slice 9 follow-up — selected hotspot feeds the timeline overlay
+  // (keyframe markers + visible-range band). Null when nothing's
+  // selected, in which case the timeline behaves as a plain scrubber.
+  const selectedTimelineHotspot =
+    hotspots.find((h) => h.id === selectedHotspotId) ?? null;
   const loading = preloadedCount < Math.min(frames.length, 4);
 
   if (!frames.length) {
@@ -403,21 +409,24 @@ export function Sdl3dImageSequencePreview({
           })}
       </div>
 
-      {/* Controls bar */}
+      {/* Controls bar — Slice 9 follow-up: native range replaced with a
+          custom timeline that overlays the selected hotspot's keyframes
+          (blue dots, click to jump) and visible-range band (green) so the
+          merchant can see keyframe distribution without opening any
+          panel. Handle (white) shows the current frame and is
+          drag-and-arrow-key controllable. */}
       <div className="sdl-360-preview__controls">
         <div className="sdl-360-preview__frame-info">
           Frame {currentFrame + 1} / {frameCount}
         </div>
-        <input
-          type="range"
-          min={0}
-          max={Math.max(0, frameCount - 1)}
-          value={currentFrame}
-          onChange={(e) => {
-            setCurrentFrame(Number(e.target.value));
+        <Sdl3d360Timeline
+          frameCount={frameCount}
+          currentFrame={currentFrame}
+          selectedHotspot={selectedTimelineHotspot}
+          onChangeFrame={(next) => {
+            setCurrentFrame(next);
             setAutoRotate(false);
           }}
-          className="sdl-360-preview__scrubber"
         />
         <Button
           size="slim"
@@ -426,6 +435,173 @@ export function Sdl3dImageSequencePreview({
         >
           {autoRotate ? "Stop" : "Auto-rotate"}
         </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Slice 9 follow-up — frame timeline with keyframe + visible-range
+ * overlay for the selected 360 hotspot.
+ *
+ * Renders three layers stacked on the same track:
+ *   1. Visible-range band (green) — visibleFrameStart → visibleFrameEnd.
+ *      Wraps in two pieces when start > end ("wraps around the seam").
+ *   2. Keyframe markers (blue dots) — one per kf.frame. Click jumps the
+ *      playhead to that frame.
+ *   3. Playhead (white handle) — current frame. Draggable. Arrow keys
+ *      step ±1 frame; Home / End jump to first / last.
+ *
+ * When no hotspot is selected (selectedHotspot === null) the overlay
+ * layers are hidden — the track behaves as a plain scrubber.
+ */
+function Sdl3d360Timeline({
+  frameCount,
+  currentFrame,
+  selectedHotspot,
+  onChangeFrame,
+}: {
+  frameCount: number;
+  currentFrame: number;
+  selectedHotspot: Hotspot360 | null;
+  onChangeFrame: (next: number) => void;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+
+  const lastIndex = Math.max(1, frameCount - 1);
+  const frameToPct = (frame: number): number => (frame / lastIndex) * 100;
+  const pctToFrame = (pct: number): number => {
+    const clamped = Math.max(0, Math.min(100, pct));
+    return Math.round((clamped / 100) * lastIndex);
+  };
+
+  const setFrameFromEvent = useCallback(
+    (clientX: number) => {
+      const el = trackRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const pct = ((clientX - rect.left) / rect.width) * 100;
+      onChangeFrame(pctToFrame(pct));
+    },
+    [onChangeFrame, lastIndex],
+  );
+
+  const handleTrackPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      dragging.current = true;
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+      setFrameFromEvent(e.clientX);
+    },
+    [setFrameFromEvent],
+  );
+
+  const handleTrackPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!dragging.current) return;
+      setFrameFromEvent(e.clientX);
+    },
+    [setFrameFromEvent],
+  );
+
+  const handleTrackPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      dragging.current = false;
+      (e.target as Element).releasePointerCapture?.(e.pointerId);
+    },
+    [],
+  );
+
+  const handleHandleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      let next = currentFrame;
+      if (e.key === "ArrowLeft") next = Math.max(0, currentFrame - 1);
+      else if (e.key === "ArrowRight") next = Math.min(lastIndex, currentFrame + 1);
+      else if (e.key === "Home") next = 0;
+      else if (e.key === "End") next = lastIndex;
+      else return;
+      e.preventDefault();
+      onChangeFrame(next);
+    },
+    [currentFrame, lastIndex, onChangeFrame],
+  );
+
+  // Visible-range band: when start > end the range wraps the seam, so
+  // render two bands (start → lastIndex AND 0 → end). When equal, the
+  // hotspot is visible on a single frame — render a tiny 1-frame stripe.
+  const bands: Array<{ leftPct: number; widthPct: number }> = [];
+  if (selectedHotspot) {
+    const start = Math.max(0, Math.min(lastIndex, selectedHotspot.visibleFrameStart));
+    const end = Math.max(0, Math.min(lastIndex, selectedHotspot.visibleFrameEnd));
+    if (start <= end) {
+      bands.push({
+        leftPct: frameToPct(start),
+        widthPct: frameToPct(end) - frameToPct(start),
+      });
+    } else {
+      bands.push({ leftPct: frameToPct(start), widthPct: 100 - frameToPct(start) });
+      bands.push({ leftPct: 0, widthPct: frameToPct(end) });
+    }
+  }
+
+  const keyframes = selectedHotspot?.keyframes ?? [];
+
+  return (
+    <div className="sdl-360-timeline" aria-label="Frame timeline">
+      <div
+        ref={trackRef}
+        className="sdl-360-timeline__track"
+        onPointerDown={handleTrackPointerDown}
+        onPointerMove={handleTrackPointerMove}
+        onPointerUp={handleTrackPointerUp}
+        onPointerCancel={handleTrackPointerUp}
+        role="presentation"
+      >
+        {bands.map((b, i) => (
+          <div
+            key={`band-${i}`}
+            className="sdl-360-timeline__band"
+            style={{ left: `${b.leftPct}%`, width: `${b.widthPct}%` }}
+            aria-hidden
+          />
+        ))}
+        {keyframes.map((kf) => {
+          const pct = frameToPct(kf.frame);
+          return (
+            <button
+              key={`kf-${kf.frame}`}
+              type="button"
+              className="sdl-360-timeline__keyframe"
+              style={{ left: `${pct}%` }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onChangeFrame(kf.frame);
+              }}
+              onPointerDown={(e) => {
+                // Prevent the track's pointerdown from also firing —
+                // we want the click to jump exactly to the keyframe.
+                e.stopPropagation();
+              }}
+              aria-label={`Jump to keyframe at frame ${kf.frame + 1}`}
+              title={`Frame ${kf.frame + 1} · X ${Math.round(kf.x * 10)} Y ${Math.round(kf.y * 10)}`}
+            />
+          );
+        })}
+        <div
+          className="sdl-360-timeline__handle"
+          style={{ left: `${frameToPct(currentFrame)}%` }}
+          role="slider"
+          tabIndex={0}
+          aria-label="Current frame"
+          aria-valuemin={1}
+          aria-valuemax={frameCount}
+          aria-valuenow={currentFrame + 1}
+          onKeyDown={handleHandleKeyDown}
+          // The handle is decorative for pointer events — the track owns
+          // pointer interactions (so dragging starts wherever the merchant
+          // clicks). Stopping propagation here would break that.
+        />
       </div>
     </div>
   );
