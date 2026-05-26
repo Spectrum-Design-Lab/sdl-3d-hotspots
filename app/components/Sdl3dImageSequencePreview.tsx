@@ -20,7 +20,14 @@ interface Sdl3dImageSequencePreviewProps {
   viewerSettingsJson: string;
   onSelectHotspot?: (id: string | null) => void;
   onPlaceHotspot?: (frame: number, x: number, y: number) => void;
+  /**
+   * Upsert a keyframe: sets keyframes[frame] = {x, y} (or inserts if no
+   * keyframe exists at that frame). Called from canvas drag, from the
+   * timeline's "+" button, and from the floating keyframe editor.
+   */
   onDragHotspot?: (hotspotId: string, frame: number, x: number, y: number) => void;
+  /** Slice 9 follow-up — remove a keyframe at the given frame. */
+  onRemoveKeyframe?: (hotspotId: string, frame: number) => void;
   captureMode?: "none" | "placeHotspot";
 }
 
@@ -32,6 +39,7 @@ export function Sdl3dImageSequencePreview({
   onSelectHotspot,
   onPlaceHotspot,
   onDragHotspot,
+  onRemoveKeyframe,
   captureMode = "none",
 }: Sdl3dImageSequencePreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -44,6 +52,12 @@ export function Sdl3dImageSequencePreview({
   const hotspotDragRef = useRef<DragHotspotState | null>(null);
   const [isDraggingHotspot, setIsDraggingHotspot] = useState(false);
   const [dragPreviewPos, setDragPreviewPos] = useState<{ x: number; y: number } | null>(null);
+  // Slice 9 follow-up — floating keyframe editor at the top of the
+  // viewer. Open when this is non-null; identifies which keyframe of
+  // the currently-selected hotspot the merchant is editing. Set by
+  // clicking a keyframe dot on the timeline; cleared by clicking
+  // Close (or implicitly when the selected hotspot changes).
+  const [editingKeyframeFrame, setEditingKeyframeFrame] = useState<number | null>(null);
 
   const frameCount = frames.length;
 
@@ -295,6 +309,21 @@ export function Sdl3dImageSequencePreview({
   // selected, in which case the timeline behaves as a plain scrubber.
   const selectedTimelineHotspot =
     hotspots.find((h) => h.id === selectedHotspotId) ?? null;
+
+  // Close the floating keyframe editor whenever the selection changes
+  // (e.g. merchant clicked a different hotspot on the canvas) so it
+  // doesn't stale-display a previous hotspot's keyframe.
+  useEffect(() => {
+    setEditingKeyframeFrame(null);
+  }, [selectedHotspotId]);
+
+  // Resolve the keyframe being edited so we can render its X/Y in the
+  // editor. Null when the editor is closed OR when the frame number no
+  // longer exists on the hotspot (e.g. just deleted).
+  const editingKeyframe =
+    editingKeyframeFrame !== null && selectedTimelineHotspot
+      ? selectedTimelineHotspot.keyframes.find((k) => k.frame === editingKeyframeFrame) ?? null
+      : null;
   const loading = preloadedCount < Math.min(frames.length, 4);
 
   if (!frames.length) {
@@ -409,6 +438,29 @@ export function Sdl3dImageSequencePreview({
           })}
       </div>
 
+      {/* Slice 9 follow-up — floating keyframe editor. Slides in at the
+          top of the viewer when a keyframe dot on the timeline is
+          clicked; closes on Close or when selection changes. Sits in
+          the canvas overlay (not the controls bar) so the merchant
+          stays in canvas context while editing X/Y. Updates flow
+          through the same onDragHotspot upsert path as canvas drag. */}
+      {editingKeyframe && selectedTimelineHotspot ? (
+        <Sdl3d360KeyframeEditor
+          hotspotId={selectedTimelineHotspot.id}
+          frame={editingKeyframe.frame}
+          x={editingKeyframe.x}
+          y={editingKeyframe.y}
+          onChange={(x, y) =>
+            onDragHotspot?.(selectedTimelineHotspot.id, editingKeyframe.frame, x, y)
+          }
+          onRemove={() => {
+            onRemoveKeyframe?.(selectedTimelineHotspot.id, editingKeyframe.frame);
+            setEditingKeyframeFrame(null);
+          }}
+          onClose={() => setEditingKeyframeFrame(null)}
+        />
+      ) : null}
+
       {/* Controls bar — Slice 9 follow-up: native range replaced with a
           custom timeline that overlays the selected hotspot's keyframes
           (blue dots, click to jump) and visible-range band (green) so the
@@ -426,6 +478,19 @@ export function Sdl3dImageSequencePreview({
           onChangeFrame={(next) => {
             setCurrentFrame(next);
             setAutoRotate(false);
+          }}
+          onKeyframeClick={(frame) => {
+            setCurrentFrame(frame);
+            setAutoRotate(false);
+            setEditingKeyframeFrame(frame);
+          }}
+          onAddKeyframeAtPlayhead={() => {
+            if (!selectedHotspotId) return;
+            // Default to centre of frame. Merchant can drag the dot on
+            // the canvas or tweak X/Y in the floating editor that opens
+            // immediately after.
+            onDragHotspot?.(selectedHotspotId, currentFrame, 50, 50);
+            setEditingKeyframeFrame(currentFrame);
           }}
         />
         <Button
@@ -460,11 +525,20 @@ function Sdl3d360Timeline({
   currentFrame,
   selectedHotspot,
   onChangeFrame,
+  onKeyframeClick,
+  onAddKeyframeAtPlayhead,
 }: {
   frameCount: number;
   currentFrame: number;
   selectedHotspot: Hotspot360 | null;
   onChangeFrame: (next: number) => void;
+  /** Click on a keyframe dot — jumps the playhead AND opens the
+   *  floating editor at the top of the viewer. */
+  onKeyframeClick: (frame: number) => void;
+  /** Click on the "+" affordance at the playhead position. Only
+   *  enabled when the playhead is on a frame that has no keyframe
+   *  AND a hotspot is selected. */
+  onAddKeyframeAtPlayhead: () => void;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -576,18 +650,39 @@ function Sdl3d360Timeline({
               style={{ left: `${pct}%` }}
               onClick={(e) => {
                 e.stopPropagation();
-                onChangeFrame(kf.frame);
+                onKeyframeClick(kf.frame);
               }}
               onPointerDown={(e) => {
                 // Prevent the track's pointerdown from also firing —
-                // we want the click to jump exactly to the keyframe.
+                // we want the click to jump exactly to the keyframe
+                // AND open the editor.
                 e.stopPropagation();
               }}
-              aria-label={`Jump to keyframe at frame ${kf.frame + 1}`}
-              title={`Frame ${kf.frame + 1} · X ${Math.round(kf.x * 10)} Y ${Math.round(kf.y * 10)}`}
+              aria-label={`Edit keyframe at frame ${kf.frame + 1}`}
+              title={`Frame ${kf.frame + 1} · X ${Math.round(kf.x * 10)} Y ${Math.round(kf.y * 10)} · click to edit`}
             />
           );
         })}
+        {/* "+" affordance at the playhead. Only renders when a hotspot
+            is selected AND the playhead is on a frame that has no
+            existing keyframe — otherwise the keyframe dot covers it. */}
+        {selectedHotspot &&
+          !keyframes.some((kf) => kf.frame === currentFrame) ? (
+          <button
+            type="button"
+            className="sdl-360-timeline__add-keyframe"
+            style={{ left: `${frameToPct(currentFrame)}%` }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddKeyframeAtPlayhead();
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            aria-label={`Add keyframe at frame ${currentFrame + 1}`}
+            title={`Add keyframe at frame ${currentFrame + 1}`}
+          >
+            +
+          </button>
+        ) : null}
         <div
           className="sdl-360-timeline__handle"
           style={{ left: `${frameToPct(currentFrame)}%` }}
@@ -603,6 +698,133 @@ function Sdl3d360Timeline({
           // clicks). Stopping propagation here would break that.
         />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Slice 9 follow-up — floating keyframe X/Y editor that sits at the top
+ * of the 360 viewer. The merchant clicks a keyframe dot on the timeline
+ * below; this slides in showing the keyframe's frame number + X/Y
+ * inputs + Remove/Close. Edits flow through onChange (upsert) and
+ * onRemove (delete), both wired to the same callbacks that canvas drag
+ * uses — so dragging the dot on the canvas updates the inputs here in
+ * real time, and Remove cleanly deletes the keyframe.
+ *
+ * The X/Y stored values are 0–100 floats; merchants see 0–1000 integers
+ * (matches the existing CoordField semantics — 1 unit = 0.1% precision).
+ */
+function Sdl3d360KeyframeEditor({
+  hotspotId: _hotspotId,
+  frame,
+  x,
+  y,
+  onChange,
+  onRemove,
+  onClose,
+}: {
+  hotspotId: string;
+  frame: number;
+  x: number;
+  y: number;
+  onChange: (x: number, y: number) => void;
+  onRemove: () => void;
+  onClose: () => void;
+}) {
+  // Local draft state so backspacing through the input doesn't snap the
+  // value back. Commits to onChange on blur or Enter. Mirrors the same
+  // pattern used elsewhere in the editor (FrameField / CoordField).
+  const [xDraft, setXDraft] = useState(String(Math.round(x * 10)));
+  const [yDraft, setYDraft] = useState(String(Math.round(y * 10)));
+  const isFocusedRef = useRef(false);
+
+  // Re-sync from props when the parent's keyframe X/Y changes (e.g. via
+  // canvas drag) and we're NOT mid-edit.
+  useEffect(() => {
+    if (!isFocusedRef.current) {
+      setXDraft(String(Math.round(x * 10)));
+      setYDraft(String(Math.round(y * 10)));
+    }
+  }, [x, y]);
+
+  function commitX(raw: string) {
+    isFocusedRef.current = false;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      setXDraft(String(Math.round(x * 10)));
+      return;
+    }
+    const clamped = Math.max(0, Math.min(1000, Math.round(n)));
+    onChange(clamped / 10, y);
+    setXDraft(String(clamped));
+  }
+
+  function commitY(raw: string) {
+    isFocusedRef.current = false;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      setYDraft(String(Math.round(y * 10)));
+      return;
+    }
+    const clamped = Math.max(0, Math.min(1000, Math.round(n)));
+    onChange(x, clamped / 10);
+    setYDraft(String(clamped));
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      (e.target as HTMLInputElement).blur();
+    } else if (e.key === "Escape") {
+      onClose();
+    }
+  }
+
+  return (
+    <div className="sdl-360-kf-editor" role="dialog" aria-label={`Edit keyframe at frame ${frame + 1}`}>
+      <div className="sdl-360-kf-editor__label">{`Keyframe · frame ${frame + 1}`}</div>
+      <label className="sdl-360-kf-editor__field">
+        <span>X</span>
+        <input
+          type="number"
+          min={0}
+          max={1000}
+          value={xDraft}
+          onChange={(e) => setXDraft(e.target.value)}
+          onFocus={() => { isFocusedRef.current = true; }}
+          onBlur={(e) => commitX(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+      </label>
+      <label className="sdl-360-kf-editor__field">
+        <span>Y</span>
+        <input
+          type="number"
+          min={0}
+          max={1000}
+          value={yDraft}
+          onChange={(e) => setYDraft(e.target.value)}
+          onFocus={() => { isFocusedRef.current = true; }}
+          onBlur={(e) => commitY(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+      </label>
+      <button
+        type="button"
+        className="sdl-360-kf-editor__remove"
+        onClick={onRemove}
+        title="Remove this keyframe"
+      >
+        Remove
+      </button>
+      <button
+        type="button"
+        className="sdl-360-kf-editor__close"
+        onClick={onClose}
+        aria-label="Close keyframe editor"
+        title="Close"
+      >
+        ×
+      </button>
     </div>
   );
 }

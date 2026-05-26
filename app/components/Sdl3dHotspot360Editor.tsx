@@ -797,6 +797,43 @@ export function Sdl3dHotspot360Editor({
                   onPickImageFromShopifyFiles={() => onOpenMediaImageBrowser?.(detailFocus.id)}
                 />
               ) : null}
+
+              {/* Slice 9 follow-up — visibility range lives in the modal
+                  now that the below-canvas position panel is gone.
+                  These are non-spatial (numeric frame bounds), so the
+                  modal is the right home — no canvas reference needed. */}
+              <BlockStack gap="100">
+                <Text as="span" variant="bodySm" fontWeight="medium">
+                  Visible across frames
+                </Text>
+                <InlineStack gap="200" wrap={false}>
+                  <Box width="100%">
+                    <FrameField
+                      label="From frame"
+                      storedValue={detailFocus.visibleFrameStart}
+                      frameCount={frameCount}
+                      onCommit={(stored) =>
+                        updateHotspot(detailFocus.id, { visibleFrameStart: stored })
+                      }
+                    />
+                  </Box>
+                  <Box width="100%">
+                    <FrameField
+                      label="To frame"
+                      storedValue={detailFocus.visibleFrameEnd}
+                      frameCount={frameCount}
+                      onCommit={(stored) =>
+                        updateHotspot(detailFocus.id, { visibleFrameEnd: stored })
+                      }
+                    />
+                  </Box>
+                </InlineStack>
+                {detailFocus.visibleFrameStart > detailFocus.visibleFrameEnd ? (
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Wraps around the seam (visible from {detailFocus.visibleFrameStart + 1} through end, then 1 through {detailFocus.visibleFrameEnd + 1}).
+                  </Text>
+                ) : null}
+              </BlockStack>
             </Subsection>
           ) : null}
 

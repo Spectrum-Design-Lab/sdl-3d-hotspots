@@ -1757,6 +1757,17 @@ export default function Sdl3dEditorRoute() {
                           }),
                         );
                       }}
+                      onRemoveKeyframe={(hotspotId, frame) => {
+                        setHotspots360((prev) =>
+                          prev.map((h) => {
+                            if (h.id !== hotspotId) return h;
+                            return {
+                              ...h,
+                              keyframes: h.keyframes.filter((kf) => kf.frame !== frame),
+                            };
+                          }),
+                        );
+                      }}
                       captureMode={selectedHotspotId ? "placeHotspot" : "none"}
                     />
                   ) : (
@@ -1774,59 +1785,15 @@ export default function Sdl3dEditorRoute() {
                   )}
                 </Card>
 
-                {/* Slice 9 follow-up — position / keyframes panel.
-                    Editing where a hotspot sits is meaningless without
-                    seeing the model, so this stays out of the modal and
-                    renders inline below the canvas whenever a hotspot is
-                    selected. Same editor component, scoped to the layout
-                    subsection via the activeSection prop. */}
-                {selectedHotspotId ? (
-                  <Card padding="300">
-                    <BlockStack gap="200">
-                      <Text as="h3" variant="headingSm">
-                        {viewerType === "IMAGE_360"
-                          ? "Frames & keyframes"
-                          : "Position"}
-                      </Text>
-                      <Text as="p" tone="subdued" variant="bodySm">
-                        {viewerType === "IMAGE_360"
-                          ? "Drag the dot on the image above to set keyframes, or edit numbers below. Selected hotspot shown."
-                          : "Click on the model above to place, or tweak coordinates below. Selected hotspot shown."}
-                      </Text>
-                      {viewerType === "IMAGE_360" ? (
-                        <Sdl3dHotspot360Editor
-                          hotspots={hotspots360}
-                          selectedHotspotId={selectedHotspotId}
-                          frameCount={loaderData.config.frameCount}
-                          currentFrame={currentFrame360}
-                          editorMode={editorMode}
-                          iconResolvedUrls={loaderData.iconResolvedUrls}
-                          onChange={setHotspots360}
-                          onSelectHotspot={setSelectedHotspotId}
-                          onOpenIconBrowser={handleOpenIconBrowser}
-                          onOpenMediaImageBrowser={handleOpenMediaImageBrowser}
-                          renderMode="detail-only"
-                          activeSection="layout"
-                          hideHeader
-                        />
-                      ) : (
-                        <Sdl3dHotspotEditor
-                          hotspots={hotspots}
-                          selectedHotspotId={selectedHotspotId}
-                          editorMode={editorMode}
-                          iconResolvedUrls={loaderData.iconResolvedUrls}
-                          onChange={setHotspots}
-                          onSelectHotspot={setSelectedHotspotId}
-                          onOpenIconBrowser={handleOpenIconBrowser}
-                          onOpenMediaImageBrowser={handleOpenMediaImageBrowser}
-                          renderMode="detail-only"
-                          activeSection="layout"
-                          hideHeader
-                        />
-                      )}
-                    </BlockStack>
-                  </Card>
-                ) : null}
+                {/* Slice 9 follow-up — the below-canvas position panel
+                    was removed. 360 keyframe X/Y edits happen via a
+                    floating editor on the viewer itself (click a
+                    keyframe dot on the timeline), and visibility range
+                    fields moved into the hotspots modal. 3D positions
+                    are set entirely via canvas click-to-place + the
+                    Capture Orbit / Capture Target toolbar buttons on
+                    Sdl3dEditorPreview; raw XYZ tweaks (rare) live in
+                    the Publish → Advanced hotspots JSON editor. */}
               </>
             ) : (
               <Card>

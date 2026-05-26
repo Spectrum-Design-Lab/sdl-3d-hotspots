@@ -1734,3 +1734,136 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
     75%      { transform: rotate(6deg); }
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Slice 9 follow-up — "+" affordance on the timeline at the playhead.
+   Only renders when the merchant has a hotspot selected AND the
+   playhead is on a frame with no existing keyframe (since otherwise
+   the blue keyframe dot covers the same spot). Click adds a keyframe
+   at currentFrame and opens the floating editor.
+   ───────────────────────────────────────────────────────────────────── */
+.sdl-360-timeline__add-keyframe {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  color: #1f2937;
+  border: 2px dashed #3b82f6;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sdl-360-timeline__add-keyframe:hover,
+.sdl-360-timeline__add-keyframe:focus-visible {
+  width: 20px;
+  height: 20px;
+  background: #3b82f6;
+  color: #ffffff;
+  outline: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Slice 9 follow-up — floating keyframe X/Y editor.
+   Pinned to the top-center of the 360 viewer. Sits ABOVE the canvas
+   image so the merchant can see the dot move while typing coordinates.
+   Compact horizontal layout — label + X input + Y input + Remove + Close.
+   ───────────────────────────────────────────────────────────────────── */
+.sdl-360-kf-editor {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  z-index: 10;
+  font-size: 13px;
+  backdrop-filter: blur(4px);
+}
+
+.sdl-360-kf-editor__label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sdl-360-kf-editor__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sdl-360-kf-editor__field span {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.sdl-360-kf-editor__field input {
+  width: 60px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.3);
+  color: #ffffff;
+  font: inherit;
+  text-align: right;
+}
+
+.sdl-360-kf-editor__field input:focus {
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
+
+.sdl-360-kf-editor__remove {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(239, 68, 68, 0.7);
+  background: transparent;
+  color: #fca5a5;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sdl-360-kf-editor__remove:hover,
+.sdl-360-kf-editor__remove:focus-visible {
+  background: rgba(239, 68, 68, 0.2);
+  outline: none;
+}
+
+.sdl-360-kf-editor__close {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.sdl-360-kf-editor__close:hover,
+.sdl-360-kf-editor__close:focus-visible {
+  background: rgba(255, 255, 255, 0.25);
+  outline: none;
+}
