@@ -68,6 +68,7 @@ import {
   type PresetApplyCandidate,
 } from "../components/PresetApplyDedupModal";
 import { Sdl3dMediaSourceModal } from "../components/Sdl3dMediaSourceModal";
+import { Sdl3dHotspotsModal } from "../components/Sdl3dHotspotsModal";
 import type { Tone, RightTab } from "../components/Sdl3dEditorUI";
 
 
@@ -501,6 +502,11 @@ export default function Sdl3dEditorRoute() {
   // is now only triggered from inside this Modal's "Browse Shopify Files"
   // tab via the onOpenShopifyFilesBrowser callback.
   const [showMediaSourceModal, setShowMediaSourceModal] = useState(false);
+  // Slice 9 hotspot UX rework — full-screen hotspots editor modal. Opens
+  // from the new "Edit hotspots (N)" button below the canvas + from any
+  // dot click on the preview. Replaces the right-column accordion section
+  // that previously stacked all 15+ per-hotspot fields vertically.
+  const [showHotspotsModal, setShowHotspotsModal] = useState(false);
 
   // Slice 9 PR #2 — deep-link entry from the onboarding wizard.
   //
@@ -1064,7 +1070,10 @@ export default function Sdl3dEditorRoute() {
           setHotspots([...hotspots, hs]);
           setSelectedHotspotId(hs.id);
         }
-        setRightTab("hotspots");
+        // Slice 9 — open the hotspots modal so the merchant sees the new
+        // hotspot's editor immediately; previously the right-column tab
+        // switched to "hotspots".
+        setShowHotspotsModal(true);
         setToastMessage("Hotspot added");
         return;
       }
@@ -1120,7 +1129,7 @@ export default function Sdl3dEditorRoute() {
           ? (currentIdx <= 0 ? list.length - 1 : currentIdx - 1)
           : (currentIdx + 1) % list.length;
         setSelectedHotspotId(list[nextIdx].id);
-        setRightTab("hotspots");
+        setShowHotspotsModal(true);
         return;
       }
 
@@ -1203,7 +1212,10 @@ export default function Sdl3dEditorRoute() {
   const handlePreviewHotspotSelect = useCallback((id: string | null) => {
     setSelectedHotspotId(id);
     if (id) {
-      setRightTab("hotspots");
+      // Slice 9 hotspot UX rework — dot clicks open the full-screen
+      // hotspots modal with that hotspot selected instead of switching
+      // the right-column tab to a now-removed "hotspots" section.
+      setShowHotspotsModal(true);
     }
   }, []);
 
@@ -1536,7 +1548,9 @@ export default function Sdl3dEditorRoute() {
         setRightTab("viewer");
         break;
       case "hotspots":
-        setRightTab("hotspots");
+        // Slice 9 — Setup wizard's "Hotspots" step opens the full-screen
+        // hotspots modal instead of switching the right-column tab.
+        setShowHotspotsModal(true);
         break;
       case "publish":
         setRightTab("advanced");
@@ -1650,6 +1664,19 @@ export default function Sdl3dEditorRoute() {
           <div className="sdl-editor__topbar__right">
             {loaderData.selectedProduct ? (
               <>
+                {/* Slice 9 hotspot UX rework — primary entry into the
+                    new full-screen hotspots editor. Count badges the
+                    button so merchants can see at a glance how many
+                    hotspots are configured. */}
+                <Button
+                  size="slim"
+                  onClick={() => setShowHotspotsModal(true)}
+                  disabled={!loaderData.config.id}
+                >
+                  {`Edit hotspots (${
+                    viewerType === "IMAGE_360" ? hotspots360.length : hotspots.length
+                  })`}
+                </Button>
                 <Button
                   onClick={forceSave}
                   size="slim"
@@ -1874,89 +1901,12 @@ export default function Sdl3dEditorRoute() {
                   />
                 </InspectorSection>
 
-                <InspectorSection
-                  id="inspector-hotspots"
-                  title="Hotspots"
-                  open={rightTab === "hotspots"}
-                  onToggle={() => setRightTab(rightTab === "hotspots" ? "upload" : "hotspots")}
-                >
-                  <InlineStack align="space-between" blockAlign="center" wrap>
-                    <InlineStack gap="100" blockAlign="center">
-                      <Button
-                        size="slim"
-                        disabled={!canUndo}
-                        onClick={handleUndo}
-                        accessibilityLabel="Undo (Ctrl+Z)"
-                      >
-                        Undo
-                      </Button>
-                      <Button
-                        size="slim"
-                        disabled={!canRedo}
-                        onClick={handleRedo}
-                        accessibilityLabel="Redo (Ctrl+Shift+Z)"
-                      >
-                        Redo
-                      </Button>
-                    </InlineStack>
-                    {/* Slice 8 hotspots PR #2 — per-shop Simple/Advanced gate.
-                        Simple hides icon / style / focus orbit (3D) / frame
-                        range + numeric coords (360) / CTA + media slots.
-                        Stored values for advanced-only fields persist quietly
-                        when flipped back to simple. */}
-                    <Tooltip
-                      content="Advanced surfaces icon, style, focus camera, CTA, and (soon) animations + media slots."
-                    >
-                      <ButtonGroup variant="segmented">
-                        <Button
-                          size="slim"
-                          pressed={editorMode === "simple"}
-                          onClick={() => setEditorMode("simple")}
-                        >
-                          Simple
-                        </Button>
-                        <Button
-                          size="slim"
-                          pressed={editorMode === "advanced"}
-                          onClick={() => setEditorMode("advanced")}
-                        >
-                          Advanced
-                        </Button>
-                      </ButtonGroup>
-                    </Tooltip>
-                  </InlineStack>
-                  <Box paddingBlockStart="200">
-                    {viewerType === "IMAGE_360" ? (
-                      <Sdl3dHotspot360Editor
-                        hotspots={hotspots360}
-                        selectedHotspotId={selectedHotspotId}
-                        frameCount={loaderData.config.frameCount}
-                        currentFrame={currentFrame360}
-                        editorMode={editorMode}
-                        iconResolvedUrls={loaderData.iconResolvedUrls}
-                        onChange={setHotspots360}
-                        onSelectHotspot={handlePreviewHotspotSelect}
-                        onSaveAsPreset={handleSave360HotspotsAsPreset}
-                        onApplyPreset={() => setShowPresetBrowser(true)}
-                        onOpenIconBrowser={handleOpenIconBrowser}
-                        onOpenMediaImageBrowser={handleOpenMediaImageBrowser}
-                      />
-                    ) : (
-                      <Sdl3dHotspotEditor
-                        hotspots={hotspots}
-                        selectedHotspotId={selectedHotspotId}
-                        editorMode={editorMode}
-                        iconResolvedUrls={loaderData.iconResolvedUrls}
-                        onChange={setHotspots}
-                        onSelectHotspot={handlePreviewHotspotSelect}
-                        onSaveAsPreset={handleSaveHotspotsAsPreset}
-                        onApplyPreset={() => setShowPresetBrowser(true)}
-                        onOpenIconBrowser={handleOpenIconBrowser}
-                        onOpenMediaImageBrowser={handleOpenMediaImageBrowser}
-                      />
-                    )}
-                  </Box>
-                </InspectorSection>
+                {/* Slice 9 hotspot UX rework — the previous "Hotspots"
+                    InspectorSection was lifted into Sdl3dHotspotsModal
+                    (full-screen takeover). Open via dot click on the
+                    canvas, the H keyboard shortcut, or the "Edit hotspots"
+                    button below the canvas. The Modal owns Undo/Redo +
+                    Simple/Advanced toggle that used to live here. */}
 
                 <InspectorSection
                   id="inspector-publish"
@@ -2120,6 +2070,37 @@ export default function Sdl3dEditorRoute() {
             latestCapture={loaderData.latestCapture}
             onCompleted={() => revalidator.revalidate()}
             onOpenShopifyFilesBrowser={() => setShowSequenceBrowser(true)}
+          />
+          {/* Slice 9 hotspot UX rework — full-screen hotspots editor.
+              Preset modals (PresetBrowserModal, PresetApplyDedupModal)
+              and the inline Save-as-Preset dialog stay where they are
+              and stack on top of this one when invoked from the toolbar
+              inside it. */}
+          <Sdl3dHotspotsModal
+            open={showHotspotsModal}
+            onClose={() => setShowHotspotsModal(false)}
+            productLabel={loaderData.selectedProduct.title}
+            viewerType={viewerType}
+            selectedHotspotId={selectedHotspotId}
+            onSelectHotspot={setSelectedHotspotId}
+            editorMode={editorMode}
+            onChangeEditorMode={setEditorMode}
+            iconResolvedUrls={loaderData.iconResolvedUrls}
+            onOpenIconBrowser={handleOpenIconBrowser}
+            onOpenMediaImageBrowser={handleOpenMediaImageBrowser}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            onApplyPreset={() => setShowPresetBrowser(true)}
+            onSaveAsPreset3d={handleSaveHotspotsAsPreset}
+            onSaveAsPreset360={handleSave360HotspotsAsPreset}
+            hotspots3d={hotspots}
+            onChangeHotspots3d={setHotspots}
+            hotspots360={hotspots360}
+            onChangeHotspots360={setHotspots360}
+            frameCount={loaderData.config.frameCount}
+            currentFrame={currentFrame360}
           />
         </>
       )}

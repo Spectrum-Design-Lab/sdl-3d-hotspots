@@ -154,6 +154,29 @@ const ANIMATION_OPTIONS = HOTSPOT_ANIMATIONS.map((value) => ({
   value,
 }));
 
+/**
+ * Slice 9 hotspot UX rework — render modes.
+ *
+ * - "all"          render header + list + detail (current behavior, default;
+ *                  preserved for backward compat / fallback path).
+ * - "list-only"    render header + list only (no detail editor). The new
+ *                  Sdl3dHotspotsModal uses this in the left pane.
+ * - "detail-only"  render the detail editor for the selectedHotspotId only.
+ *                  The modal uses this in the right pane.
+ *
+ * `activeSection` gates which subsection renders inside detail-only mode:
+ * "all" shows every subsection (legacy), or pick one of the four to show
+ * only that group's fields. Lets the modal split the 15-field wall into
+ * sub-tabs without forking this component.
+ */
+export type HotspotEditorRenderMode = "all" | "list-only" | "detail-only";
+export type HotspotEditorActiveSection =
+  | "all"
+  | "content"
+  | "appearance"
+  | "layout"
+  | "behavior";
+
 export function Sdl3dHotspotEditor({
   hotspots,
   selectedHotspotId,
@@ -165,6 +188,9 @@ export function Sdl3dHotspotEditor({
   onApplyPreset,
   onOpenIconBrowser,
   onOpenMediaImageBrowser,
+  renderMode = "all",
+  activeSection = "all",
+  hideHeader = false,
 }: {
   hotspots: EditableHotspot[] | undefined;
   selectedHotspotId: string | null;
@@ -176,7 +202,17 @@ export function Sdl3dHotspotEditor({
   onApplyPreset?: () => void;
   onOpenIconBrowser?: (hotspotId: string) => void;
   onOpenMediaImageBrowser?: (hotspotId: string) => void;
+  renderMode?: HotspotEditorRenderMode;
+  activeSection?: HotspotEditorActiveSection;
+  /** Hide the "Hotspots" title + count + Add/Apply Preset buttons. Modal
+   *  callers set this to render their own header at the modal toolbar
+   *  level instead of stacking two action rows. */
+  hideHeader?: boolean;
 }) {
+  const showList = renderMode === "all" || renderMode === "list-only";
+  const showDetail = renderMode === "all" || renderMode === "detail-only";
+  const showSection = (s: Exclude<HotspotEditorActiveSection, "all">) =>
+    activeSection === "all" || activeSection === s;
   const isAdvanced = editorMode === "advanced";
   const safeHotspots = Array.isArray(hotspots) ? hotspots : [];
   const selectedIndex = safeHotspots.findIndex((h) => h.id === selectedHotspotId);
@@ -336,30 +372,33 @@ export function Sdl3dHotspotEditor({
   return (
     <>
     <BlockStack gap="300">
-      {/* Header: count + Add / Apply Preset */}
-      <InlineStack align="space-between" blockAlign="center" wrap={false}>
-        <BlockStack gap="050">
-          <Text as="h3" variant="headingSm">
-            Hotspots
-          </Text>
-          <Text as="p" tone="subdued" variant="bodySm">
-            {`${safeHotspots.length} hotspot${safeHotspots.length === 1 ? "" : "s"}`}
-          </Text>
-        </BlockStack>
-        <ButtonGroup>
-          {onApplyPreset ? (
-            <Button size="slim" onClick={onApplyPreset}>
-              Apply Preset
+      {/* Header: count + Add / Apply Preset. Modal callers hide this and
+          render their own header in the modal's toolbar. */}
+      {showList && !hideHeader ? (
+        <InlineStack align="space-between" blockAlign="center" wrap={false}>
+          <BlockStack gap="050">
+            <Text as="h3" variant="headingSm">
+              Hotspots
+            </Text>
+            <Text as="p" tone="subdued" variant="bodySm">
+              {`${safeHotspots.length} hotspot${safeHotspots.length === 1 ? "" : "s"}`}
+            </Text>
+          </BlockStack>
+          <ButtonGroup>
+            {onApplyPreset ? (
+              <Button size="slim" onClick={onApplyPreset}>
+                Apply Preset
+              </Button>
+            ) : null}
+            <Button size="slim" variant="primary" onClick={addHotspot}>
+              + Add
             </Button>
-          ) : null}
-          <Button size="slim" variant="primary" onClick={addHotspot}>
-            + Add
-          </Button>
-        </ButtonGroup>
-      </InlineStack>
+          </ButtonGroup>
+        </InlineStack>
+      ) : null}
 
       {/* Batch action bar */}
-      {checkedCount > 0 ? (
+      {showList && checkedCount > 0 ? (
         <Box
           padding="200"
           background="bg-surface-secondary"
@@ -402,11 +441,11 @@ export function Sdl3dHotspotEditor({
       ) : null}
 
       {/* Hotspot list (drag reorder — native HTML5 DnD, Polaris ships no equivalent) */}
-      {safeHotspots.length === 0 ? (
+      {showList && safeHotspots.length === 0 ? (
         <Text as="p" tone="subdued" variant="bodySm">
           No hotspots yet. Click <b>+ Add</b> or click on the model in Edit mode.
         </Text>
-      ) : (
+      ) : showList ? (
         <div className="sdl-hs-list">
           {safeHotspots.map((hotspot, index) => {
             const rowErrors = getHotspotFieldErrors(hotspot);
@@ -457,10 +496,10 @@ export function Sdl3dHotspotEditor({
             );
           })}
         </div>
-      )}
+      ) : null}
 
       {/* Detail editor */}
-      {selected ? (
+      {showDetail && selected ? (
         <BlockStack gap="300">
           <InlineStack align="space-between" blockAlign="center" wrap>
             <ButtonGroup>
@@ -494,6 +533,7 @@ export function Sdl3dHotspotEditor({
             />
           </InlineStack>
 
+          {showSection("content") ? (
           <Subsection label="Content">
             <TextField
               label="Title"
@@ -547,8 +587,9 @@ export function Sdl3dHotspotEditor({
               />
             ) : null}
           </Subsection>
+          ) : null}
 
-          {isAdvanced ? (
+          {isAdvanced && showSection("appearance") ? (
             <Subsection label="Appearance">
               <Select
                 label="Style"
@@ -578,6 +619,7 @@ export function Sdl3dHotspotEditor({
             </Subsection>
           ) : null}
 
+          {showSection("layout") ? (
           <Subsection label="Layout">
             <TextField
               label="Position"
@@ -614,8 +656,9 @@ export function Sdl3dHotspotEditor({
               />
             ) : null}
           </Subsection>
+          ) : null}
 
-          {isAdvanced ? (
+          {isAdvanced && showSection("behavior") ? (
             <Subsection label="Behavior">
               <TextField
                 label="CTA label"

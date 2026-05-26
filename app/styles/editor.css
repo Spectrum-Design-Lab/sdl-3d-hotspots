@@ -1429,3 +1429,224 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   background: var(--p-color-bg-surface-hover, rgba(0, 0, 0, 0.04));
 }
 
+
+/* ─────────────────────────────────────────────────────────────────────
+   Slice 9 hotspot UX rework — full-screen Hotspots editor modal.
+
+   Polaris Modal's `size="large"` caps at ~620px; this override pushes
+   the Sdl3dHotspotsModal to ~95vw / 92vh so the two-pane layout (list
+   rail + detail editor) has room to breathe. Scoped by the wrapper
+   class .sdl-hotspots-modal on the inner body so other modals are
+   unaffected.
+   ───────────────────────────────────────────────────────────────────── */
+
+/* Width override targets the parent .Polaris-Modal__Dialog when our
+   wrapper is rendered inside. We can't add a class to the Dialog itself
+   (Polaris doesn't expose one through props), so we use :has() to climb
+   from our known marker class to the Dialog wrapper. */
+.Polaris-Modal__Dialog:has(.sdl-hotspots-modal) {
+  max-width: min(1400px, 95vw);
+  width: 95vw;
+  max-height: 92vh;
+}
+
+.sdl-hotspots-modal {
+  display: flex;
+  flex-direction: column;
+  min-height: 70vh;
+  max-height: 84vh;
+}
+
+.sdl-hotspots-modal__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--p-space-300, 12px);
+  padding: var(--p-space-300, 12px) var(--p-space-400, 16px);
+  border-bottom: 1px solid var(--p-color-border, #e1e3e5);
+  flex-wrap: wrap;
+}
+
+.sdl-hotspots-modal__body {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  .sdl-hotspots-modal__body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sdl-hotspots-modal__list {
+  border-right: 1px solid var(--p-color-border, #e1e3e5);
+  overflow-y: auto;
+  padding: var(--p-space-300, 12px);
+  background: var(--p-color-bg-surface-secondary, #f6f6f7);
+}
+
+.sdl-hotspots-modal__detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.sdl-hotspots-modal__detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--p-space-300, 12px);
+  padding: 0 var(--p-space-400, 16px);
+  border-bottom: 1px solid var(--p-color-border, #e1e3e5);
+}
+
+/* Polaris Tabs reserves its own bottom border; the head row above
+   already draws one, so collapse Tabs' default to avoid double-line. */
+.sdl-hotspots-modal__detail-head .Polaris-Tabs {
+  border-bottom: 0;
+}
+
+.sdl-hotspots-modal__detail-body {
+  overflow-y: auto;
+  padding: var(--p-space-400, 16px);
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Live dot preview chip (top-right of the detail pane) ──
+   Pinned to the head row's right side. Small enough not to compete
+   with the field inputs but big enough to read the icon at a glance. */
+
+.sdl-preview-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--p-color-border, #e1e3e5);
+  border-radius: var(--p-border-radius-200, 8px);
+  background: var(--p-color-bg-surface, #ffffff);
+  flex-shrink: 0;
+  min-width: 84px;
+}
+
+.sdl-preview-chip__caption {
+  font-size: 11px;
+  color: var(--p-color-text-secondary, #6d7175);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sdl-preview-dot {
+  --sdl-preview-color: #3b82f6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--sdl-preview-color);
+  color: #fff;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 2px 6px rgba(0, 0, 0, 0.15);
+  transform-origin: 50% 50%;
+}
+
+.sdl-preview-dot__glyph {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  color: #fff;
+  fill: #fff;
+}
+
+.sdl-preview-dot__glyph svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+.sdl-preview-dot__glyph img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Style variants — narrowed to the visual difference (size/shape) that
+   shows on a single isolated dot. card / tooltip / panel all render the
+   default dot in this preview since they only diverge once a popup is
+   shown — and the chip intentionally doesn't render the popup. */
+.sdl-preview-dot--style-dot {
+  width: 18px;
+  height: 18px;
+}
+.sdl-preview-dot--style-icon-only {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--sdl-preview-color);
+}
+.sdl-preview-dot--style-icon-only .sdl-preview-dot__glyph {
+  color: var(--sdl-preview-color);
+  width: 24px;
+  height: 24px;
+}
+.sdl-preview-dot--style-badge {
+  width: auto;
+  min-width: 36px;
+  height: 22px;
+  border-radius: 11px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+/* Animation loops — ported from extensions/product-3d-viewer/assets/viewer.css
+   so the preview's motion matches what the storefront actually paints.
+   Wrapped in prefers-reduced-motion to respect the same accessibility
+   preference the storefront does. */
+@media (prefers-reduced-motion: no-preference) {
+  .sdl-preview-dot--anim-pulse {
+    animation: sdl-preview-anim-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes sdl-preview-anim-pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.18); }
+  }
+
+  .sdl-preview-dot--anim-bounce {
+    animation: sdl-preview-anim-bounce 1.4s ease-in-out infinite;
+  }
+  @keyframes sdl-preview-anim-bounce {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-5px); }
+  }
+
+  .sdl-preview-dot--anim-glow {
+    animation: sdl-preview-anim-glow 2s ease-in-out infinite;
+  }
+  @keyframes sdl-preview-anim-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+    50%      { box-shadow: 0 0 6px 4px rgba(255, 255, 255, 0.55); }
+  }
+
+  .sdl-preview-dot--anim-ripple {
+    animation: sdl-preview-anim-ripple 1.8s linear infinite;
+  }
+  @keyframes sdl-preview-anim-ripple {
+    0%   { box-shadow: 0 0 0 0 var(--sdl-preview-color); }
+    100% { box-shadow: 0 0 0 14px transparent; }
+  }
+
+  .sdl-preview-dot--anim-wiggle {
+    animation: sdl-preview-anim-wiggle 0.9s ease-in-out infinite;
+  }
+  @keyframes sdl-preview-anim-wiggle {
+    0%, 100% { transform: rotate(0deg); }
+    25%      { transform: rotate(-6deg); }
+    75%      { transform: rotate(6deg); }
+  }
+}

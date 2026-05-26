@@ -43,6 +43,21 @@ import {
 import { Sdl3dIconPicker } from "./Sdl3dIconPicker";
 import { Sdl3dHotspotMediaSlots } from "./Sdl3dHotspotMediaSlots";
 
+/** Slice 9 hotspot UX rework — see Sdl3dHotspotEditor.tsx for the
+ *  contract. The 360 editor exposes the same renderMode + activeSection
+ *  props. For detail-only mode the editor renders the per-hotspot
+ *  fields for `selectedHotspotId` (without the row wrapper / chevron),
+ *  so the modal can show only that section's subsection at a time.
+ *  The 360 editor has no Behavior section (no CTA), so "behavior" is
+ *  accepted but renders nothing. */
+export type Hotspot360EditorRenderMode = "all" | "list-only" | "detail-only";
+export type Hotspot360EditorActiveSection =
+  | "all"
+  | "content"
+  | "appearance"
+  | "layout"
+  | "behavior";
+
 interface Sdl3dHotspot360EditorProps {
   hotspots: Hotspot360[];
   selectedHotspotId: string | null;
@@ -56,6 +71,9 @@ interface Sdl3dHotspot360EditorProps {
   onApplyPreset?: () => void;
   onOpenIconBrowser?: (hotspotId: string) => void;
   onOpenMediaImageBrowser?: (hotspotId: string) => void;
+  renderMode?: Hotspot360EditorRenderMode;
+  activeSection?: Hotspot360EditorActiveSection;
+  hideHeader?: boolean;
 }
 
 function blankHotspot360(index: number, frameCount: number): Hotspot360 {
@@ -250,8 +268,15 @@ export function Sdl3dHotspot360Editor({
   onApplyPreset,
   onOpenIconBrowser,
   onOpenMediaImageBrowser,
+  renderMode = "all",
+  activeSection = "all",
+  hideHeader = false,
 }: Sdl3dHotspot360EditorProps) {
   const isAdvanced = editorMode === "advanced";
+  const showList = renderMode === "all" || renderMode === "list-only";
+  const showDetail = renderMode === "all" || renderMode === "detail-only";
+  const showSection = (s: Exclude<Hotspot360EditorActiveSection, "all">) =>
+    activeSection === "all" || activeSection === s;
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   // Slice 8 — confirmation modal for bulk delete. 360 editor has no
@@ -332,28 +357,37 @@ export function Sdl3dHotspot360Editor({
     });
   }
 
+  // Slice 9 rework — detail-only mode renders the per-hotspot fields for
+  // the selected hotspot directly, without the row wrapper / chevron.
+  const detailFocus = showDetail && !showList
+    ? hotspots.find((h) => h.id === selectedHotspotId) ?? null
+    : null;
+
   return (
     <>
     <BlockStack gap="300">
-      {/* Header: count + Apply Preset / Add */}
-      <InlineStack align="space-between" blockAlign="center" wrap={false}>
-        <Text as="p" tone="subdued" variant="bodySm">
-          {`${hotspots.length} hotspot${hotspots.length !== 1 ? "s" : ""}`}
-        </Text>
-        <ButtonGroup>
-          {onApplyPreset ? (
-            <Button size="slim" onClick={onApplyPreset}>
-              Apply Preset
+      {/* Header: count + Apply Preset / Add. Hidden when the modal renders
+          its own toolbar (hideHeader) or in detail-only mode. */}
+      {showList && !hideHeader ? (
+        <InlineStack align="space-between" blockAlign="center" wrap={false}>
+          <Text as="p" tone="subdued" variant="bodySm">
+            {`${hotspots.length} hotspot${hotspots.length !== 1 ? "s" : ""}`}
+          </Text>
+          <ButtonGroup>
+            {onApplyPreset ? (
+              <Button size="slim" onClick={onApplyPreset}>
+                Apply Preset
+              </Button>
+            ) : null}
+            <Button size="slim" variant="primary" onClick={addHotspot}>
+              + Add hotspot
             </Button>
-          ) : null}
-          <Button size="slim" variant="primary" onClick={addHotspot}>
-            + Add hotspot
-          </Button>
-        </ButtonGroup>
-      </InlineStack>
+          </ButtonGroup>
+        </InlineStack>
+      ) : null}
 
       {/* Batch actions bar */}
-      {checkedCount > 0 ? (
+      {showList && checkedCount > 0 ? (
         <Box
           padding="200"
           background="bg-surface-secondary"
@@ -395,12 +429,13 @@ export function Sdl3dHotspot360Editor({
         </Box>
       ) : null}
 
-      {hotspots.length === 0 ? (
+      {showList && hotspots.length === 0 ? (
         <Text as="p" tone="subdued" variant="bodySm" alignment="center">
           No hotspots yet. Click "Add hotspot" then click on the image to place it.
         </Text>
       ) : null}
 
+      {showList ? (
       <div className="sdl-hs-list">
         {hotspots.map((hotspot) => {
           const isSelected = hotspot.id === selectedHotspotId;
@@ -689,6 +724,194 @@ export function Sdl3dHotspot360Editor({
           );
         })}
       </div>
+      ) : null}
+
+      {/* Slice 9 detail-only mode — render the selected hotspot's fields
+          inline (no row, no chevron) with subsections gated by activeSection.
+          Used by the Sdl3dHotspotsModal's right pane. */}
+      {detailFocus ? (
+        <BlockStack gap="200">
+          {showSection("content") ? (
+            <Subsection label="Content">
+              <TextField
+                label="Title"
+                value={detailFocus.title}
+                onChange={(value) => updateHotspot(detailFocus.id, { title: value })}
+                autoComplete="off"
+              />
+              <TextField
+                label="Body"
+                value={detailFocus.body}
+                onChange={(value) => updateHotspot(detailFocus.id, { body: value })}
+                multiline={3}
+                autoComplete="off"
+              />
+              <BlockStack gap="100">
+                <Text as="span" variant="bodySm" fontWeight="medium">
+                  Color
+                </Text>
+                <input
+                  type="color"
+                  value={detailFocus.color || "#3b82f6"}
+                  onChange={(e) => updateHotspot(detailFocus.id, { color: e.target.value })}
+                  aria-label="Hotspot color"
+                  style={{
+                    width: 40,
+                    height: 36,
+                    border: "1px solid var(--p-color-border, #c9cccf)",
+                    borderRadius: "var(--p-border-radius-200, 8px)",
+                    cursor: "pointer",
+                    padding: 0,
+                    background: "transparent",
+                  }}
+                />
+              </BlockStack>
+              {isAdvanced ? (
+                <Sdl3dHotspotMediaSlots
+                  mediaImageUrl={detailFocus.mediaImageUrl ?? null}
+                  mediaImageResolvedUrl={
+                    detailFocus.mediaImageUrl && detailFocus.mediaImageUrl.startsWith("gid://")
+                      ? iconResolvedUrls?.[detailFocus.mediaImageUrl] ?? null
+                      : null
+                  }
+                  mediaVideoUrl={detailFocus.mediaVideoUrl ?? null}
+                  onChangeImage={(next) => updateHotspot(detailFocus.id, { mediaImageUrl: next })}
+                  onChangeVideo={(next) => updateHotspot(detailFocus.id, { mediaVideoUrl: next })}
+                  onPickImageFromShopifyFiles={() => onOpenMediaImageBrowser?.(detailFocus.id)}
+                />
+              ) : null}
+            </Subsection>
+          ) : null}
+
+          {isAdvanced && showSection("appearance") ? (
+            <Subsection label="Appearance">
+              <Select
+                label="Style"
+                options={STYLE_OPTIONS}
+                value={detailFocus.style || "card"}
+                onChange={(value) => updateHotspot(detailFocus.id, { style: value })}
+              />
+              <Sdl3dIconPicker
+                value={detailFocus.icon ?? null}
+                resolvedUrl={
+                  detailFocus.icon && detailFocus.icon.startsWith("gid://")
+                    ? iconResolvedUrls?.[detailFocus.icon] ?? null
+                    : null
+                }
+                onChange={(next) => updateHotspot(detailFocus.id, { icon: next })}
+                onPickFromShopifyFiles={() => onOpenIconBrowser?.(detailFocus.id)}
+              />
+              <Select
+                label="Animation"
+                options={ANIMATION_OPTIONS}
+                value={detailFocus.animation ?? "none"}
+                onChange={(value) =>
+                  updateHotspot(detailFocus.id, {
+                    animation: normalizeHotspotAnimation(value),
+                  })
+                }
+                helpText="Subtle loop on the storefront. Respects prefers-reduced-motion."
+              />
+            </Subsection>
+          ) : null}
+
+          {showSection("layout") ? (
+            <Subsection label="Layout">
+              {isAdvanced ? (
+                <InlineStack gap="200" wrap={false}>
+                  <Box width="100%">
+                    <FrameField
+                      label="Visible from frame"
+                      storedValue={detailFocus.visibleFrameStart}
+                      frameCount={frameCount}
+                      onCommit={(stored) =>
+                        updateHotspot(detailFocus.id, { visibleFrameStart: stored })
+                      }
+                    />
+                  </Box>
+                  <Box width="100%">
+                    <FrameField
+                      label="Visible to frame"
+                      storedValue={detailFocus.visibleFrameEnd}
+                      frameCount={frameCount}
+                      onCommit={(stored) =>
+                        updateHotspot(detailFocus.id, { visibleFrameEnd: stored })
+                      }
+                    />
+                  </Box>
+                </InlineStack>
+              ) : null}
+
+              <BlockStack gap="200">
+                <InlineStack align="space-between" blockAlign="center">
+                  <Text as="span" variant="bodyMd" fontWeight="semibold">
+                    Keyframes
+                  </Text>
+                  <Button
+                    size="slim"
+                    onClick={() => addKeyframe(detailFocus.id, currentFrame, 50, 50)}
+                  >
+                    {`+ Add at frame ${frameToDisplay(currentFrame)}`}
+                  </Button>
+                </InlineStack>
+                {detailFocus.keyframes.length === 0 ? (
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    No keyframes. Click on the image to place, or add manually.
+                  </Text>
+                ) : (
+                  <BlockStack gap="100">
+                    {isAdvanced ? (
+                      <Text as="p" tone="subdued" variant="bodySm">
+                        X / Y: 0 = top-left edge, 1000 = bottom-right edge.
+                      </Text>
+                    ) : null}
+                    {detailFocus.keyframes.map((kf) => (
+                      <InlineStack
+                        key={kf.frame}
+                        gap="200"
+                        blockAlign="center"
+                        align="space-between"
+                        wrap={false}
+                      >
+                        <Text as="span" variant="bodySm" fontWeight="semibold">
+                          {`Frame ${frameToDisplay(kf.frame)}`}
+                        </Text>
+                        <InlineStack gap="100" blockAlign="center" wrap={false}>
+                          {isAdvanced ? (
+                            <>
+                              <CoordField
+                                axis="X"
+                                storedValue={kf.x}
+                                onCommit={(x) =>
+                                  addKeyframe(detailFocus.id, kf.frame, x, kf.y)
+                                }
+                              />
+                              <CoordField
+                                axis="Y"
+                                storedValue={kf.y}
+                                onCommit={(y) =>
+                                  addKeyframe(detailFocus.id, kf.frame, kf.x, y)
+                                }
+                              />
+                            </>
+                          ) : null}
+                          <Button
+                            size="micro"
+                            variant="plain"
+                            onClick={() => removeKeyframe(detailFocus.id, kf.frame)}
+                          >
+                            Remove
+                          </Button>
+                        </InlineStack>
+                      </InlineStack>
+                    ))}
+                  </BlockStack>
+                )}
+              </BlockStack>
+            </Subsection>
+          ) : null}
+        </BlockStack>
+      ) : null}
     </BlockStack>
 
     {/* Slice 8 — bulk delete confirmation. 360 editor has no single
