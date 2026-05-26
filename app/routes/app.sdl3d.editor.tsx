@@ -1211,12 +1211,6 @@ export default function Sdl3dEditorRoute() {
   }
   const handlePreviewHotspotSelect = useCallback((id: string | null) => {
     setSelectedHotspotId(id);
-    if (id) {
-      // Slice 9 hotspot UX rework — dot clicks open the full-screen
-      // hotspots modal with that hotspot selected instead of switching
-      // the right-column tab to a now-removed "hotspots" section.
-      setShowHotspotsModal(true);
-    }
   }, []);
 
   const handleAddPreviewHotspot = useCallback((hotspot: EditableHotspot) => {
