@@ -47,21 +47,25 @@ import {
 import type { Hotspot360 } from "../lib/sdl3d-shared";
 import { Sdl3dHotspotPreviewChip } from "./Sdl3dHotspotPreviewChip";
 
-type SubTabId = "content" | "appearance" | "layout" | "behavior";
+type SubTabId = "content" | "appearance" | "behavior";
 
+// Slice 9 follow-up — Position / Frames intentionally NOT in the modal.
+// Editing where a hotspot sits is meaningless without seeing the model
+// underneath, so the layout section lives next to the canvas on the main
+// editor (Sdl3dEditorPreview's surrounding region). The modal stays
+// focused on text + visual styling fields that don't depend on the
+// canvas being visible.
 const SUB_TABS_3D: Array<{ id: SubTabId; content: string }> = [
   { id: "content", content: "Content" },
   { id: "appearance", content: "Appearance" },
-  { id: "layout", content: "Position" },
   { id: "behavior", content: "Link" },
 ];
 
 // 360 has no Behavior section (no CTA fields), so the tab strip drops
-// the "Link" tab. Order otherwise matches 3D for muscle memory.
+// the "Link" tab.
 const SUB_TABS_360: Array<{ id: SubTabId; content: string }> = [
   { id: "content", content: "Content" },
   { id: "appearance", content: "Appearance" },
-  { id: "layout", content: "Frames" },
 ];
 
 type Props = {

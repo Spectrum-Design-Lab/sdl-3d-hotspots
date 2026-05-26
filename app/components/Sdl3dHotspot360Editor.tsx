@@ -439,7 +439,13 @@ export function Sdl3dHotspot360Editor({
       <div className="sdl-hs-list">
         {hotspots.map((hotspot) => {
           const isSelected = hotspot.id === selectedHotspotId;
-          const isExpanded = expandedId === hotspot.id;
+          // Slice 9 — when the modal renders the list pane (list-only
+          // mode), the inline-expand body is suppressed and the detail
+          // pane on the right owns the editor. Without this gate the
+          // selected row would render the full detail inline AND the
+          // right pane would render it again — double display.
+          const allowInlineExpand = renderMode === "all";
+          const isExpanded = allowInlineExpand && expandedId === hotspot.id;
           const collapseId = `hs360-row-${hotspot.id}`;
 
           return (
@@ -450,7 +456,9 @@ export function Sdl3dHotspot360Editor({
               data-checked={checkedIds.has(hotspot.id) || undefined}
               onClick={() => {
                 onSelectHotspot(hotspot.id);
-                setExpandedId(isExpanded ? null : hotspot.id);
+                if (allowInlineExpand) {
+                  setExpandedId(isExpanded ? null : hotspot.id);
+                }
               }}
               style={{ flexDirection: "column", alignItems: "stretch" }}
             >
@@ -511,15 +519,23 @@ export function Sdl3dHotspot360Editor({
                   <Text as="span" tone="subdued" variant="bodySm">
                     {`${hotspot.keyframes.length} keyframe${hotspot.keyframes.length === 1 ? "" : "s"}`}
                   </Text>
-                  {/* Expand affordance — whole row is already clickable. */}
-                  <Icon
-                    source={isExpanded ? ChevronUpIcon : ChevronDownIcon}
-                    tone="subdued"
-                  />
+                  {/* Expand affordance — only shown when inline expand
+                      is allowed (renderMode="all"). In the modal's
+                      list-only mode the chevron disappears since
+                      tapping a row jumps to the detail pane on the right. */}
+                  {allowInlineExpand ? (
+                    <Icon
+                      source={isExpanded ? ChevronUpIcon : ChevronDownIcon}
+                      tone="subdued"
+                    />
+                  ) : null}
                 </div>
               </div>
 
-              {/* Expanded form */}
+              {/* Expanded form — suppressed entirely outside renderMode="all"
+                  so the modal's list-only pane never duplicates the detail
+                  rendered in the right pane. */}
+              {allowInlineExpand ? (
               <Collapsible
                 id={collapseId}
                 open={isExpanded}
@@ -720,6 +736,7 @@ export function Sdl3dHotspot360Editor({
                   </BlockStack>
                 </div>
               </Collapsible>
+              ) : null}
             </div>
           );
         })}
