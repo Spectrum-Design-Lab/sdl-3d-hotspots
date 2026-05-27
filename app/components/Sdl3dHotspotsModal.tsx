@@ -30,7 +30,6 @@ import {
   Box,
   Button,
   ButtonGroup,
-  InlineStack,
   Modal,
   Tabs,
   Text,
@@ -160,6 +159,19 @@ export function Sdl3dHotspotsModal({
   // hotspots — the 360 type has no ctaLabel / ctaUrl, so they stay null
   // for that path and the CTA section in the preview component just
   // doesn't render.
+  // Resolve a `gid://shopify/...` reference to its public preview URL
+  // via the iconResolvedUrls map (which the loader populates for every
+  // gid currently in use across icons + media slots). Storefront does
+  // this at publish time; the in-modal preview needs it client-side so
+  // `<img src="gid://...">` doesn't fail silently.
+  const resolveGidOrUrl = (value: string | null | undefined): string | null => {
+    if (!value) return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith("gid://")) return iconResolvedUrls[trimmed] ?? null;
+    return trimmed;
+  };
+
   const selectedForStorefrontPreview = useMemo(() => {
     if (is360) {
       const h = hotspots360.find((x) => x.id === selectedHotspotId);
@@ -167,7 +179,7 @@ export function Sdl3dHotspotsModal({
       return {
         title: h.title ?? null,
         body: h.body ?? null,
-        mediaImageUrl: h.mediaImageUrl ?? null,
+        mediaImageUrl: resolveGidOrUrl(h.mediaImageUrl),
         mediaVideoUrl: h.mediaVideoUrl ?? null,
         ctaLabel: null as string | null,
         ctaUrl: null as string | null,
@@ -179,15 +191,16 @@ export function Sdl3dHotspotsModal({
     return {
       title: h.title ?? null,
       body: h.body ?? null,
-      mediaImageUrl: h.mediaImageUrl ?? null,
+      mediaImageUrl: resolveGidOrUrl(h.mediaImageUrl),
       mediaVideoUrl: h.mediaVideoUrl ?? null,
       ctaLabel: h.ctaLabel ?? null,
       ctaUrl: h.ctaUrl ?? null,
       color: h.color ?? null,
     };
-  }, [is360, hotspots3d, hotspots360, selectedHotspotId]);
-
-  const hotspotCount = is360 ? hotspots360.length : hotspots3d.length;
+    // resolveGidOrUrl reads iconResolvedUrls, so changes to it must
+    // refresh the memo — list it in deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [is360, hotspots3d, hotspots360, selectedHotspotId, iconResolvedUrls]);
 
   return (
     <Modal
@@ -202,25 +215,11 @@ export function Sdl3dHotspotsModal({
     >
       <Modal.Section flush>
         <div className="sdl-hotspots-modal">
-          {/* Toolbar — global hotspot ops + mode toggle. */}
-          <div className="sdl-hotspots-modal__toolbar">
-            <InlineStack gap="200" blockAlign="center" wrap>
-              <Text as="span" variant="bodySm" tone="subdued">
-                {`${hotspotCount} hotspot${hotspotCount === 1 ? "" : "s"}`}
-              </Text>
-              <ButtonGroup>
-                <Button size="slim" onClick={onApplyPreset}>
-                  Apply Preset
-                </Button>
-                <Button size="slim" onClick={onUndo} disabled={!canUndo}>
-                  Undo
-                </Button>
-                <Button size="slim" onClick={onRedo} disabled={!canRedo}>
-                  Redo
-                </Button>
-              </ButtonGroup>
-            </InlineStack>
-          </div>
+          {/* Toolbar removed 2026-05-27 — hotspot count was redundant
+              with the list rail, and Apply Preset / Undo / Redo were
+              top-bar chrome eating vertical space the merchant wanted
+              for fields. Those three controls live in the bottom bar
+              now (see `__bottom` below). */}
 
           {/* Two-pane body. */}
           <div className="sdl-hotspots-modal__body">
@@ -351,6 +350,23 @@ export function Sdl3dHotspotsModal({
                 </>
               )}
             </section>
+          </div>
+
+          {/* Bottom action bar — Apply Preset / Undo / Redo. Locked at
+              the bottom so it never scrolls away regardless of which
+              sub-tab is open. */}
+          <div className="sdl-hotspots-modal__bottom">
+            <ButtonGroup>
+              <Button size="slim" onClick={onApplyPreset}>
+                Apply Preset
+              </Button>
+              <Button size="slim" onClick={onUndo} disabled={!canUndo}>
+                Undo
+              </Button>
+              <Button size="slim" onClick={onRedo} disabled={!canRedo}>
+                Redo
+              </Button>
+            </ButtonGroup>
           </div>
         </div>
       </Modal.Section>

@@ -1213,6 +1213,13 @@ export default function Sdl3dEditorRoute() {
       setMediaImageBrowserHotspotId(null);
       return;
     }
+    // Same optimistic-resolve pattern as handleIconBrowserSelect — caches
+    // the just-picked file's previewUrl so the Preview sub-tab renders
+    // the image immediately instead of waiting for loader revalidation.
+    const file = allPosterFiles.find((f) => f.id === gid);
+    if (file?.previewUrl) {
+      setOptimisticIconUrls((prev) => ({ ...prev, [gid]: file.previewUrl! }));
+    }
     if (viewerType === "IMAGE_360") {
       setHotspots360((current) =>
         current.map((h) =>
