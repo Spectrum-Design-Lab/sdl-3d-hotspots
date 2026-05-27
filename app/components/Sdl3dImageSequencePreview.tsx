@@ -402,7 +402,21 @@ export function Sdl3dImageSequencePreview({
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (!isDraggingHotspot) onSelectHotspot?.(hotspot.id);
+                  if (isDraggingHotspot) return;
+                  onSelectHotspot?.(hotspot.id);
+                  // Click-to-pick-pos: jump the playhead to the hotspot's
+                  // first existing keyframe (lowest frame) and open the
+                  // floating pos editor on it. If there are no keyframes
+                  // yet, fall through and let the merchant use the "+"
+                  // affordance on the timeline.
+                  if (hotspot.keyframes.length > 0) {
+                    const firstKf = hotspot.keyframes
+                      .slice()
+                      .sort((a, b) => a.frame - b.frame)[0];
+                    setCurrentFrame(firstKf.frame);
+                    setAutoRotate(false);
+                    setEditingKeyframeFrame(firstKf.frame);
+                  }
                 }}
               >
                 {(() => {
@@ -605,6 +619,9 @@ function Sdl3d360Timeline({
   // render two bands (start → lastIndex AND 0 → end). When equal, the
   // hotspot is visible on a single frame — render a tiny 1-frame stripe.
   const bands: Array<{ leftPct: number; widthPct: number }> = [];
+  // Out-of-range bands (red) — the inverse of the visible range, so the
+  // merchant sees at a glance which frames will NOT render the hotspot.
+  const outOfRangeBands: Array<{ leftPct: number; widthPct: number }> = [];
   if (selectedHotspot) {
     const start = Math.max(0, Math.min(lastIndex, selectedHotspot.visibleFrameStart));
     const end = Math.max(0, Math.min(lastIndex, selectedHotspot.visibleFrameEnd));
@@ -613,9 +630,25 @@ function Sdl3d360Timeline({
         leftPct: frameToPct(start),
         widthPct: frameToPct(end) - frameToPct(start),
       });
+      // Out-of-range = [0, start) ∪ (end, lastIndex].
+      if (start > 0) {
+        outOfRangeBands.push({ leftPct: 0, widthPct: frameToPct(start) });
+      }
+      if (end < lastIndex) {
+        outOfRangeBands.push({
+          leftPct: frameToPct(end),
+          widthPct: 100 - frameToPct(end),
+        });
+      }
     } else {
+      // Wrap-around: visible = [start, lastIndex] ∪ [0, end].
+      // Out-of-range is the gap in the middle: (end, start).
       bands.push({ leftPct: frameToPct(start), widthPct: 100 - frameToPct(start) });
       bands.push({ leftPct: 0, widthPct: frameToPct(end) });
+      outOfRangeBands.push({
+        leftPct: frameToPct(end),
+        widthPct: frameToPct(start) - frameToPct(end),
+      });
     }
   }
 
@@ -632,6 +665,14 @@ function Sdl3d360Timeline({
         onPointerCancel={handleTrackPointerUp}
         role="presentation"
       >
+        {outOfRangeBands.map((b, i) => (
+          <div
+            key={`oor-${i}`}
+            className="sdl-360-timeline__band sdl-360-timeline__band--out"
+            style={{ left: `${b.leftPct}%`, width: `${b.widthPct}%` }}
+            aria-hidden
+          />
+        ))}
         {bands.map((b, i) => (
           <div
             key={`band-${i}`}

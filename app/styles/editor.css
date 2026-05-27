@@ -494,6 +494,7 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   display: grid;
   gap: var(--p-space-150, 6px);
   max-height: 220px;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 2px;
 }
@@ -1112,6 +1113,13 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   border-radius: 7px;
 }
 
+/* Out-of-range band — red. Painted UNDER the green band(s) so the
+   timeline reads as "frames where the selected hotspot will NOT show
+   up", helping the merchant catch a too-narrow visibility range. */
+.sdl-360-timeline__band--out {
+  background: rgba(239, 68, 68, 0.45);
+}
+
 /* Keyframe dot — sits on top of the band/track. Hover/focus enlarges
    so it's tappable. translateX(-50%) centers the dot on its frame. */
 .sdl-360-timeline__keyframe {
@@ -1189,6 +1197,15 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
 .sdl-360-hotspot:hover .sdl-360-hotspot__dot,
 .sdl-360-hotspot--active .sdl-360-hotspot__dot {
   transform: scale(1.2);
+}
+
+/* Selected hotspot — admin colours the dot orange so it stands out from
+   the merchant's chosen brand colour. Matches the cue we give in the 3D
+   preview (orange drop-shadow). The storefront keeps the hotspot's own
+   colour; this orange override is admin-only. */
+.sdl-360-hotspot--active .sdl-360-hotspot__dot {
+  background: #f97316;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.35), 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
 .sdl-360-hotspot__card {
@@ -1567,9 +1584,25 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
 
 .sdl-hotspots-modal__list {
   border-right: 1px solid var(--p-color-border, #e1e3e5);
+  /* Explicit overflow-x: hidden — `overflow-y: auto` alone resolves to
+     `auto` on BOTH axes per CSS spec (visible+non-visible coerces the
+     visible one to auto), which surfaced as a phantom horizontal scroll
+     bar in the rail. We never want horizontal scroll here; rows shrink
+     and titles truncate via `text-overflow: ellipsis` instead. */
+  overflow-x: hidden;
   overflow-y: auto;
   padding: var(--p-space-300, 12px);
   background: var(--p-color-bg-surface-secondary, #f6f6f7);
+}
+
+/* The inner `.sdl-hs-list` ships with `max-height: 220px` for its main
+   use (right-column accordion outside the modal). Inside the modal that
+   double-scrolls (rail scrollbar + nested list scrollbar). Override
+   here so the modal rail is the single scroll container — vertical bar
+   only appears when the list truly overflows the modal height. */
+.sdl-hotspots-modal__list .sdl-hs-list {
+  max-height: none;
+  overflow: visible;
 }
 
 .sdl-hotspots-modal__detail {

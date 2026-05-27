@@ -177,7 +177,10 @@ export function Sdl3dEditorPreview({
         if (hotspot.id === selectedHotspotId) {
           node.classList.add("is-active");
           node.style.zIndex = "2";
-          node.style.filter = "drop-shadow(0 0 14px rgba(59,130,246,0.55))";
+          // Orange selection cue — matches the 360 admin dot override so
+          // selection is consistent across both viewer modes.
+          node.style.filter = "drop-shadow(0 0 14px rgba(249,115,22,0.65))";
+          node.style.setProperty("--sdl3d-hotspot-color", "#f97316");
         }
 
         modelViewer.appendChild(node);

@@ -268,7 +268,12 @@ import { iconHtml, mediaHtml } from "./media";
     });
     vp.addEventListener("pointermove", function (e) {
       if (!dragging) return;
-      const target = startFrame + Math.round((e.clientX - startX) / (vp.clientWidth || 600) * fc);
+      // Drag direction: dragging RIGHT spins the object so the merchant
+      // sees the LEFT side of the product come around — i.e. the camera
+      // moves left relative to the object. Subtract the pixel delta so
+      // the frame index goes BACKWARD as the cursor moves right. (Felt
+      // backwards before; merchant feedback 2026-05-27.)
+      const target = startFrame - Math.round((e.clientX - startX) / (vp.clientWidth || 600) * fc);
       if (pendingFrame !== null) { pendingFrame = target; return; }
       pendingFrame = target;
       requestAnimationFrame(function () {
