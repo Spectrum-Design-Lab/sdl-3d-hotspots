@@ -242,6 +242,10 @@ model Asset {
   sizeBytes        BigInt?
   mimeType         String?
   folderId         String?
+  // Slice 9 follow-up — bucket key recorded for icons uploaded to the
+  // merchant's CDN (storageMode="MERCHANT_BUCKET", kind="ICON") so the
+  // delete path can remove the object without URL-parsing.
+  bucketKey        String?
   createdAt        DateTime @default(now())
 
   shop   Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)

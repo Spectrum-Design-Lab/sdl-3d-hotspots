@@ -58,6 +58,22 @@ export function processedFramesKeyPrefix(
   return `${shopId}/captures/${folderOrId}/frames`;
 }
 
+/**
+ * Bucket key for an icon uploaded to the merchant's CDN icon library.
+ * Keyed by shop + assetId so collisions are impossible even if the
+ * merchant uploads two files with the same name. We don't strip the
+ * extension — Content-Type sniffing on the storefront prefers a real
+ * extension. `safeFilename` should already be slugified (lowercase,
+ * a-z0-9_-, max ~64 chars) by the caller.
+ */
+export function iconLibraryKey(
+  shopId: string,
+  assetId: string,
+  safeFilename: string,
+): string {
+  return `${shopId}/icons/${assetId}-${safeFilename}`;
+}
+
 /** Maximum length of the merchant-supplied folder name. Mirrors the
  *  bucket-key sanity limit and keeps the URL within typical CDN length
  *  caps when combined with the shopId + frames prefix. */

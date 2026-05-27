@@ -3,6 +3,7 @@ import {
   HeadBucketCommand,
   GetObjectCommand,
   PutObjectCommand,
+  DeleteObjectCommand,
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -84,6 +85,7 @@ export interface StorageBackend {
     body: Buffer | Uint8Array | string,
     contentTypeOrOptions?: string | PutObjectOptions,
   ): Promise<void>;
+  deleteObject(key: string): Promise<void>;
   listObjects(prefix: string, continuationToken?: string): Promise<ListObjectsResult>;
 }
 
@@ -159,6 +161,10 @@ export class S3CompatibleBackend implements StorageBackend {
         CacheControl: opts.cacheControl,
       }),
     );
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 
   async listObjects(prefix: string, continuationToken?: string): Promise<ListObjectsResult> {
