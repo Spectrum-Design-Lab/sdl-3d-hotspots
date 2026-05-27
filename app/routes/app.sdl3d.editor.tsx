@@ -1985,7 +1985,7 @@ export default function Sdl3dEditorRoute() {
                           Danger zone
                         </Text>
                         <Text as="p" tone="subdued" variant="bodySm">
-                          Removes this product's config, hotspots, and capture history. Metafields are kept so you can recover by pulling from metafield later.
+                          Removes this product&apos;s config, hotspots, and capture history. Metafields are kept so you can recover by pulling from metafield later.
                         </Text>
                         <InlineStack>
                           <Button
@@ -2221,6 +2221,8 @@ export default function Sdl3dEditorRoute() {
               value={presetSaveName}
               onChange={setPresetSaveName}
               placeholder="My hotspot preset"
+              // Modal opens for naming — focus on mount. Intentional.
+              // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
               autoComplete="off"
             />

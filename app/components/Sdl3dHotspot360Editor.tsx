@@ -434,7 +434,7 @@ export function Sdl3dHotspot360Editor({
 
       {showList && hotspots.length === 0 ? (
         <Text as="p" tone="subdued" variant="bodySm" alignment="center">
-          No hotspots yet. Click "Add hotspot" then click on the image to place it.
+          No hotspots yet. Click &quot;Add hotspot&quot; then click on the image to place it.
         </Text>
       ) : null}
 
@@ -452,6 +452,12 @@ export function Sdl3dHotspot360Editor({
           const collapseId = `hs360-row-${hotspot.id}`;
 
           return (
+            // Row click selects + (in 'all' mode) expands. Row stays a
+            // div because it contains nested interactive controls
+            // (checkbox, chevron, badges) — making it a <button> would
+            // forbid those by HTML spec. Keyboard activation happens
+            // via the nested controls.
+            // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
             <div
               key={hotspot.id}
               className="sdl-hs-row"
@@ -545,7 +551,10 @@ export function Sdl3dHotspot360Editor({
                 transition={{ duration: "150ms", timingFunction: "ease-in-out" }}
               >
                 {/* Native div so we can stopPropagation — Polaris Box has no
-                    onClick. Padding via inline style to match Box's "300" token. */}
+                    onClick. Padding via inline style to match Box's "300" token.
+                    Only purpose is event containment; no merchant-visible
+                    interaction, so no keyboard handler needed. */}
+                {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
                 <div
                   onClick={(e) => e.stopPropagation()}
                   style={{ paddingTop: "var(--p-space-300, 12px)" }}

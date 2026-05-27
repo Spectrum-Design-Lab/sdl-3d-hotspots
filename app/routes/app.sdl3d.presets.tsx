@@ -237,7 +237,7 @@ export default function PresetsRoute() {
                     image=""
                   >
                     <Text as="p">
-                      To create a preset, open the Editor for any product, select hotspots with the checkboxes, then click "Save as Preset". Saved presets appear here for reuse.
+                      To create a preset, open the Editor for any product, select hotspots with the checkboxes, then click &quot;Save as Preset&quot;. Saved presets appear here for reuse.
                     </Text>
                   </EmptyState>
                 </Box>
@@ -424,6 +424,8 @@ function PresetResourceRow({
                     value={renameValue}
                     onChange={onRenameValueChange}
                     autoComplete="off"
+                    // Inline rename input — focus on reveal. Intentional.
+                    // eslint-disable-next-line jsx-a11y/no-autofocus
                     autoFocus
                   />
                 </Box>

@@ -9,7 +9,7 @@
  * when a deliberate feature lands; failing means a contributor should
  * confirm the growth is wanted before bumping the budget.
  */
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { resolve } from "node:path";
 
 const ASSETS_DIR = "extensions/product-3d-viewer/assets";

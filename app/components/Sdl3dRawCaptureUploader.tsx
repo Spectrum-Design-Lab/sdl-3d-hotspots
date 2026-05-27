@@ -697,6 +697,9 @@ export function Sdl3dRawCaptureUploader({
           multiple
           // @ts-expect-error — webkitdirectory not in HTMLInputElement TS types
           webkitdirectory=""
+          // Non-standard but Firefox/Safari historically accepted it
+          // alongside webkitdirectory for folder picker support.
+          // eslint-disable-next-line react/no-unknown-property
           directory=""
           style={{ display: "none" }}
           onChange={(e) => {

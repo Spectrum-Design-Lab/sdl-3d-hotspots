@@ -67,6 +67,10 @@ export async function createFolder(shopId: string, name: string): Promise<{ id: 
   let finalName = name.trim() || "Untitled Folder";
   let attempt = 0;
 
+  // Retry-on-collision loop — exits via explicit return (success) or
+  // throw (non-unique-constraint failure). Constant condition is the
+  // intent.
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     try {
       const folder = await prisma.folder.create({

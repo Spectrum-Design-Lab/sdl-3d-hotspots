@@ -34,7 +34,7 @@ export function tokenizeBody(body: string | null | undefined): Set<string> {
   if (!body) return new Set();
   const tokens = body
     .toLowerCase()
-    .split(/[\s,.;:!?()\[\]{}"'`\-–—/\\]+/u)
+    .split(/[\s,.;:!?()[\]{}"'`\-–—/\\]+/u)
     .filter((t) => t.length >= 2);
   return new Set(tokens);
 }

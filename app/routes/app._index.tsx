@@ -1105,7 +1105,7 @@ function Dashboard({ data }: { data: DashData }) {
               this app. Their hotspots and capture history will be deleted.
             </Text>
             <Text as="p" tone="subdued" variant="bodySm">
-              Published metafields on Shopify aren't touched — if a config was
+              Published metafields on Shopify aren&apos;t touched — if a config was
               published before its product was deleted, the metafield data
               still lives on Shopify.
             </Text>
@@ -1143,7 +1143,7 @@ function Dashboard({ data }: { data: DashData }) {
           {storageModalConfig ? (
             <BlockStack gap="300">
               <Text as="p" tone="subdued" variant="bodySm">
-                Where this product's captured frames upload to. The
+                Where this product&apos;s captured frames upload to. The
                 shop default applies unless you set a product-level
                 override here.
               </Text>

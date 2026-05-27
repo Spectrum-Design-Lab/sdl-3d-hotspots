@@ -219,6 +219,9 @@ export async function listFrameBearingFolders(
   let pages = 0;
   let truncated = false;
 
+  // Pagination loop — exits when no continuation token OR maxPages
+  // hit. Constant condition is the intent.
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     const page = await backend.listObjects(prefix, token);
     pages += 1;

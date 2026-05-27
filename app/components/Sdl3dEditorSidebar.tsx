@@ -115,7 +115,7 @@ export function Sdl3dEditorSidebar({
           action={undefined}
         >
           <Text as="p">
-            Use the "Browse product" button in the top bar to choose which product to attach a 3D viewer to.
+            Use the &quot;Browse product&quot; button in the top bar to choose which product to attach a 3D viewer to.
           </Text>
         </EmptyState>
       </Card>

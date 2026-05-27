@@ -457,6 +457,12 @@ export function Sdl3dHotspotEditor({
             const isChecked = checkedIds.has(hotspot.id);
 
             return (
+              // Row click selects the hotspot. Row stays a div because
+              // it contains nested interactive controls (checkbox, drag
+              // handle, chevron) — converting to <button> would forbid
+              // those by HTML spec. Nested controls handle keyboard
+              // a11y.
+              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
               <div
                 key={hotspot.id}
                 className="sdl-hs-row"

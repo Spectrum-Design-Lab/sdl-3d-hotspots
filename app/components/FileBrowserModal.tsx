@@ -635,6 +635,9 @@ export function FileBrowserModal({
                       onChange={setNewFolderName}
                       placeholder="Folder name…"
                       autoComplete="off"
+                      // Inline create-folder input — focus on reveal so
+                      // the merchant can type immediately. Intentional.
+                      // eslint-disable-next-line jsx-a11y/no-autofocus
                       autoFocus
                     />
                   </Box>
@@ -995,6 +998,8 @@ function FolderTile({
               value={renameValue}
               onChange={onChangeRenameValue}
               autoComplete="off"
+              // Inline rename input — focus on reveal. Intentional.
+              // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
               onBlur={() => { /* keep editing on blur — explicit Save/Cancel */ }}
             />

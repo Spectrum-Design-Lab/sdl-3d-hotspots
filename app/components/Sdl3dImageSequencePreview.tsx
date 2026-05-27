@@ -336,6 +336,13 @@ export function Sdl3dImageSequencePreview({
 
   return (
     <div className="sdl-360-preview" style={{ background: backgroundColor }}>
+      {/* 360 viewport — pointer + click handlers drive drag-to-rotate
+          and click-to-place. A canvas isn't keyboard-navigable in this
+          UX; merchants interact via mouse/touch + the timeline scrubber
+          (which has its own keyboard handler). Disable the a11y rules
+          for the viewport div itself; nested interactive elements
+          handle their own focus. */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div
         ref={containerRef}
         className={`sdl-360-preview__viewport ${isDragging ? "sdl-360-preview__viewport--dragging" : ""} ${captureMode === "placeHotspot" ? "sdl-360-preview__viewport--placing" : ""} ${isDraggingHotspot ? "sdl-360-preview__viewport--hotspot-drag" : ""}`}

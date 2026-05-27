@@ -46,10 +46,9 @@ import {
   Toast,
 } from "@shopify/polaris";
 
-import shopify from "../shopify.server";
+import shopify, { apiVersion } from "../shopify.server";
 import { getSdl3dDefinitions } from "../lib/sdl3d-metafields.server";
 import { ensureShop } from "../lib/sdl3d-graphql.server";
-import { apiVersion } from "../shopify.server";
 import prisma from "../db.server";
 
 export async function loader({ request }: { request: Request }) {
@@ -330,7 +329,7 @@ export default function Sdl3dSettingsRoute() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">Default viewer background</Text>
                 <Text as="p" tone="subdued">
-                  Applied to every product's storefront viewer unless that product overrides it in the editor. Leave blank to fall back to the built-in dark navy ({"#0b1020"}). Changes apply to new publishes; re-publish older products to refresh them.
+                  Applied to every product&apos;s storefront viewer unless that product overrides it in the editor. Leave blank to fall back to the built-in dark navy ({"#0b1020"}). Changes apply to new publishes; re-publish older products to refresh them.
                 </Text>
                 <InlineStack gap="200" blockAlign="end" wrap={false}>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -547,7 +546,7 @@ export default function Sdl3dSettingsRoute() {
                       image=""
                     >
                       <Text as="p">
-                        SDL 3D metafield definitions haven't been created in this shop yet. Run setup above to create them.
+                        SDL 3D metafield definitions haven&apos;t been created in this shop yet. Run setup above to create them.
                       </Text>
                     </EmptyState>
                   )}
@@ -614,7 +613,7 @@ export default function Sdl3dSettingsRoute() {
                 ))}
               </List>
               <Text as="p" variant="bodySm" tone="subdued">
-                Successful products were republished with the current shop defaults. You can re-open the failed products' editors and publish them individually to retry.
+                Successful products were republished with the current shop defaults. You can re-open the failed products&apos; editors and publish them individually to retry.
               </Text>
             </BlockStack>
           ) : (
