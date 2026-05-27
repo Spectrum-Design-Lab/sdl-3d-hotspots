@@ -99,6 +99,16 @@ async function handleCreate(shop: { id: string }, formData: FormData) {
   const hotspotsJson = String(formData.get("hotspotsJson") || "[]");
   const hotspotsJson360 = String(formData.get("hotspotsJson360") || "") || null;
 
+  // Derive viewerType from which payload actually has hotspots — the
+  // editor sends `hotspotsJson` regardless (often "[]" for a 360
+  // product) and only sets `hotspotsJson360` when 360 hotspots exist.
+  // Without this, every preset defaulted to MODEL_3D, then the Presets
+  // page's view/edit picked the empty 3D column and showed zero rows
+  // even when the count badge said otherwise.
+  const has360 = countJsonItems(hotspotsJson360) > 0;
+  const has3d = countJsonItems(hotspotsJson) > 0;
+  const viewerType = has360 && !has3d ? "IMAGE_360" : "MODEL_3D";
+
   const existing = await prisma.preset.findUnique({
     where: { shopId_name: { shopId: shop.id, name } },
   });
@@ -107,6 +117,7 @@ async function handleCreate(shop: { id: string }, formData: FormData) {
     await prisma.preset.update({
       where: { id: existing.id },
       data: {
+        viewerType,
         hotspotsJson,
         hotspotsJson360,
       },
@@ -118,12 +129,23 @@ async function handleCreate(shop: { id: string }, formData: FormData) {
     data: {
       shopId: shop.id,
       name,
+      viewerType,
       viewerSettingsJson: "{}",
       hotspotsJson,
       hotspotsJson360,
     },
   });
   return ok(`Preset "${name}" saved.`);
+}
+
+function countJsonItems(json: string | null): number {
+  if (!json) return 0;
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
 }
 
 async function handleDelete(shop: { id: string }, formData: FormData) {

@@ -155,12 +155,16 @@ export default function PresetsRoute() {
 
   const presetData: PresetRow[] = useMemo(() => {
     return presets.map((p) => {
-      const viewerType = normalizePresetViewerType(p.viewerType);
+      const persistedType = normalizePresetViewerType(p.viewerType);
       const count3d = parseHotspotCount(p.hotspotsJson);
       const count360 = p.hotspotsJson360 ? parseHotspotCount(p.hotspotsJson360) : 0;
-      // Bug fix (Slice 8 PR #3) — sample colors from the array that
-      // actually has content. Old code only looked at hotspotsJson, so
-      // 360-only presets rendered with no color dots.
+      // Effective viewer type: trust the persisted column when its
+      // matching array has content, otherwise fall back to whichever
+      // array actually has hotspots. Covers legacy presets saved
+      // before saveAsPreset set viewerType — they were all stamped
+      // MODEL_3D, so 360-only presets rendered empty.
+      const viewerType: PresetViewerType =
+        count360 > 0 && count3d === 0 ? "IMAGE_360" : persistedType;
       const colors = viewerType === "IMAGE_360" && p.hotspotsJson360
         ? parseHotspotColors(p.hotspotsJson360)
         : parseHotspotColors(p.hotspotsJson);
