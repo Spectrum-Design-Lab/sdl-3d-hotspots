@@ -310,16 +310,14 @@ export function Sdl3dImageSequencePreview({
   const selectedTimelineHotspot =
     hotspots.find((h) => h.id === selectedHotspotId) ?? null;
 
-  // Close the floating keyframe editor whenever the selection changes
-  // (e.g. merchant clicked a different hotspot on the canvas) so it
-  // doesn't stale-display a previous hotspot's keyframe.
-  useEffect(() => {
-    setEditingKeyframeFrame(null);
-  }, [selectedHotspotId]);
-
   // Resolve the keyframe being edited so we can render its X/Y in the
   // editor. Null when the editor is closed OR when the frame number no
-  // longer exists on the hotspot (e.g. just deleted).
+  // longer exists on the hotspot (e.g. just deleted, or merchant
+  // clicked a different hotspot that doesn't have a keyframe at that
+  // frame). The lookup itself self-protects against staleness — no
+  // separate "clear on selection change" effect needed (and the effect
+  // was racing the onClick that wanted to OPEN the editor, costing us
+  // a click).
   const editingKeyframe =
     editingKeyframeFrame !== null && selectedTimelineHotspot
       ? selectedTimelineHotspot.keyframes.find((k) => k.frame === editingKeyframeFrame) ?? null
@@ -357,6 +355,17 @@ export function Sdl3dImageSequencePreview({
           }
         }}
         onClick={handleClick}
+        onContextMenu={(e) => {
+          // Right-click in the viewer deselects the current hotspot and
+          // closes the floating pos editor. Suppresses the native menu
+          // since the merchant is clearly using right-click as a
+          // dismiss gesture, not a system-menu trigger.
+          if (selectedHotspotId) {
+            e.preventDefault();
+            onSelectHotspot?.(null);
+            setEditingKeyframeFrame(null);
+          }
+        }}
         style={{ touchAction: "none", userSelect: "none" }}
       >
         {currentFrameData?.imageUrl ? (
@@ -403,6 +412,14 @@ export function Sdl3dImageSequencePreview({
                 onClick={(e) => {
                   e.stopPropagation();
                   if (isDraggingHotspot) return;
+                  // Click an already-selected hotspot a second time to
+                  // deselect and close the editor — gives the merchant
+                  // a way out without right-clicking.
+                  if (isSelected) {
+                    onSelectHotspot?.(null);
+                    setEditingKeyframeFrame(null);
+                    return;
+                  }
                   onSelectHotspot?.(hotspot.id);
                   // Click-to-pick-pos: jump the playhead to the hotspot's
                   // first existing keyframe (lowest frame) and open the

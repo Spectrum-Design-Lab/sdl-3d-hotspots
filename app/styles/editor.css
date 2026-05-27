@@ -1570,7 +1570,12 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
 
 .sdl-hotspots-modal__body {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  /* Rail bumped from 280px → 340px so the row's right-side meta
+     (`Wraps around` badge + "X keyframes" count) doesn't get clipped
+     by the rail's `overflow-x: hidden` when the title takes a fair
+     share. 280 was tight for both badge + count + ~12 chars of title;
+     340 gives breathing room without crowding the detail pane. */
+  grid-template-columns: 340px minmax(0, 1fr);
   gap: 0;
   flex: 1;
   min-height: 0;
