@@ -146,6 +146,8 @@ export async function action({ request }: ActionFunctionArgs) {
         return handleCancel(auth, formData);
       case "deleteCapture":
         return handleDeleteCapture(auth, formData);
+      case "bulkDeleteFailedCaptures":
+        return handleBulkDeleteFailedCaptures(auth);
       default:
         return json({ ok: false, message: "Unknown captures intent." }, 400);
     }
@@ -491,4 +493,25 @@ async function handleDeleteCapture(
   }
   await prisma.capture.delete({ where: { id: capture.id } });
   return json({ ok: true, deleted: true, captureId });
+}
+
+/**
+ * Bulk-delete every FAILED + CANCELLED capture row for this shop. The
+ * dashboard's Failed captures card uses this to clear the dead-letter
+ * list in one click. Scoped via productConfig.shopId so a malicious
+ * call can't reach another tenant's rows. Processed-frame bucket
+ * objects (if any) are intentionally left in place — same trade-off as
+ * the single delete: cheaper to leave a few orphaned objects than to
+ * risk deleting a published product's frames mid-rollback.
+ */
+async function handleBulkDeleteFailedCaptures(
+  auth: AuthenticatedAdmin,
+): Promise<Response> {
+  const result = await prisma.capture.deleteMany({
+    where: {
+      productConfig: { shopId: auth.shop.id },
+      status: { in: ["FAILED", "CANCELLED"] },
+    },
+  });
+  return json({ ok: true, deleted: true, deletedCount: result.count });
 }

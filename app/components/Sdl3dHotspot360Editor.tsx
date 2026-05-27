@@ -260,7 +260,10 @@ export function Sdl3dHotspot360Editor({
   selectedHotspotId,
   frameCount,
   currentFrame,
-  editorMode = "simple",
+  // Simple mode was removed 2026-05-27 — all fields are always visible.
+  // The prop is left in place for back-compat with any future caller
+  // that still wants to toggle, but the default is now "advanced".
+  editorMode = "advanced",
   iconResolvedUrls,
   onChange,
   onSelectHotspot,

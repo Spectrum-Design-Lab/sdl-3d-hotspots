@@ -638,6 +638,7 @@ function Dashboard({ data }: { data: DashData }) {
     ok: boolean;
     message?: string;
     deleted?: boolean;
+    deletedCount?: number;
   }>();
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   // Slice 8 — storage override Modal. Held against the active config so
@@ -668,6 +669,17 @@ function Dashboard({ data }: { data: DashData }) {
     [captureOpsFetcher],
   );
 
+  const handleBulkDeleteFailedCaptures = useCallback(() => {
+    if (typeof window !== "undefined" && !window.confirm(
+      `Delete all ${deadLetterCaptures.length} failed/cancelled captures? The DB rows go; processed-frame bucket objects (if any) stay.`,
+    )) {
+      return;
+    }
+    const fd = new FormData();
+    fd.set("intent", "bulkDeleteFailedCaptures");
+    captureOpsFetcher.submit(fd, { method: "post", action: "/api/sdl3d/captures" });
+  }, [captureOpsFetcher, deadLetterCaptures.length]);
+
   const handleDeleteCapture = useCallback(
     (captureId: string) => {
       if (typeof window !== "undefined" && !window.confirm("Permanently delete this capture row? The processed frames in your bucket are not removed.")) {
@@ -684,11 +696,21 @@ function Dashboard({ data }: { data: DashData }) {
   const isCaptureOpsBusy = captureOpsFetcher.state !== "idle";
 
   // Toast for capture ops results — mirrors the settings page behaviour
-  // before the move.
+  // before the move. Bulk delete returns `deletedCount`; single delete
+  // returns just `deleted: true`.
   useEffect(() => {
     if (captureOpsFetcher.state !== "idle" || !captureOpsFetcher.data) return;
-    const result = captureOpsFetcher.data;
-    if (result.ok && result.deleted) {
+    const result = captureOpsFetcher.data as {
+      ok: boolean;
+      message?: string;
+      deleted?: boolean;
+      deletedCount?: number;
+    };
+    if (result.ok && typeof result.deletedCount === "number") {
+      setToast({
+        message: `Cleared ${result.deletedCount} failed capture${result.deletedCount === 1 ? "" : "s"}.`,
+      });
+    } else if (result.ok && result.deleted) {
       setToast({ message: "Capture removed." });
     } else if (result.ok) {
       setToast({ message: "Capture re-queued. The worker will pick it up." });
@@ -847,7 +869,120 @@ function Dashboard({ data }: { data: DashData }) {
             </InlineGrid>
           </Layout.Section>
 
-          {/* Products + Sidebar */}
+          {/* Left rail — Recent Sync Activity + Failed captures.
+              Placed BEFORE the products section so on desktop the
+              rail sits on the LEFT (Polaris Layout uses CSS grid;
+              section order = visual order). Quick Actions card was
+              removed 2026-05-27 — the same destinations are one click
+              away from the NavMenu. */}
+          <Layout.Section variant="oneThird">
+            <BlockStack gap="300">
+              <Card>
+                <BlockStack gap="300">
+                  <Text as="h2" variant="headingMd">
+                    Recent Sync Activity
+                  </Text>
+                  {syncRuns.length === 0 ? (
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      No sync activity yet.
+                    </Text>
+                  ) : (
+                    <BlockStack gap="200">
+                      {syncRuns.map((run) => (
+                        <SyncRunRow key={run.id} run={run} />
+                      ))}
+                    </BlockStack>
+                  )}
+                </BlockStack>
+              </Card>
+
+              {/* Failed captures — moved here from Settings 2026-05-27.
+                  Hidden entirely when empty so a healthy shop's
+                  dashboard stays clean. Bulk-delete button added
+                  2026-05-27 — same shop-scoped delete, in one shot. */}
+              {deadLetterCaptures.length > 0 ? (
+                <Card>
+                  <BlockStack gap="300">
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text as="h2" variant="headingMd">
+                        Failed captures
+                      </Text>
+                      <Button
+                        size="slim"
+                        tone="critical"
+                        variant="plain"
+                        onClick={handleBulkDeleteFailedCaptures}
+                        disabled={isCaptureOpsBusy}
+                      >
+                        Delete all
+                      </Button>
+                    </InlineStack>
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      Captures that errored or were cancelled. Reprocess to re-run, or delete to clear the row.
+                    </Text>
+                    <ResourceList
+                      resourceName={{ singular: "capture", plural: "captures" }}
+                      items={deadLetterCaptures}
+                      renderItem={(capture) => {
+                        const shortGid = capture.productGid.split("/").pop() ?? capture.productGid;
+                        const subtitle =
+                          capture.status === "CANCELLED"
+                            ? "Cancelled by merchant"
+                            : capture.errorMessage ?? "Capture failed";
+                        return (
+                          <ResourceItem
+                            id={capture.id}
+                            onClick={() => undefined}
+                            accessibilityLabel={`Capture ${capture.id}`}
+                          >
+                            <BlockStack gap="100">
+                              <InlineStack gap="200" blockAlign="center">
+                                <Text as="span" variant="bodyMd" fontWeight="semibold">
+                                  Product {shortGid}
+                                </Text>
+                                <Badge tone={capture.status === "FAILED" ? "critical" : "warning"}>
+                                  {capture.status}
+                                </Badge>
+                                {capture.attempts > 1 ? (
+                                  <Badge>{`${capture.attempts} attempts`}</Badge>
+                                ) : null}
+                              </InlineStack>
+                              <Text as="p" variant="bodySm" tone="subdued">
+                                {subtitle}
+                              </Text>
+                              <Text as="p" variant="bodySm" tone="subdued">
+                                {new Date(capture.updatedAt).toLocaleString()}
+                              </Text>
+                              <InlineStack gap="200">
+                                <Button
+                                  size="slim"
+                                  onClick={() => handleReprocessCapture(capture.id)}
+                                  disabled={isCaptureOpsBusy}
+                                >
+                                  Reprocess
+                                </Button>
+                                <Button
+                                  size="slim"
+                                  tone="critical"
+                                  variant="plain"
+                                  onClick={() => handleDeleteCapture(capture.id)}
+                                  disabled={isCaptureOpsBusy}
+                                >
+                                  Delete
+                                </Button>
+                              </InlineStack>
+                            </BlockStack>
+                          </ResourceItem>
+                        );
+                      }}
+                    />
+                  </BlockStack>
+                </Card>
+              ) : null}
+            </BlockStack>
+          </Layout.Section>
+
+          {/* Products list. */}
           <Layout.Section>
             <Card padding="0">
               <Box padding="400" paddingBlockEnd="0">
@@ -930,115 +1065,6 @@ function Dashboard({ data }: { data: DashData }) {
             </Card>
           </Layout.Section>
 
-          {/* Sidebar */}
-          <Layout.Section variant="oneThird">
-            <BlockStack gap="300">
-              {/* Failed captures — moved here from Settings 2026-05-27 so
-                  merchants see errors in one place. Hidden entirely when
-                  empty so a healthy shop's dashboard stays clean. */}
-              {deadLetterCaptures.length > 0 ? (
-                <Card>
-                  <BlockStack gap="300">
-                    <Text as="h2" variant="headingMd">Failed captures</Text>
-                    <Text as="p" tone="subdued" variant="bodySm">
-                      Captures that errored or were cancelled. Reprocess to re-run, or delete to clear the row.
-                    </Text>
-                    <ResourceList
-                      resourceName={{ singular: "capture", plural: "captures" }}
-                      items={deadLetterCaptures}
-                      renderItem={(capture) => {
-                        const shortGid = capture.productGid.split("/").pop() ?? capture.productGid;
-                        const subtitle =
-                          capture.status === "CANCELLED"
-                            ? "Cancelled by merchant"
-                            : capture.errorMessage ?? "Capture failed";
-                        return (
-                          <ResourceItem
-                            id={capture.id}
-                            onClick={() => undefined}
-                            accessibilityLabel={`Capture ${capture.id}`}
-                          >
-                            <BlockStack gap="100">
-                              <InlineStack gap="200" blockAlign="center">
-                                <Text as="span" variant="bodyMd" fontWeight="semibold">
-                                  Product {shortGid}
-                                </Text>
-                                <Badge tone={capture.status === "FAILED" ? "critical" : "warning"}>
-                                  {capture.status}
-                                </Badge>
-                                {capture.attempts > 1 ? (
-                                  <Badge>{`${capture.attempts} attempts`}</Badge>
-                                ) : null}
-                              </InlineStack>
-                              <Text as="p" variant="bodySm" tone="subdued">
-                                {subtitle}
-                              </Text>
-                              <Text as="p" variant="bodySm" tone="subdued">
-                                {new Date(capture.updatedAt).toLocaleString()}
-                              </Text>
-                              <InlineStack gap="200">
-                                <Button
-                                  size="slim"
-                                  onClick={() => handleReprocessCapture(capture.id)}
-                                  disabled={isCaptureOpsBusy}
-                                >
-                                  Reprocess
-                                </Button>
-                                <Button
-                                  size="slim"
-                                  tone="critical"
-                                  variant="plain"
-                                  onClick={() => handleDeleteCapture(capture.id)}
-                                  disabled={isCaptureOpsBusy}
-                                >
-                                  Delete
-                                </Button>
-                              </InlineStack>
-                            </BlockStack>
-                          </ResourceItem>
-                        );
-                      }}
-                    />
-                  </BlockStack>
-                </Card>
-              ) : null}
-
-              <Card>
-                <BlockStack gap="300">
-                  <Text as="h2" variant="headingMd">
-                    Recent Sync Activity
-                  </Text>
-                  {syncRuns.length === 0 ? (
-                    <Text as="p" tone="subdued" variant="bodySm">
-                      No sync activity yet.
-                    </Text>
-                  ) : (
-                    <BlockStack gap="200">
-                      {syncRuns.map((run) => (
-                        <SyncRunRow key={run.id} run={run} />
-                      ))}
-                    </BlockStack>
-                  )}
-                </BlockStack>
-              </Card>
-
-              <Card>
-                <BlockStack gap="300">
-                  <Text as="h2" variant="headingMd">
-                    Quick Actions
-                  </Text>
-                  <BlockStack gap="200">
-                    <Button url="/app/sdl3d/editor" variant="primary" fullWidth>
-                      Open Editor
-                    </Button>
-                    <Button url="/app/sdl3d/settings" fullWidth>
-                      Metafield Setup
-                    </Button>
-                  </BlockStack>
-                </BlockStack>
-              </Card>
-            </BlockStack>
-          </Layout.Section>
         </Layout>
       </Page>
 

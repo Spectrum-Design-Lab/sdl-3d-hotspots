@@ -2104,8 +2104,6 @@ export default function Sdl3dEditorRoute() {
             viewerType={viewerType}
             selectedHotspotId={selectedHotspotId}
             onSelectHotspot={setSelectedHotspotId}
-            editorMode={editorMode}
-            onChangeEditorMode={setEditorMode}
             iconResolvedUrls={loaderData.iconResolvedUrls}
             onOpenIconBrowser={handleOpenIconBrowser}
             onOpenMediaImageBrowser={handleOpenMediaImageBrowser}

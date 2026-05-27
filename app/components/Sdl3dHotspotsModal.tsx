@@ -79,8 +79,8 @@ type Props = {
   // shared
   selectedHotspotId: string | null;
   onSelectHotspot: (id: string | null) => void;
-  editorMode: "simple" | "advanced";
-  onChangeEditorMode: (mode: "simple" | "advanced") => void;
+  // Simple/Advanced mode was removed 2026-05-27. All fields are always
+  // visible now, gated only by the sub-tab. Props kept off the contract.
   iconResolvedUrls: Record<string, string>;
   onOpenIconBrowser: (hotspotId: string) => void;
   onOpenMediaImageBrowser: (hotspotId: string) => void;
@@ -110,8 +110,6 @@ export function Sdl3dHotspotsModal({
   viewerType,
   selectedHotspotId,
   onSelectHotspot,
-  editorMode,
-  onChangeEditorMode,
   iconResolvedUrls,
   onOpenIconBrowser,
   onOpenMediaImageBrowser,
@@ -222,22 +220,6 @@ export function Sdl3dHotspotsModal({
                 </Button>
               </ButtonGroup>
             </InlineStack>
-            <ButtonGroup variant="segmented">
-              <Button
-                pressed={editorMode === "simple"}
-                onClick={() => onChangeEditorMode("simple")}
-                size="slim"
-              >
-                Simple
-              </Button>
-              <Button
-                pressed={editorMode === "advanced"}
-                onClick={() => onChangeEditorMode("advanced")}
-                size="slim"
-              >
-                Advanced
-              </Button>
-            </ButtonGroup>
           </div>
 
           {/* Two-pane body. */}
@@ -250,7 +232,6 @@ export function Sdl3dHotspotsModal({
                   selectedHotspotId={selectedHotspotId}
                   frameCount={frameCount}
                   currentFrame={currentFrame}
-                  editorMode={editorMode}
                   iconResolvedUrls={iconResolvedUrls}
                   onChange={onChangeHotspots360}
                   onSelectHotspot={onSelectHotspot}
@@ -265,7 +246,6 @@ export function Sdl3dHotspotsModal({
                 <Sdl3dHotspotEditor
                   hotspots={hotspots3d}
                   selectedHotspotId={selectedHotspotId}
-                  editorMode={editorMode}
                   iconResolvedUrls={iconResolvedUrls}
                   onChange={onChangeHotspots3d}
                   onSelectHotspot={onSelectHotspot}
@@ -335,7 +315,6 @@ export function Sdl3dHotspotsModal({
                           selectedHotspotId={selectedHotspotId}
                           frameCount={frameCount}
                           currentFrame={currentFrame}
-                          editorMode={editorMode}
                           iconResolvedUrls={iconResolvedUrls}
                           onChange={onChangeHotspots360}
                           onSelectHotspot={onSelectHotspot}
@@ -353,7 +332,6 @@ export function Sdl3dHotspotsModal({
                         <Sdl3dHotspotEditor
                           hotspots={hotspots3d}
                           selectedHotspotId={selectedHotspotId}
-                          editorMode={editorMode}
                           iconResolvedUrls={iconResolvedUrls}
                           onChange={onChangeHotspots3d}
                           onSelectHotspot={onSelectHotspot}

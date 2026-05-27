@@ -1,18 +1,27 @@
 /**
  * Storefront-style mock card for the hotspots modal's Preview sub-tab.
  *
- * Mirrors the storefront sidebar detail view (`.sdl3d-sidebar__detail`
- * in extensions/product-3d-viewer/assets/viewer.css):
- *   title → body → image → video → CTA
+ * Mirrors the LIGHT-themed storefront sidebar that merchants actually
+ * ship on their PDPs (`.sdl3d-block--themed .sdl3d-sidebar` in
+ * extensions/product-3d-viewer/assets/viewer.css). Values pulled
+ * verbatim from the themed CSS variables so the preview matches the
+ * storefront pixel-for-pixel (within reason):
  *
- * Inline styles so this stays decoupled from editor.css and renders
- * faithfully regardless of light/dark theme — the storefront sidebar is
- * always dark, so the preview is too. Image / video markup mirrors the
- * `mediaHtml()` builder used by the storefront viewer (same image-then-
- * video order, same YouTube / Vimeo / file video handling). No live
- * iframe loads for the YouTube / Vimeo placeholders — the embed URL is
- * still attached so the merchant can click into it if they want to
- * verify.
+ *   --sdl3d-card-bg     #ffffff
+ *   --sdl3d-card-border #e5e7eb
+ *   --sdl3d-accent      #f59e0b   (top stripe — themed sidebar marker)
+ *   --sdl3d-heading     #1e40af   (title + "PRODUCT FEATURES" label)
+ *   --sdl3d-text        #1f2937   (body)
+ *   --sdl3d-text-muted  #6b7280   (Clear selection link)
+ *   --sdl3d-primary     #2563eb   (CTA bg)
+ *
+ * Order matches `mediaHtml()` in tae-src/product-3d-viewer/media.ts:
+ *   header → title → body → image → video → CTA → Clear selection
+ *
+ * Inline styles so this stays decoupled from editor.css and from the
+ * Polaris admin theme. Video placeholders show the URL + provider
+ * classification rather than loading a live iframe — keeps the preview
+ * fast and avoids autoplay surprises inside the modal.
  */
 import { classifyVideoUrl } from "@spectrum-design-lab/shared/video-classify";
 
@@ -27,7 +36,17 @@ type Props = {
 };
 
 const FALLBACK_TITLE = "Hotspot title";
-const FALLBACK_BODY = "Hotspot body text appears here on the storefront sidebar when the customer selects this hotspot.";
+const FALLBACK_BODY = "Hotspot body text appears here on the storefront when the customer selects this hotspot.";
+
+const COLORS = {
+  cardBg: "#ffffff",
+  cardBorder: "#e5e7eb",
+  accent: "#f59e0b",
+  heading: "#1e40af",
+  text: "#1f2937",
+  textMuted: "#6b7280",
+  primary: "#2563eb",
+} as const;
 
 export function Sdl3dHotspotStorefrontPreview({
   title,
@@ -38,105 +57,169 @@ export function Sdl3dHotspotStorefrontPreview({
   ctaUrl,
   color,
 }: Props) {
-  const ctaColor = color?.trim() || "#3b82f6";
+  const ctaColor = color?.trim() || COLORS.primary;
 
   return (
     <div
       role="region"
       aria-label="Storefront preview"
       style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 14,
-        padding: "24px 22px",
-        background: "linear-gradient(180deg, #111827 0%, #0b1220 100%)",
-        borderRadius: 12,
-        color: "#f1f5f9",
-        minHeight: 320,
+        // Mirrors `.sdl3d-block--themed .sdl3d-sidebar`:
+        //   width 340, white bg, 1px border, 3px accent on top, radius 6.
+        width: "100%",
+        maxWidth: 360,
+        background: COLORS.cardBg,
+        color: COLORS.text,
+        border: `1px solid ${COLORS.cardBorder}`,
+        borderTop: `3px solid ${COLORS.accent}`,
+        borderRadius: 6,
+        boxShadow:
+          "0 1px 2px rgba(15, 23, 42, .04), 0 1px 3px rgba(15, 23, 42, .06)",
+        overflow: "hidden",
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
       }}
     >
+      {/* Header bar — "PRODUCT FEATURES" in uppercase heading colour,
+          mirrors `.sdl3d-block--themed .sdl3d-sidebar__header`. */}
       <div
         style={{
-          fontSize: 12,
-          fontWeight: 600,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-          color: "rgba(241, 245, 249, 0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "14px 16px",
+          borderBottom: `1px solid ${COLORS.cardBorder}`,
         }}
       >
-        Storefront preview
-      </div>
-
-      <div
-        style={{
-          fontSize: 18,
-          fontWeight: 700,
-          lineHeight: 1.3,
-          color: "#f1f5f9",
-        }}
-      >
-        {title?.trim() || FALLBACK_TITLE}
-      </div>
-
-      <div
-        style={{
-          fontSize: 14,
-          lineHeight: 1.65,
-          color: "rgba(226, 232, 240, 0.7)",
-          whiteSpace: "pre-wrap",
-        }}
-      >
-        {body?.trim() || FALLBACK_BODY}
-      </div>
-
-      {mediaImageUrl?.trim() ? (
-        <div
+        <span
           style={{
-            borderRadius: 10,
-            overflow: "hidden",
-            background: "rgba(0, 0, 0, 0.18)",
+            fontSize: 11,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            color: COLORS.heading,
           }}
         >
-          <img
-            src={mediaImageUrl}
-            alt=""
-            style={{
-              display: "block",
-              width: "100%",
-              maxHeight: 220,
-              objectFit: "cover",
-            }}
-          />
-        </div>
-      ) : null}
-
-      {mediaVideoUrl?.trim() ? (
-        <VideoPlaceholder url={mediaVideoUrl.trim()} />
-      ) : null}
-
-      {ctaLabel?.trim() && ctaUrl?.trim() ? (
-        <a
-          href={ctaUrl}
-          target="_blank"
-          rel="noopener noreferrer"
+          Product features
+        </span>
+        {/* Burger icon placeholder — non-interactive, just for visual fidelity. */}
+        <span
+          aria-hidden
           style={{
-            alignSelf: "flex-start",
+            width: 28,
+            height: 28,
+            borderRadius: 6,
+            border: `1px solid ${COLORS.cardBorder}`,
+            background: "#f9fafb",
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            padding: "10px 20px",
-            borderRadius: 10,
-            background: ctaColor,
-            color: "#ffffff",
-            textDecoration: "none",
-            fontSize: 13,
-            fontWeight: 600,
-            letterSpacing: "0.01em",
+            color: COLORS.textMuted,
           }}
         >
-          {ctaLabel}
-        </a>
-      ) : null}
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+            <rect x="2" y="4" width="16" height="2" rx="1" fill="currentColor" />
+            <rect x="2" y="9" width="16" height="2" rx="1" fill="currentColor" />
+            <rect x="2" y="14" width="16" height="2" rx="1" fill="currentColor" />
+          </svg>
+        </span>
+      </div>
+
+      {/* Detail body — title, body, media, CTA, clear. */}
+      <div
+        style={{
+          padding: "18px 16px 16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 700,
+            lineHeight: 1.35,
+            color: COLORS.heading,
+          }}
+        >
+          {title?.trim() || FALLBACK_TITLE}
+        </div>
+
+        <div
+          style={{
+            fontSize: 14,
+            lineHeight: 1.6,
+            color: COLORS.text,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {body?.trim() || FALLBACK_BODY}
+        </div>
+
+        {mediaImageUrl?.trim() ? (
+          <div
+            style={{
+              borderRadius: 8,
+              overflow: "hidden",
+              background: "#f9fafb",
+              border: `1px solid ${COLORS.cardBorder}`,
+            }}
+          >
+            <img
+              src={mediaImageUrl}
+              alt=""
+              style={{
+                display: "block",
+                width: "100%",
+                maxHeight: 220,
+                objectFit: "cover",
+              }}
+            />
+          </div>
+        ) : null}
+
+        {mediaVideoUrl?.trim() ? (
+          <VideoPlaceholder url={mediaVideoUrl.trim()} />
+        ) : null}
+
+        {ctaLabel?.trim() && ctaUrl?.trim() ? (
+          <a
+            href={ctaUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              alignSelf: "flex-start",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "9px 16px",
+              borderRadius: 6,
+              background: ctaColor,
+              color: "#ffffff",
+              textDecoration: "none",
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            {ctaLabel}
+          </a>
+        ) : null}
+
+        <span
+          aria-hidden
+          style={{
+            marginTop: 4,
+            fontSize: 12,
+            color: COLORS.textMuted,
+            textDecoration: "underline",
+            textUnderlineOffset: 2,
+            cursor: "default",
+            alignSelf: "flex-start",
+          }}
+        >
+          Clear selection
+        </span>
+      </div>
     </div>
   );
 }
@@ -156,9 +239,9 @@ function VideoPlaceholder({ url }: { url: string }) {
       style={{
         width: "100%",
         aspectRatio: "16 / 9",
-        borderRadius: 10,
-        background: "#000000",
-        color: "rgba(255, 255, 255, 0.65)",
+        borderRadius: 8,
+        background: "#0f172a",
+        color: "rgba(255, 255, 255, 0.85)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -172,7 +255,7 @@ function VideoPlaceholder({ url }: { url: string }) {
       <div
         style={{
           fontSize: 11,
-          opacity: 0.7,
+          opacity: 0.75,
           maxWidth: "100%",
           overflow: "hidden",
           textOverflow: "ellipsis",
