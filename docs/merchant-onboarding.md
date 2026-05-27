@@ -318,3 +318,388 @@ If you ever stop using SDL, the assets in your bucket and the metafields on your
 - **Hotspot edits, viewer settings, capture uploads, publish to storefront**: do these yourself in the **SDL 3D Hotspots** app under your Shopify admin's **Apps** menu.
 - **Shopify theme/admin issues** (can't find the customizer, theme bugs, payment): use Shopify Help.
 - **Storefront performance** (frames slow to load): forward your storefront URL and a sample product to SDL. Tuning options include adjusting frame count in the pipeline, enabling the bucket's CDN, or moving to a CDN-fronted provider (R2 with public.r2.dev or a custom domain, or DO Spaces with CDN enabled).
+
+---
+
+# Self-hosting the SDL 3D Hotspots app
+
+Everything above assumes SDL hosts the embedded admin app for you. If you'd rather run your own copy — for compliance, lower long-term cost, or just full control — you can. The app is a single Docker container (React Router web tier + pg-boss capture worker, bundled together) plus a PostgreSQL database, so it's modest infrastructure. Pick one of the four hosting paths below.
+
+> **What "self-hosting" really means** — you are running the *embedded admin app* yourself (the thing under Apps → SDL 3D Hotspots in Shopify). Your storefront viewer still loads SDL's Theme App Extension assets from Shopify's CDN — that part is shared and you don't deploy it. And your CDN bucket (DigitalOcean Spaces / S3 / R2 / Bunny — Part 2 above) is already yours regardless.
+>
+> Self-hosting is more work than letting SDL host the app for you. Realistically you'll need to:
+> - Create a Shopify Partner account and your own custom-distribution app
+> - Provision a Postgres database
+> - Provision a public HTTPS URL (a `*.com` domain pointed at a host)
+> - Manage redeploys when SDL ships updates
+>
+> If any of that sounds intimidating, ask SDL to host. The four paths below go cheapest-easiest to most-control.
+
+## Prerequisites (all paths)
+
+Before picking a host, you'll need:
+
+### 1. A Shopify Partner account and a custom app
+
+The Shopify Partner Dashboard is where you create the app that customers install. SDL has its own; if you self-host, you need yours.
+
+1. Sign up at <https://partners.shopify.com> (free).
+2. **Apps** → **Create app** → **Create app manually**.
+3. **App name**: anything you like (your store name + " 3D Hotspots" works). Customers will see this on the install screen.
+4. **App URL** — leave blank for now; you'll fill in your deployment URL in step 5 below.
+5. After creation, open the app → **Distribution** → choose **Custom distribution** (single-store) unless you plan to publish to the Shopify App Store.
+6. Open **API credentials** and copy:
+   - **Client ID** (also called `SHOPIFY_API_KEY`)
+   - **Client secret** (also called `SHOPIFY_API_SECRET`)
+   These are the credentials your self-hosted app uses to talk to Shopify. Keep them secret.
+
+You'll come back to this Partner app at the end of every host setup to set the App URL + Allowed redirection URLs to your deployment.
+
+### 2. A PostgreSQL database
+
+The app stores hotspots, capture rows, presets, and Shopify session tokens in Postgres. Choices:
+
+- **Managed Postgres** (recommended for App Platform / Droplet / generic Linux paths). DigitalOcean Managed Database costs ~$15/month for the smallest plan; Neon and Supabase have free tiers; Render Postgres has a low-cost tier.
+- **Self-hosted Postgres** inside the same Droplet / on the same Unraid box. Cheaper but you handle backups yourself.
+
+Whichever you pick, write down the **connection string** — it looks like:
+
+```
+postgresql://USERNAME:PASSWORD@HOST:5432/DATABASE_NAME?sslmode=require
+```
+
+(The `?sslmode=require` suffix is needed for managed providers; not needed for same-host Postgres.)
+
+### 3. Environment variables (the `.env` file)
+
+Every hosting path uses the same set of environment variables. Here's the minimum set; copy `.env.example` from the repo for full documentation:
+
+| Variable | What it is | Example |
+| --- | --- | --- |
+| `SHOPIFY_API_KEY` | Client ID from your Partner app | `abc123…` |
+| `SHOPIFY_API_SECRET` | Client secret from your Partner app | `shpss_xyz…` |
+| `SHOPIFY_APP_URL` | The public HTTPS URL of your deployment | `https://sdl3d.yourbrand.com` |
+| `SCOPES` | Comma-separated OAuth scopes (paste verbatim) | `write_metaobject_definitions,write_metaobjects,write_products,read_files,write_files` |
+| `DATABASE_URL` | Postgres connection string from step 2 | `postgresql://...` |
+| `STORAGE_ENC_KEY` | 32-byte hex key for encrypting bucket credentials at rest. Generate once with `openssl rand -hex 32` — never share between deployments, never rotate without re-encrypting all rows. | `<64 hex chars>` |
+| `PORT` | Port the web tier listens on | `3000` |
+| `NODE_ENV` | Always `production` for live deploys | `production` |
+
+Optional but recommended:
+- `SENTRY_DSN` — error reporting (get a free Sentry account; paste DSN from Project → Settings → Client Keys)
+
+> **Backup `STORAGE_ENC_KEY` somewhere safe** — your password manager, a 1Password vault, a sealed envelope in a safe. Losing it makes every encrypted bucket credential in the database unreadable, and you'll have to re-enter every Storage connection in the admin.
+
+---
+
+## Path A — DigitalOcean App Platform (recommended)
+
+**Why pick this:** zero Linux command-line work. App Platform handles HTTPS, builds your Docker image automatically when you push to GitHub, restarts the container if it crashes, and exposes a clean dashboard for logs and env vars. Ideal for non-technical operators.
+
+**Cost ballpark:** ~$12/month for the app container (Basic tier) + ~$15/month for Managed Postgres = **~$27/month**. Higher than a $6 Droplet but no maintenance work.
+
+### A.1. Fork or clone the repo to your GitHub account
+
+App Platform builds from a GitHub repo, so you need a copy under your GitHub account:
+
+1. If you don't have one: sign up at <https://github.com> (free).
+2. SDL will give you access to the source repo or share a tarball. **Fork** to your GitHub account, or create a new private repo and push the source into it.
+
+### A.2. Create a Managed Postgres database (optional but cleanest)
+
+1. In the DO control panel: **Databases** → **Create Database Cluster**.
+2. Engine: **PostgreSQL 16** (or whatever the latest is).
+3. Plan: smallest available (Basic Node, ~$15/month) is plenty for one merchant.
+4. Region: pick the same as where you'll create the app (next step).
+5. Click **Create Database Cluster**. Wait ~5 minutes for provisioning.
+6. Open the cluster → **Overview** → **Connection details** → copy the **Connection string**. Set the **VPC** option to the same VPC as your future app for free private networking.
+
+You can skip this step and connect to App Platform's built-in dev database, but managed Postgres is sturdier for production.
+
+### A.3. Create the App Platform app
+
+1. In the DO control panel: **App Platform** → **Create App**.
+2. **Source**: **GitHub** → authorize DO to read your repo → pick the forked repo + the `main` branch.
+3. DigitalOcean detects the Dockerfile automatically and configures a **Web Service** component. Leave the defaults; the Dockerfile's `CMD` runs the right entrypoint.
+4. **Resources**: edit the Web Service → **HTTP Port**: `3000` (matches `EXPOSE 3000` in the Dockerfile). Keep the Basic plan (smallest size) — the app is small.
+5. **Environment Variables** (Web Service → Environment) — add all the vars from the Prerequisites table:
+   - `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SCOPES`, `STORAGE_ENC_KEY`, `NODE_ENV=production`, `PORT=3000`
+   - `DATABASE_URL`: paste the connection string from step A.2 (or App Platform will offer to attach its dev DB).
+   - `SHOPIFY_APP_URL`: **leave blank for now** — you'll fill this in after step A.4 when DO assigns you a URL.
+6. Click **Create Resources**. First build takes ~3–5 minutes.
+
+### A.4. Get your app's URL and finish Shopify Partner setup
+
+1. Once the app deploys, App Platform shows you the URL — looks like `https://your-app-name-abc123.ondigitalocean.app`. Click into the app to confirm.
+2. Open your DO app's **Settings** → **Domains** → add a custom domain if you want a friendly name (e.g. `sdl3d.yourbrand.com`). DO sets up HTTPS automatically. You'll need to add a CNAME at your DNS provider pointing to the DO-provided target.
+3. Back in **Environment Variables**: set `SHOPIFY_APP_URL` to either the `.ondigitalocean.app` URL or your custom domain (whichever you'll use). **Apply** — this triggers a redeploy.
+4. In your **Shopify Partner Dashboard** → your app → **App setup**:
+   - **App URL**: paste `https://<your-deployment-url>`
+   - **Allowed redirection URL(s)**: paste `https://<your-deployment-url>/auth/callback` and `https://<your-deployment-url>/auth/shopify/callback`
+   - Save.
+
+### A.5. Install the app on your store
+
+In the Partner Dashboard → your app → **Test your app** → **Select store** → pick your store. Shopify will install the app and you'll land on the embedded admin onboarding wizard.
+
+From here, return to **Part 2** of this guide (set up a CDN bucket) and continue.
+
+### A.6. When SDL ships updates
+
+App Platform auto-redeploys when you push to your GitHub `main` branch. To pull SDL's latest:
+
+```sh
+git remote add upstream https://github.com/Spectrum-Design-Lab/sdl-3d-hotspots.git
+git fetch upstream main
+git merge upstream/main
+git push origin main
+```
+
+App Platform sees the push and rebuilds. Database migrations run automatically on container start (see `scripts/start.js`).
+
+---
+
+## Path B — DigitalOcean Droplet (VPS, lower cost, more setup)
+
+**Why pick this:** Droplets are cheaper than App Platform (~$6–12/month for the smallest sizes) and give you full root on a Linux VM. Trade-off: you install Docker, manage HTTPS certificates, and handle redeploys via SSH.
+
+**Cost ballpark:** $6–12/month Droplet + $15/month Managed Postgres = **$21–27/month**. Or $6 Droplet + Postgres on the same Droplet = **$6/month** if you're comfortable managing your own database backups.
+
+### B.1. Create the Droplet
+
+1. DO control panel: **Droplets** → **Create Droplet**.
+2. **Image**: **Ubuntu 24.04 LTS** (long-term support, stable).
+3. **Size**: **Basic** → **Regular SSD** → **$6/month** (1 GB RAM, 1 CPU) is the minimum that works. Bump to $12/month (2 GB) if you'll process many large captures.
+4. **Datacenter region**: same region as your Managed Postgres (if using) and ideally close to your customers.
+5. **Authentication**: **SSH Key** (much safer than password). If you don't have one: <https://docs.digitalocean.com/products/droplets/how-to/add-ssh-keys/create-with-openssh/>.
+6. **Hostname**: anything memorable (e.g. `sdl3d-prod`).
+7. Create Droplet. Note the public IPv4 address.
+
+### B.2. Point a domain at the Droplet
+
+You need an HTTPS URL for Shopify OAuth — they won't accept raw IPs.
+
+1. Buy a domain (Namecheap, Cloudflare Registrar, etc.) or use a subdomain of one you already own.
+2. At your DNS provider: add an **A record** pointing `sdl3d.yourbrand.com` (or any subdomain) → the Droplet's IPv4 address.
+3. Wait 5–10 minutes for DNS propagation.
+
+### B.3. Initial Droplet setup (SSH in once)
+
+Open a terminal on your computer and SSH into the Droplet:
+
+```sh
+ssh root@<your-droplet-ipv4>
+```
+
+Then run (paste each block):
+
+```sh
+# Install Docker
+apt-get update && apt-get install -y docker.io docker-compose-plugin git
+
+# Pull the source
+git clone https://github.com/Spectrum-Design-Lab/sdl-3d-hotspots.git /opt/sdl-3d-hotspots
+cd /opt/sdl-3d-hotspots
+```
+
+Create the env file:
+
+```sh
+mkdir -p /opt/sdl-3d-hotspots-env
+nano /opt/sdl-3d-hotspots-env/.env
+```
+
+Paste all the env vars from the Prerequisites table. Set `SHOPIFY_APP_URL=https://sdl3d.yourbrand.com` (your domain from B.2). Save with `Ctrl+O`, exit with `Ctrl+X`.
+
+### B.4. Install Caddy for automatic HTTPS
+
+Caddy is the simplest way to get a free Let's Encrypt certificate. One-command install:
+
+```sh
+apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+apt update && apt install -y caddy
+```
+
+Configure Caddy:
+
+```sh
+nano /etc/caddy/Caddyfile
+```
+
+Replace the contents with:
+
+```
+sdl3d.yourbrand.com {
+    reverse_proxy localhost:3000
+}
+```
+
+Save, then `systemctl restart caddy`. Caddy auto-acquires the HTTPS cert.
+
+### B.5. Build and run the container
+
+```sh
+cd /opt/sdl-3d-hotspots
+docker build -t sdl-3d-hotspots:latest .
+docker run -d \
+  --name sdl-3d-hotspots \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  --env-file /opt/sdl-3d-hotspots-env/.env \
+  sdl-3d-hotspots:latest
+```
+
+Check it's running: `docker ps` should show the container. Logs: `docker logs -f sdl-3d-hotspots`.
+
+### B.6. Finish Shopify Partner setup and install
+
+Same as **A.4 / A.5** above — set the App URL in your Partner Dashboard to `https://sdl3d.yourbrand.com`, install on your store, walk through onboarding.
+
+### B.7. When SDL ships updates
+
+SSH in and run:
+
+```sh
+cd /opt/sdl-3d-hotspots
+git pull origin main
+docker build -t sdl-3d-hotspots:latest .
+docker rm -f sdl-3d-hotspots
+docker run -d --name sdl-3d-hotspots --restart unless-stopped -p 3000:3000 --env-file /opt/sdl-3d-hotspots-env/.env sdl-3d-hotspots:latest
+```
+
+Or save the above as a script (`/opt/sdl-3d-hotspots/redeploy.sh`) and run `bash redeploy.sh` whenever you want to update.
+
+---
+
+## Path C — Unraid (home server)
+
+**Why pick this:** if you already own an Unraid server (Plex, file storage, home services) the SDL 3D Hotspots app is essentially free to add — no monthly fee beyond your existing power bill. The only ongoing cost is the Managed Postgres (~$15/month) unless you also run Postgres on Unraid via Community Apps.
+
+**Required:** your Unraid box must be reachable from the internet over HTTPS — typically via your home router's port forward + a dynamic-DNS service (DuckDNS, Cloudflare DNS) + a reverse proxy like SWAG or Nginx Proxy Manager from Community Apps.
+
+### C.1. Set up HTTPS + a public hostname
+
+Two common Unraid patterns:
+
+- **SWAG (Secure Web Application Gateway)**: Community Apps → install SWAG → it bundles Nginx + Let's Encrypt. Point it at a DuckDNS subdomain (free) or your own domain via Cloudflare.
+- **Cloudflare Tunnel** (`cloudflared`): zero port forwarding required — Cloudflare tunnels traffic into your box. Probably the easiest if you don't want to mess with your router.
+
+Either way, end goal: `https://sdl3d.yourdomain.com` reaches your Unraid box on port `3000`.
+
+### C.2. Postgres (pick one)
+
+- **DigitalOcean Managed Postgres** (recommended, simplest) — sign up at DO, follow A.2 above, paste the connection string into the env file. Costs ~$15/month.
+- **Postgres on Unraid**: Community Apps → install **PostgreSQL** (the official binhex or `linuxserver.io` image). Configure with a strong password. Set `DATABASE_URL=postgresql://USERNAME:PASSWORD@<unraid-ip>:5432/sdl3d_hotspots`.
+
+### C.3. Create the env file
+
+On Unraid, env files typically live under `/mnt/user/appdata/`. Create the folder and file:
+
+1. Open the Unraid terminal (top-right console icon).
+2. Run:
+   ```sh
+   mkdir -p /mnt/user/appdata/sdl-3d-hotspots
+   nano /mnt/user/appdata/sdl-3d-hotspots/.env
+   ```
+3. Paste all the env vars from the Prerequisites table. Save with `Ctrl+O`, exit with `Ctrl+X`.
+4. Set permissions so only root reads it: `chmod 600 /mnt/user/appdata/sdl-3d-hotspots/.env`.
+
+### C.4. Build and run the container
+
+Unraid's GUI templates don't auto-build from a Dockerfile, so build via the console:
+
+```sh
+cd /tmp && git clone https://github.com/Spectrum-Design-Lab/sdl-3d-hotspots.git
+cd sdl-3d-hotspots
+docker build -t sdl-3d-hotspots:latest .
+docker rm -f sdl-3d-hotspots 2>/dev/null
+docker run -d \
+  --name sdl-3d-hotspots \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  --env-file /mnt/user/appdata/sdl-3d-hotspots/.env \
+  sdl-3d-hotspots:latest
+```
+
+The container shows up in the Unraid Docker tab as a "user-installed" container — you can stop/start it from the GUI from there.
+
+### C.5. Finish Shopify Partner setup and install
+
+Same as A.4 / A.5 — point the Partner app's App URL at `https://sdl3d.yourdomain.com`, install on your store.
+
+### C.6. When SDL ships updates
+
+Open the Unraid terminal and run the same one-liner you used to first deploy:
+
+```sh
+cd /tmp/sdl-3d-hotspots && git pull origin main && docker build -t sdl-3d-hotspots:latest . && docker rm -f sdl-3d-hotspots 2>/dev/null; docker run -d --name sdl-3d-hotspots --restart unless-stopped -p 3000:3000 --env-file /mnt/user/appdata/sdl-3d-hotspots/.env sdl-3d-hotspots:latest
+```
+
+Save it as a script under `/mnt/user/scripts/` if you have the User Scripts plugin for one-click redeploys.
+
+---
+
+## Path D — Generic Linux server (Ubuntu / Debian / Fedora with Docker)
+
+**Why pick this:** you have an existing home server (Raspberry Pi 4+ with 4 GB RAM, NUC, repurposed laptop, OCI free tier VM, etc.) that runs Linux but isn't Unraid. The steps below are almost identical to **Path B** (DO Droplet) — the Droplet flow IS a generic Linux flow, just with DigitalOcean as the provider.
+
+### D.1. Make sure your box meets the minimum
+
+- 2 GB RAM (1 GB works for light use, capture processing is memory-hungrier)
+- 5 GB free disk for the Docker image + Postgres
+- 64-bit OS — `arm64` works (`node:22-alpine` ships an arm64 image, so a Pi 4/5 is fine)
+- A public HTTPS URL (set up via Cloudflare Tunnel, ngrok, or port-forward + Caddy as in Path B)
+
+### D.2. Install Docker
+
+On Ubuntu / Debian:
+```sh
+sudo apt-get update && sudo apt-get install -y docker.io git
+sudo usermod -aG docker $USER   # so you don't need sudo for docker
+# log out and back in for the group change to apply
+```
+
+On Fedora / RHEL:
+```sh
+sudo dnf install -y docker git
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+```
+
+On Raspberry Pi OS:
+```sh
+curl -sSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+```
+
+### D.3. Repeat Path B from step B.3 onward
+
+The clone / env file / Caddy / docker build commands from Path B's steps B.3–B.7 apply verbatim. The only thing that differs by distribution is the package manager for Caddy — see <https://caddyserver.com/docs/install> for your distribution's install method.
+
+---
+
+## Hosting troubleshooting
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| `Error: Database connection failed` on first launch | `DATABASE_URL` typo, wrong password, Postgres not reachable from container | Test with `docker exec sdl-3d-hotspots npx prisma db pull` — gives a clearer error. Confirm host firewall allows the container's IP. Managed DBs need `?sslmode=require` in the URL. |
+| Shopify OAuth redirects to a 404 / `Invalid OAuth callback URL` | Allowed redirection URLs in Partner Dashboard don't match | Must include exactly `https://<your-url>/auth/callback` AND `https://<your-url>/auth/shopify/callback`. No trailing slash. |
+| Browser shows "Your connection is not private" on the app URL | HTTPS cert missing or wrong hostname | Confirm Caddy/SWAG/App Platform has issued the cert. Visit the URL in incognito; if Let's Encrypt is still issuing, wait 60 seconds and retry. |
+| Container restarts in a loop | Required env var missing, or a migration is failing | `docker logs sdl-3d-hotspots --tail 100` shows the actual error. Common: missing `STORAGE_ENC_KEY` (app won't start), or Postgres rejecting the connection. |
+| Capture upload completes but never processes | Worker can't reach the DB, OR worker died but web tier is still up | `scripts/start.js` is supposed to kill the whole container if either process dies — check logs. If using App Platform, confirm the build hasn't somehow excluded the worker. |
+| "Storage encryption key changed" error after a redeploy | `STORAGE_ENC_KEY` env var changed between deploys | NEVER rotate this without re-encrypting all `ShopStorage` rows. Set it back to the previous value if you have it; if not, delete the storage rows in the admin and reconnect each bucket (credentials only — no asset data is lost). |
+| App Platform build fails with `out of memory` | Building Vite + sharp on the smallest plan ran out of RAM | Bump the build plan to the next tier (the *build* plan is separate from the *run* plan — you can run on Basic-XXS, build on Basic-S). |
+| Container builds slowly on a Raspberry Pi | `npm ci` is slow on low-CPU ARM | First build can take 20+ minutes on a Pi 4. Subsequent builds reuse Docker layers and are much faster. Be patient. |
+
+---
+
+## Which path should you pick?
+
+- **Pick App Platform** if you've never SSH'd into a server, want zero maintenance, and don't mind paying ~$27/month.
+- **Pick Droplet** if you're comfortable on the command line and want to spend ~$6–21/month.
+- **Pick Unraid** if you already own one — basically free incremental cost.
+- **Pick Generic Linux** if you have a Pi or NUC sitting unused, or already manage other home-server Docker containers.
+
+When in doubt, **App Platform**. The extra cost buys you weekend hours back.
