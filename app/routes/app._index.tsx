@@ -869,17 +869,15 @@ function Dashboard({ data }: { data: DashData }) {
             </InlineGrid>
           </Layout.Section>
 
-          {/* Alerts + activity row — full-width Section, two cards
-              side-by-side on desktop (oneHalf each via InlineGrid),
-              stacks on narrow screens. Previously tried as a
-              left-rail sidebar with Polaris `variant="oneThird"` but
-              that ended up stacking everything to the right with the
-              products list below; this layout reads cleanly at every
-              breakpoint and keeps the products list full-width. Quick
-              Actions card removed 2026-05-27 — destinations live in
-              the NavMenu. */}
+          {/* Sync · Products · Failed captures — single 3-column row
+              on desktop. Side rails are fixed-width so Products gets
+              the lion's share of the page while Sync (left) and
+              Failed captures (right) stay readable. Stacks on narrow
+              screens. Previously two separate rows (alerts above,
+              Products below); merged 2026-05-28 to use the empty
+              horizontal space next to the Products list. */}
           <Layout.Section>
-            <InlineGrid columns={{ xs: 1, md: 2 }} gap="300">
+            <InlineGrid columns={{ xs: 1, lg: "300px 1fr 300px" }} gap="300">
               <Card>
                 <BlockStack gap="300">
                   <Text as="h2" variant="headingMd">
@@ -899,11 +897,92 @@ function Dashboard({ data }: { data: DashData }) {
                 </BlockStack>
               </Card>
 
+              {/* Products list — middle column of the 3-col row. */}
+              <Card padding="0">
+                <Box padding="400" paddingBlockEnd="0">
+                  <Filters
+                    queryValue={search}
+                    queryPlaceholder="Search products by title…"
+                    onQueryChange={setSearch}
+                    onQueryClear={() => setSearch("")}
+                    onClearAll={() => {
+                      setSearch("");
+                      setStatusFilter("all");
+                    }}
+                    appliedFilters={appliedFilters}
+                    filters={[
+                      {
+                        key: "status",
+                        label: "Status",
+                        filter: (
+                          <BlockStack gap="200">
+                            {(["all", "PUBLISHED", "DRAFT"] as StatusFilter[]).map((f) => (
+                              <Button
+                                key={f}
+                                variant={statusFilter === f ? "primary" : "tertiary"}
+                                onClick={() => setStatusFilter(f)}
+                                size="slim"
+                              >
+                                {f === "all" ? "All" : f === "PUBLISHED" ? "Published" : "Drafts"}
+                              </Button>
+                            ))}
+                          </BlockStack>
+                        ),
+                        shortcut: true,
+                      },
+                    ]}
+                  />
+                </Box>
+                {filteredConfigs.length === 0 ? (
+                  <Box padding="600">
+                    {configs.length === 0 ? (
+                      <EmptyState
+                        heading="No products configured yet"
+                        action={{ content: "Open Editor", url: "/app/sdl3d/editor" }}
+                        image=""
+                      >
+                        <Text as="p">
+                          Open the Editor to attach a 3D viewer to your first product.
+                        </Text>
+                      </EmptyState>
+                    ) : (
+                      <EmptyState
+                        heading="No matches"
+                        action={{
+                          content: "Clear filters",
+                          onAction: () => {
+                            setSearch("");
+                            setStatusFilter("all");
+                          },
+                        }}
+                        image=""
+                      >
+                        <Text as="p">Try a different search term or status filter.</Text>
+                      </EmptyState>
+                    )}
+                  </Box>
+                ) : (
+                  <ResourceList
+                    resourceName={{ singular: "product", plural: "products" }}
+                    items={filteredConfigs}
+                    renderItem={(config) => (
+                      <ProductResourceRow
+                        key={config.id}
+                        config={config}
+                        onRemove={handleRemove}
+                        onSetStorage={handleOpenStorage}
+                        storageAvailable={data.availableStorages.length > 0}
+                      />
+                    )}
+                  />
+                )}
+              </Card>
+
               {/* Failed captures — moved here from Settings 2026-05-27.
                   Bulk-delete added 2026-05-27. When empty we render a
                   benign placeholder so the alerts row keeps its
-                  two-column shape (an empty grid slot would let
-                  Recent Sync Activity stretch full-width). */}
+                  shape (an empty grid slot would let the side rails
+                  collapse). */}
               <Card>
                 <BlockStack gap="300">
                   <InlineStack align="space-between" blockAlign="center">
@@ -992,89 +1071,6 @@ function Dashboard({ data }: { data: DashData }) {
                 </BlockStack>
               </Card>
             </InlineGrid>
-          </Layout.Section>
-
-          {/* Products list. */}
-          <Layout.Section>
-            <Card padding="0">
-              <Box padding="400" paddingBlockEnd="0">
-                <Filters
-                  queryValue={search}
-                  queryPlaceholder="Search products by title…"
-                  onQueryChange={setSearch}
-                  onQueryClear={() => setSearch("")}
-                  onClearAll={() => {
-                    setSearch("");
-                    setStatusFilter("all");
-                  }}
-                  appliedFilters={appliedFilters}
-                  filters={[
-                    {
-                      key: "status",
-                      label: "Status",
-                      filter: (
-                        <BlockStack gap="200">
-                          {(["all", "PUBLISHED", "DRAFT"] as StatusFilter[]).map((f) => (
-                            <Button
-                              key={f}
-                              variant={statusFilter === f ? "primary" : "tertiary"}
-                              onClick={() => setStatusFilter(f)}
-                              size="slim"
-                            >
-                              {f === "all" ? "All" : f === "PUBLISHED" ? "Published" : "Drafts"}
-                            </Button>
-                          ))}
-                        </BlockStack>
-                      ),
-                      shortcut: true,
-                    },
-                  ]}
-                />
-              </Box>
-              {filteredConfigs.length === 0 ? (
-                <Box padding="600">
-                  {configs.length === 0 ? (
-                    <EmptyState
-                      heading="No products configured yet"
-                      action={{ content: "Open Editor", url: "/app/sdl3d/editor" }}
-                      image=""
-                    >
-                      <Text as="p">
-                        Open the Editor to attach a 3D viewer to your first product.
-                      </Text>
-                    </EmptyState>
-                  ) : (
-                    <EmptyState
-                      heading="No matches"
-                      action={{
-                        content: "Clear filters",
-                        onAction: () => {
-                          setSearch("");
-                          setStatusFilter("all");
-                        },
-                      }}
-                      image=""
-                    >
-                      <Text as="p">Try a different search term or status filter.</Text>
-                    </EmptyState>
-                  )}
-                </Box>
-              ) : (
-                <ResourceList
-                  resourceName={{ singular: "product", plural: "products" }}
-                  items={filteredConfigs}
-                  renderItem={(config) => (
-                    <ProductResourceRow
-                      key={config.id}
-                      config={config}
-                      onRemove={handleRemove}
-                      onSetStorage={handleOpenStorage}
-                      storageAvailable={data.availableStorages.length > 0}
-                    />
-                  )}
-                />
-              )}
-            </Card>
           </Layout.Section>
 
         </Layout>
