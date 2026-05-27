@@ -1552,23 +1552,15 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
 }
 
 /* Polaris Modal__Body wraps Modal.Section content in its own scroll
-   container. Combined with our `.sdl-hotspots-modal__detail-body`
-   overflow that produced two scrollbars on the same column (one on the
-   modal body, one on the inner detail) — the toolbar would scroll
-   off-screen because the OUTER scroll was eating the height. Disable
-   the outer scroll so the inner detail body is the single source of
-   scrolling and the toolbar + sub-tabs stay locked at the top. */
+   container. Suppress only its scroll (the inner `__detail-body` is
+   the single intended scroll source) — but don't otherwise touch its
+   layout. Earlier attempts to override `display` / `height` on this
+   wrapper broke Polaris's own footer placement + caused content to
+   be clipped without scroll. The inner `.sdl-hotspots-modal` sets its
+   own max-height so the modal body doesn't need an explicit one. */
 .Polaris-Modal__Body:has(.sdl-hotspots-modal),
 .Polaris-Modal-Section:has(.sdl-hotspots-modal) {
   overflow: hidden !important;
-  /* Lock the height (not just max-height) so the inner flex column
-     has a known total to distribute between toolbar / body / bottom
-     bar — without this the wrapper could shrink to content height,
-     leaving the detail body unable to scroll fully because there was
-     nothing to overflow. */
-  height: 92vh;
-  display: flex;
-  flex-direction: column;
 }
 
 /* File browser modal opened on top of the hotspots modal sometimes
@@ -1589,33 +1581,21 @@ body:has(.sdl-hotspots-modal) .Polaris-Modal-Dialog__Container:not(:has(.sdl-hot
 .sdl-hotspots-modal {
   display: flex;
   flex-direction: column;
-  /* Fill the Polaris Modal__Body height (constrained to 92vh by the
-     selector above). 84vh was too short — combined with the new bottom
-     bar the detail-body couldn't show all settings on shorter viewports.
-     `min-height: 0` lets the flex children (body + detail-body) compute
-     their own scroll regions instead of inflating the parent. */
-  height: 100%;
-  min-height: 0;
+  /* Bounded height so the inner flex column has a fixed total to
+     distribute between the two-pane body (which becomes scrollable
+     via its children's overflow-y: auto). Polaris draws its own
+     footer (Apply Preset / Undo / Redo / Close — set via
+     `secondaryActions`) OUTSIDE this container, so we don't need to
+     reserve space for a bottom bar here. */
+  max-height: 80vh;
+  min-height: 60vh;
 }
 
 /* Toolbar removed 2026-05-27 — selector kept defined in case a future
    stray reference renders before CSS is rebuilt. Safe to delete. */
-.sdl-hotspots-modal__toolbar {
-  display: none;
-}
-
-/* Bottom action bar — Apply Preset / Undo / Redo. Locked at the
-   bottom of the modal so it doesn't scroll away with the detail
-   content. Mirrors the toolbar styling we used to have at the top. */
+.sdl-hotspots-modal__toolbar,
 .sdl-hotspots-modal__bottom {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--p-space-300, 12px);
-  padding: var(--p-space-300, 12px) var(--p-space-400, 16px);
-  border-top: 1px solid var(--p-color-border, #e1e3e5);
-  background: var(--p-color-bg-surface, #ffffff);
-  flex-shrink: 0;
+  display: none;
 }
 
 .sdl-hotspots-modal__body {

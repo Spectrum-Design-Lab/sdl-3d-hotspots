@@ -28,8 +28,6 @@ import { useMemo, useState } from "react";
 import {
   BlockStack,
   Box,
-  Button,
-  ButtonGroup,
   Modal,
   Tabs,
   Text,
@@ -211,7 +209,17 @@ export function Sdl3dHotspotsModal({
       // Polaris Modal `size="large"` caps at ~620px; we override via
       // editor.css `.sdl-hotspots-modal` to push it to ~95vw so the two
       // panes have room to breathe.
-      secondaryActions={[{ content: "Close", onAction: onClose }]}
+      // Bottom action bar: Apply Preset / Undo / Redo / Close all live
+      // in Polaris's footer (`secondaryActions`) instead of a custom
+      // div inside the modal body. Lets Polaris draw the standard
+      // footer chrome and prevents the action row from eating modal
+      // body space.
+      secondaryActions={[
+        { content: "Apply Preset", onAction: onApplyPreset },
+        { content: "Undo", onAction: onUndo, disabled: !canUndo },
+        { content: "Redo", onAction: onRedo, disabled: !canRedo },
+        { content: "Close", onAction: onClose },
+      ]}
     >
       <Modal.Section flush>
         <div className="sdl-hotspots-modal">
@@ -350,23 +358,6 @@ export function Sdl3dHotspotsModal({
                 </>
               )}
             </section>
-          </div>
-
-          {/* Bottom action bar — Apply Preset / Undo / Redo. Locked at
-              the bottom so it never scrolls away regardless of which
-              sub-tab is open. */}
-          <div className="sdl-hotspots-modal__bottom">
-            <ButtonGroup>
-              <Button size="slim" onClick={onApplyPreset}>
-                Apply Preset
-              </Button>
-              <Button size="slim" onClick={onUndo} disabled={!canUndo}>
-                Undo
-              </Button>
-              <Button size="slim" onClick={onRedo} disabled={!canRedo}>
-                Redo
-              </Button>
-            </ButtonGroup>
           </div>
         </div>
       </Modal.Section>
