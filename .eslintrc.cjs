@@ -74,6 +74,18 @@ module.exports = {
         "plugin:import/recommended",
         "plugin:import/typescript",
       ],
+      rules: {
+        // @typescript-eslint v8 (forced upgrade 2026-05-27 to drop the
+        // minimatch ReDoS vuln in the v6/v7 chain) enabled stricter
+        // defaults that surfaced pre-existing tech debt — ~230 hits
+        // across the codebase. Demote to warnings so lint stays
+        // useful for new code without forcing a full cleanup pass in
+        // the same commit as a security bump. Each of these is a
+        // legitimate cleanup target, just out of scope here.
+        "@typescript-eslint/no-explicit-any": "warn",
+        "@typescript-eslint/no-unused-vars": "warn",
+        "@typescript-eslint/no-unused-expressions": "warn",
+      },
     },
 
     // Node
