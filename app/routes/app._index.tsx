@@ -64,10 +64,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       enabledCount: 0,
       availableStorages: [],
       defaultStorageId: null,
+      deadLetterCaptures: [],
     };
   }
 
-  const [configs, syncRuns, totalConfigs, publishedCount, enabledCount, allStorages] = await Promise.all([
+  const [configs, syncRuns, totalConfigs, publishedCount, enabledCount, allStorages, deadLetterCaptures] = await Promise.all([
     prisma.productConfig.findMany({
       where: { shopId: shop.id },
       orderBy: { updatedAt: "desc" },
@@ -101,6 +102,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       where: { shopId: shop.id },
       orderBy: [{ isDefault: "desc" }, { provider: "asc" }],
       select: { id: true, bucket: true, provider: true, isDefault: true },
+    }),
+    // Failed/cancelled captures — moved here from Settings 2026-05-27 so
+    // errors live where merchants actually look. Hidden when empty; up
+    // to 20 most recent so the dashboard never grows unbounded.
+    prisma.capture.findMany({
+      where: {
+        productConfig: { shopId: shop.id },
+        status: { in: ["FAILED", "CANCELLED"] },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+      include: {
+        productConfig: { select: { shopifyProductGid: true } },
+      },
     }),
   ]);
 
@@ -290,6 +305,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     enabledCount,
     availableStorages: allStorages,
     defaultStorageId: defaultStorage?.id ?? null,
+    deadLetterCaptures: deadLetterCaptures.map((c) => ({
+      id: c.id,
+      status: c.status as "FAILED" | "CANCELLED",
+      productGid: c.productConfig.shopifyProductGid,
+      errorMessage: c.errorMessage,
+      attempts: c.attempts,
+      updatedAt: c.updatedAt.toISOString(),
+    })),
   };
 };
 
@@ -566,6 +589,15 @@ type DashSyncRun = {
   createdAt: string;
 };
 
+type DashDeadLetterCapture = {
+  id: string;
+  status: "FAILED" | "CANCELLED";
+  productGid: string;
+  errorMessage: string | null;
+  attempts: number;
+  updatedAt: string;
+};
+
 type DashData = {
   configs: DashConfig[];
   syncRuns: DashSyncRun[];
@@ -574,10 +606,11 @@ type DashData = {
   enabledCount: number;
   availableStorages: DashStorageSummary[];
   defaultStorageId: string | null;
+  deadLetterCaptures: DashDeadLetterCapture[];
 };
 
 function Dashboard({ data }: { data: DashData }) {
-  const { configs, syncRuns, totalConfigs, publishedCount, enabledCount } = data;
+  const { configs, syncRuns, totalConfigs, publishedCount, enabledCount, deadLetterCaptures } = data;
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -599,6 +632,13 @@ function Dashboard({ data }: { data: DashData }) {
     productGid?: string;
     preferredStorageId?: string | null;
   }>();
+  // Capture lifecycle ops (reprocess + delete failed/cancelled captures).
+  // Moved here from Settings 2026-05-27 — see "Failed captures" card below.
+  const captureOpsFetcher = useFetcher<{
+    ok: boolean;
+    message?: string;
+    deleted?: boolean;
+  }>();
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   // Slice 8 — storage override Modal. Held against the active config so
   // closing/reopening starts the dropdown from the persisted preference.
@@ -617,6 +657,45 @@ function Dashboard({ data }: { data: DashData }) {
     () => configs.filter((c) => c.productMissing).length,
     [configs],
   );
+
+  const handleReprocessCapture = useCallback(
+    (captureId: string) => {
+      const fd = new FormData();
+      fd.set("intent", "retry");
+      fd.set("captureId", captureId);
+      captureOpsFetcher.submit(fd, { method: "post", action: "/api/sdl3d/captures" });
+    },
+    [captureOpsFetcher],
+  );
+
+  const handleDeleteCapture = useCallback(
+    (captureId: string) => {
+      if (typeof window !== "undefined" && !window.confirm("Permanently delete this capture row? The processed frames in your bucket are not removed.")) {
+        return;
+      }
+      const fd = new FormData();
+      fd.set("intent", "deleteCapture");
+      fd.set("captureId", captureId);
+      captureOpsFetcher.submit(fd, { method: "post", action: "/api/sdl3d/captures" });
+    },
+    [captureOpsFetcher],
+  );
+
+  const isCaptureOpsBusy = captureOpsFetcher.state !== "idle";
+
+  // Toast for capture ops results — mirrors the settings page behaviour
+  // before the move.
+  useEffect(() => {
+    if (captureOpsFetcher.state !== "idle" || !captureOpsFetcher.data) return;
+    const result = captureOpsFetcher.data;
+    if (result.ok && result.deleted) {
+      setToast({ message: "Capture removed." });
+    } else if (result.ok) {
+      setToast({ message: "Capture re-queued. The worker will pick it up." });
+    } else if (result.message) {
+      setToast({ message: result.message, isError: true });
+    }
+  }, [captureOpsFetcher.state, captureOpsFetcher.data]);
 
   const handleRemove = useCallback(
     (config: DashConfig) => {
@@ -854,6 +933,76 @@ function Dashboard({ data }: { data: DashData }) {
           {/* Sidebar */}
           <Layout.Section variant="oneThird">
             <BlockStack gap="300">
+              {/* Failed captures — moved here from Settings 2026-05-27 so
+                  merchants see errors in one place. Hidden entirely when
+                  empty so a healthy shop's dashboard stays clean. */}
+              {deadLetterCaptures.length > 0 ? (
+                <Card>
+                  <BlockStack gap="300">
+                    <Text as="h2" variant="headingMd">Failed captures</Text>
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      Captures that errored or were cancelled. Reprocess to re-run, or delete to clear the row.
+                    </Text>
+                    <ResourceList
+                      resourceName={{ singular: "capture", plural: "captures" }}
+                      items={deadLetterCaptures}
+                      renderItem={(capture) => {
+                        const shortGid = capture.productGid.split("/").pop() ?? capture.productGid;
+                        const subtitle =
+                          capture.status === "CANCELLED"
+                            ? "Cancelled by merchant"
+                            : capture.errorMessage ?? "Capture failed";
+                        return (
+                          <ResourceItem
+                            id={capture.id}
+                            onClick={() => undefined}
+                            accessibilityLabel={`Capture ${capture.id}`}
+                          >
+                            <BlockStack gap="100">
+                              <InlineStack gap="200" blockAlign="center">
+                                <Text as="span" variant="bodyMd" fontWeight="semibold">
+                                  Product {shortGid}
+                                </Text>
+                                <Badge tone={capture.status === "FAILED" ? "critical" : "warning"}>
+                                  {capture.status}
+                                </Badge>
+                                {capture.attempts > 1 ? (
+                                  <Badge>{`${capture.attempts} attempts`}</Badge>
+                                ) : null}
+                              </InlineStack>
+                              <Text as="p" variant="bodySm" tone="subdued">
+                                {subtitle}
+                              </Text>
+                              <Text as="p" variant="bodySm" tone="subdued">
+                                {new Date(capture.updatedAt).toLocaleString()}
+                              </Text>
+                              <InlineStack gap="200">
+                                <Button
+                                  size="slim"
+                                  onClick={() => handleReprocessCapture(capture.id)}
+                                  disabled={isCaptureOpsBusy}
+                                >
+                                  Reprocess
+                                </Button>
+                                <Button
+                                  size="slim"
+                                  tone="critical"
+                                  variant="plain"
+                                  onClick={() => handleDeleteCapture(capture.id)}
+                                  disabled={isCaptureOpsBusy}
+                                >
+                                  Delete
+                                </Button>
+                              </InlineStack>
+                            </BlockStack>
+                          </ResourceItem>
+                        );
+                      }}
+                    />
+                  </BlockStack>
+                </Card>
+              ) : null}
+
               <Card>
                 <BlockStack gap="300">
                   <Text as="h2" variant="headingMd">

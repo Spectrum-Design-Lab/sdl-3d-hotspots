@@ -46,8 +46,9 @@ import {
 } from "./Sdl3dHotspot360Editor";
 import type { Hotspot360 } from "../lib/sdl3d-shared";
 import { Sdl3dHotspotPreviewChip } from "./Sdl3dHotspotPreviewChip";
+import { Sdl3dHotspotStorefrontPreview } from "./Sdl3dHotspotStorefrontPreview";
 
-type SubTabId = "content" | "appearance" | "behavior";
+type SubTabId = "content" | "appearance" | "behavior" | "preview";
 
 // Slice 9 follow-up — Position / Frames intentionally NOT in the modal.
 // Editing where a hotspot sits is meaningless without seeing the model
@@ -59,6 +60,7 @@ const SUB_TABS_3D: Array<{ id: SubTabId; content: string }> = [
   { id: "content", content: "Content" },
   { id: "appearance", content: "Appearance" },
   { id: "behavior", content: "Link" },
+  { id: "preview", content: "Preview" },
 ];
 
 // 360 has no Behavior section (no CTA fields), so the tab strip drops
@@ -66,6 +68,7 @@ const SUB_TABS_3D: Array<{ id: SubTabId; content: string }> = [
 const SUB_TABS_360: Array<{ id: SubTabId; content: string }> = [
   { id: "content", content: "Content" },
   { id: "appearance", content: "Appearance" },
+  { id: "preview", content: "Preview" },
 ];
 
 type Props = {
@@ -151,6 +154,38 @@ export function Sdl3dHotspotsModal({
       icon: h.icon,
       style: h.style,
       animation: h.animation,
+    };
+  }, [is360, hotspots3d, hotspots360, selectedHotspotId]);
+
+  // Storefront preview tab needs title / body / media / CTA on top of
+  // the color the chip already pulls. CTA fields only exist on 3D
+  // hotspots — the 360 type has no ctaLabel / ctaUrl, so they stay null
+  // for that path and the CTA section in the preview component just
+  // doesn't render.
+  const selectedForStorefrontPreview = useMemo(() => {
+    if (is360) {
+      const h = hotspots360.find((x) => x.id === selectedHotspotId);
+      if (!h) return null;
+      return {
+        title: h.title ?? null,
+        body: h.body ?? null,
+        mediaImageUrl: h.mediaImageUrl ?? null,
+        mediaVideoUrl: h.mediaVideoUrl ?? null,
+        ctaLabel: null as string | null,
+        ctaUrl: null as string | null,
+        color: h.color ?? null,
+      };
+    }
+    const h = hotspots3d.find((x) => x.id === selectedHotspotId);
+    if (!h) return null;
+    return {
+      title: h.title ?? null,
+      body: h.body ?? null,
+      mediaImageUrl: h.mediaImageUrl ?? null,
+      mediaVideoUrl: h.mediaVideoUrl ?? null,
+      ctaLabel: h.ctaLabel ?? null,
+      ctaUrl: h.ctaUrl ?? null,
+      color: h.color ?? null,
     };
   }, [is360, hotspots3d, hotspots360, selectedHotspotId]);
 
@@ -282,7 +317,19 @@ export function Sdl3dHotspotsModal({
 
                   <div className="sdl-hotspots-modal__detail-body">
                     <BlockStack gap="300">
-                      {is360 ? (
+                      {activeSubTab === "preview" ? (
+                        selectedForStorefrontPreview ? (
+                          <Sdl3dHotspotStorefrontPreview
+                            title={selectedForStorefrontPreview.title}
+                            body={selectedForStorefrontPreview.body}
+                            mediaImageUrl={selectedForStorefrontPreview.mediaImageUrl}
+                            mediaVideoUrl={selectedForStorefrontPreview.mediaVideoUrl}
+                            ctaLabel={selectedForStorefrontPreview.ctaLabel}
+                            ctaUrl={selectedForStorefrontPreview.ctaUrl}
+                            color={selectedForStorefrontPreview.color}
+                          />
+                        ) : null
+                      ) : is360 ? (
                         <Sdl3dHotspot360Editor
                           hotspots={hotspots360}
                           selectedHotspotId={selectedHotspotId}

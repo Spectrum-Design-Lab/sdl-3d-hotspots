@@ -351,7 +351,15 @@ export async function loader({ request }: { request: Request }) {
         frameCount: 0,
         imageSequencePrefix: "",
       },
-    latestCapture: config?.captures?.[0]
+    // Only hydrate the uploader with in-progress captures (QUEUED /
+    // PROCESSING) so the merchant lands on an idle upload UI on remount
+    // instead of seeing a stale FAILED banner from a previous session.
+    // Terminal states (COMPLETED / FAILED / CANCELLED) surface on the
+    // dashboard's Failed captures section — moved there 2026-05-27 from
+    // Settings so errors live in one place.
+    latestCapture: config?.captures?.[0] &&
+      (config.captures[0].status === "QUEUED" ||
+        config.captures[0].status === "PROCESSING")
       ? {
         id: config.captures[0].id,
         status: config.captures[0].status as
@@ -359,8 +367,6 @@ export async function loader({ request }: { request: Request }) {
         errorMessage: config.captures[0].errorMessage,
         frameCountActual: config.captures[0].frameCountActual,
         frameCountTarget: config.captures[0].frameCountTarget,
-        // Slice 9 PR #1 — restored across reloads so the uploader can
-        // re-surface warnings/errors from the last completed/failed run.
         validationJson: config.captures[0].validationJson,
       }
       : null,
