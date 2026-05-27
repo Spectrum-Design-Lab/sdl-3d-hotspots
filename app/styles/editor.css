@@ -1568,14 +1568,15 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
    stacked BEHIND because Polaris portals all Modals to the same root
    and the inner z-index is left to source order. The IconPicker /
    media-image picker open from inside the hotspots modal, so we bump
-   any non-hotspots Polaris Modal to a higher layer when a hotspots
-   modal is mounted. The `:not(...)` selector targets the LATER-mounted
-   modal so the hotspots modal stays in place underneath. */
+   any non-hotspots Polaris Modal Container to a higher layer when a
+   hotspots modal is mounted. The `:not(...)` selector targets the
+   later-mounted modal so the hotspots modal stays in place underneath.
+   The Container at z-index 521 will paint above its own backdrop
+   (still at Polaris's default), which is enough — bumping the backdrop
+   too caused a regression where the lone hotspots-modal backdrop
+   (matching `:last-of-type`) overlay-blocked the modal itself. */
 body:has(.sdl-hotspots-modal) .Polaris-Modal-Dialog__Container:not(:has(.sdl-hotspots-modal)) {
   z-index: 521;
-}
-body:has(.sdl-hotspots-modal) .Polaris-Backdrop:last-of-type {
-  z-index: 520;
 }
 
 .sdl-hotspots-modal {
