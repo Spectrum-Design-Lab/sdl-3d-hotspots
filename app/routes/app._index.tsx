@@ -869,14 +869,17 @@ function Dashboard({ data }: { data: DashData }) {
             </InlineGrid>
           </Layout.Section>
 
-          {/* Left rail — Recent Sync Activity + Failed captures.
-              Placed BEFORE the products section so on desktop the
-              rail sits on the LEFT (Polaris Layout uses CSS grid;
-              section order = visual order). Quick Actions card was
-              removed 2026-05-27 — the same destinations are one click
-              away from the NavMenu. */}
-          <Layout.Section variant="oneThird">
-            <BlockStack gap="300">
+          {/* Alerts + activity row — full-width Section, two cards
+              side-by-side on desktop (oneHalf each via InlineGrid),
+              stacks on narrow screens. Previously tried as a
+              left-rail sidebar with Polaris `variant="oneThird"` but
+              that ended up stacking everything to the right with the
+              products list below; this layout reads cleanly at every
+              breakpoint and keeps the products list full-width. Quick
+              Actions card removed 2026-05-27 — destinations live in
+              the NavMenu. */}
+          <Layout.Section>
+            <InlineGrid columns={{ xs: 1, md: 2 }} gap="300">
               <Card>
                 <BlockStack gap="300">
                   <Text as="h2" variant="headingMd">
@@ -897,16 +900,17 @@ function Dashboard({ data }: { data: DashData }) {
               </Card>
 
               {/* Failed captures — moved here from Settings 2026-05-27.
-                  Hidden entirely when empty so a healthy shop's
-                  dashboard stays clean. Bulk-delete button added
-                  2026-05-27 — same shop-scoped delete, in one shot. */}
-              {deadLetterCaptures.length > 0 ? (
-                <Card>
-                  <BlockStack gap="300">
-                    <InlineStack align="space-between" blockAlign="center">
-                      <Text as="h2" variant="headingMd">
-                        Failed captures
-                      </Text>
+                  Bulk-delete added 2026-05-27. When empty we render a
+                  benign placeholder so the alerts row keeps its
+                  two-column shape (an empty grid slot would let
+                  Recent Sync Activity stretch full-width). */}
+              <Card>
+                <BlockStack gap="300">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text as="h2" variant="headingMd">
+                      Failed captures
+                    </Text>
+                    {deadLetterCaptures.length > 0 ? (
                       <Button
                         size="slim"
                         tone="critical"
@@ -916,70 +920,78 @@ function Dashboard({ data }: { data: DashData }) {
                       >
                         Delete all
                       </Button>
-                    </InlineStack>
+                    ) : null}
+                  </InlineStack>
+                  {deadLetterCaptures.length === 0 ? (
                     <Text as="p" tone="subdued" variant="bodySm">
-                      Captures that errored or were cancelled. Reprocess to re-run, or delete to clear the row.
+                      No failed or cancelled captures.
                     </Text>
-                    <ResourceList
-                      resourceName={{ singular: "capture", plural: "captures" }}
-                      items={deadLetterCaptures}
-                      renderItem={(capture) => {
-                        const shortGid = capture.productGid.split("/").pop() ?? capture.productGid;
-                        const subtitle =
-                          capture.status === "CANCELLED"
-                            ? "Cancelled by merchant"
-                            : capture.errorMessage ?? "Capture failed";
-                        return (
-                          <ResourceItem
-                            id={capture.id}
-                            onClick={() => undefined}
-                            accessibilityLabel={`Capture ${capture.id}`}
-                          >
-                            <BlockStack gap="100">
-                              <InlineStack gap="200" blockAlign="center">
-                                <Text as="span" variant="bodyMd" fontWeight="semibold">
-                                  Product {shortGid}
+                  ) : (
+                    <>
+                      <Text as="p" tone="subdued" variant="bodySm">
+                        Captures that errored or were cancelled. Reprocess to re-run, or delete to clear the row.
+                      </Text>
+                      <ResourceList
+                        resourceName={{ singular: "capture", plural: "captures" }}
+                        items={deadLetterCaptures}
+                        renderItem={(capture) => {
+                          const shortGid = capture.productGid.split("/").pop() ?? capture.productGid;
+                          const subtitle =
+                            capture.status === "CANCELLED"
+                              ? "Cancelled by merchant"
+                              : capture.errorMessage ?? "Capture failed";
+                          return (
+                            <ResourceItem
+                              id={capture.id}
+                              onClick={() => undefined}
+                              accessibilityLabel={`Capture ${capture.id}`}
+                            >
+                              <BlockStack gap="100">
+                                <InlineStack gap="200" blockAlign="center">
+                                  <Text as="span" variant="bodyMd" fontWeight="semibold">
+                                    Product {shortGid}
+                                  </Text>
+                                  <Badge tone={capture.status === "FAILED" ? "critical" : "warning"}>
+                                    {capture.status}
+                                  </Badge>
+                                  {capture.attempts > 1 ? (
+                                    <Badge>{`${capture.attempts} attempts`}</Badge>
+                                  ) : null}
+                                </InlineStack>
+                                <Text as="p" variant="bodySm" tone="subdued">
+                                  {subtitle}
                                 </Text>
-                                <Badge tone={capture.status === "FAILED" ? "critical" : "warning"}>
-                                  {capture.status}
-                                </Badge>
-                                {capture.attempts > 1 ? (
-                                  <Badge>{`${capture.attempts} attempts`}</Badge>
-                                ) : null}
-                              </InlineStack>
-                              <Text as="p" variant="bodySm" tone="subdued">
-                                {subtitle}
-                              </Text>
-                              <Text as="p" variant="bodySm" tone="subdued">
-                                {new Date(capture.updatedAt).toLocaleString()}
-                              </Text>
-                              <InlineStack gap="200">
-                                <Button
-                                  size="slim"
-                                  onClick={() => handleReprocessCapture(capture.id)}
-                                  disabled={isCaptureOpsBusy}
-                                >
-                                  Reprocess
-                                </Button>
-                                <Button
-                                  size="slim"
-                                  tone="critical"
-                                  variant="plain"
-                                  onClick={() => handleDeleteCapture(capture.id)}
-                                  disabled={isCaptureOpsBusy}
-                                >
-                                  Delete
-                                </Button>
-                              </InlineStack>
-                            </BlockStack>
-                          </ResourceItem>
-                        );
-                      }}
-                    />
-                  </BlockStack>
-                </Card>
-              ) : null}
-            </BlockStack>
+                                <Text as="p" variant="bodySm" tone="subdued">
+                                  {new Date(capture.updatedAt).toLocaleString()}
+                                </Text>
+                                <InlineStack gap="200">
+                                  <Button
+                                    size="slim"
+                                    onClick={() => handleReprocessCapture(capture.id)}
+                                    disabled={isCaptureOpsBusy}
+                                  >
+                                    Reprocess
+                                  </Button>
+                                  <Button
+                                    size="slim"
+                                    tone="critical"
+                                    variant="plain"
+                                    onClick={() => handleDeleteCapture(capture.id)}
+                                    disabled={isCaptureOpsBusy}
+                                  >
+                                    Delete
+                                  </Button>
+                                </InlineStack>
+                              </BlockStack>
+                            </ResourceItem>
+                          );
+                        }}
+                      />
+                    </>
+                  )}
+                </BlockStack>
+              </Card>
+            </InlineGrid>
           </Layout.Section>
 
           {/* Products list. */}

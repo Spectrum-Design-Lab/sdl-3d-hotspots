@@ -47,15 +47,6 @@ function stringifyViewerSettings(next: ViewerSettings) {
   return JSON.stringify(next, null, 2);
 }
 
-const HOTSPOT_STYLE_OPTIONS = [
-  { label: "card", value: "card" },
-  { label: "tooltip", value: "tooltip" },
-  { label: "dot", value: "dot" },
-  { label: "badge", value: "badge" },
-  { label: "icon-only", value: "icon-only" },
-  { label: "panel", value: "panel" },
-];
-
 const INTERACTION_PROMPT_OPTIONS = [
   { label: "auto", value: "auto" },
   { label: "none", value: "none" },
@@ -360,12 +351,10 @@ export function Sdl3dViewerSettingsEditor({
             </InlineStack>
           ) : null}
         </BlockStack>
-        <Select
-          label="Hotspot style"
-          options={HOTSPOT_STYLE_OPTIONS}
-          value={settings.hotspotStyle}
-          onChange={(value) => update({ hotspotStyle: value })}
-        />
+        {/* Hotspot style removed 2026-05-27 — was a viewer-level default
+            that nobody read on the storefront and confused merchants
+            (per-hotspot style is on the Appearance sub-tab in the
+            hotspots modal, which is the authoritative source). */}
         <Checkbox
           label="Fullscreen button"
           checked={settings.showFullscreen}

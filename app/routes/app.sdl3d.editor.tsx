@@ -498,6 +498,11 @@ export default function Sdl3dEditorRoute() {
   // collide.
   const [showIconBrowser, setShowIconBrowser] = useState(false);
   const [iconBrowserHotspotId, setIconBrowserHotspotId] = useState<string | null>(null);
+  // Optimistic gid → previewUrl map. Populated on icon pick so the
+  // preview renders immediately without waiting for a loader revalidate;
+  // merges over loaderData.iconResolvedUrls so a later loader run that
+  // includes the same gid takes precedence (returns the canonical URL).
+  const [optimisticIconUrls, setOptimisticIconUrls] = useState<Record<string, string>>({});
   // Slice 8 hotspots PR #5 — same FileBrowserModal reuse for the
   // mediaImageUrl slot. Separate state so concurrent picker invocations
   // (icon vs media) don't collide.
@@ -1177,6 +1182,14 @@ export default function Sdl3dEditorRoute() {
     if (!iconBrowserHotspotId || !gid) {
       setIconBrowserHotspotId(null);
       return;
+    }
+    // Cache the previewUrl from the just-picked file so the icon
+    // preview renders immediately. Without this, classifyIcon sees a
+    // gid:// value, looks it up in iconResolvedUrls (loader-only data),
+    // misses, and shows "?" until the next loader revalidation.
+    const file = allPosterFiles.find((f) => f.id === gid);
+    if (file?.previewUrl) {
+      setOptimisticIconUrls((prev) => ({ ...prev, [gid]: file.previewUrl! }));
     }
     if (viewerType === "IMAGE_360") {
       setHotspots360((current) =>
@@ -2104,7 +2117,7 @@ export default function Sdl3dEditorRoute() {
             viewerType={viewerType}
             selectedHotspotId={selectedHotspotId}
             onSelectHotspot={setSelectedHotspotId}
-            iconResolvedUrls={loaderData.iconResolvedUrls}
+            iconResolvedUrls={{ ...optimisticIconUrls, ...loaderData.iconResolvedUrls }}
             onOpenIconBrowser={handleOpenIconBrowser}
             onOpenMediaImageBrowser={handleOpenMediaImageBrowser}
             canUndo={canUndo}

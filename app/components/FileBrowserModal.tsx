@@ -356,17 +356,24 @@ export function FileBrowserModal({
   // ── Handlers ──
   const toggleFile = useCallback(
     (gid: string) => {
+      if (!isMulti) {
+        // Single-select modes (poster / model / icon) auto-commit on
+        // first click so the merchant doesn't have to scroll back to
+        // the Confirm button. Avoids the "I clicked but nothing
+        // happened" confusion + sidesteps the "multiple picked?"
+        // confusion from clicking around to compare.
+        onSelect([gid]);
+        onClose();
+        return;
+      }
       setSelected((prev) => {
-        if (isMulti) {
-          const next = new Set(prev);
-          if (next.has(gid)) next.delete(gid);
-          else next.add(gid);
-          return next;
-        }
-        return prev.has(gid) ? new Set() : new Set([gid]);
+        const next = new Set(prev);
+        if (next.has(gid)) next.delete(gid);
+        else next.add(gid);
+        return next;
       });
     },
-    [isMulti],
+    [isMulti, onSelect, onClose],
   );
 
   const handleLoadMore = useCallback(() => {

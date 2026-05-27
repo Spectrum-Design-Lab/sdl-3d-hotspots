@@ -1551,6 +1551,33 @@ body:has(.sdl-editor:not(.sdl-editor--page)) {
   max-height: 92vh;
 }
 
+/* Polaris Modal__Body wraps Modal.Section content in its own scroll
+   container. Combined with our `.sdl-hotspots-modal__detail-body`
+   overflow that produced two scrollbars on the same column (one on the
+   modal body, one on the inner detail) — the toolbar would scroll
+   off-screen because the OUTER scroll was eating the height. Disable
+   the outer scroll so the inner detail body is the single source of
+   scrolling and the toolbar + sub-tabs stay locked at the top. */
+.Polaris-Modal__Body:has(.sdl-hotspots-modal),
+.Polaris-Modal-Section:has(.sdl-hotspots-modal) {
+  overflow: hidden !important;
+  max-height: 92vh;
+}
+
+/* File browser modal opened on top of the hotspots modal sometimes
+   stacked BEHIND because Polaris portals all Modals to the same root
+   and the inner z-index is left to source order. The IconPicker /
+   media-image picker open from inside the hotspots modal, so we bump
+   any non-hotspots Polaris Modal to a higher layer when a hotspots
+   modal is mounted. The `:not(...)` selector targets the LATER-mounted
+   modal so the hotspots modal stays in place underneath. */
+body:has(.sdl-hotspots-modal) .Polaris-Modal-Dialog__Container:not(:has(.sdl-hotspots-modal)) {
+  z-index: 521;
+}
+body:has(.sdl-hotspots-modal) .Polaris-Backdrop:last-of-type {
+  z-index: 520;
+}
+
 .sdl-hotspots-modal {
   display: flex;
   flex-direction: column;
