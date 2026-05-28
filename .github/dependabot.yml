@@ -1,0 +1,27 @@
+# Dependabot configuration
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Scope: runtime (production) dependencies only.
+#
+# Why: the dev-only chain
+#   @shopify/api-codegen-preset → @graphql-codegen/* → lodash
+# pulls in lodash, which has unpatched advisories that cannot be
+# resolved (lodash unmaintained since 2021). The advisories require
+# calling `_.template` / `_.unset` / `_.omit` with untrusted input —
+# our codebase does neither. And lodash never reaches the production
+# image regardless: the Dockerfile runs `npm prune --omit=dev` after
+# build, so devDependencies are stripped before the container ships.
+#
+# Restricting dependabot to `production` deps silences these
+# false-positive alerts permanently while still catching real CVEs
+# in runtime packages we actually ship.
+
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    allow:
+      - dependency-type: "production"
+    open-pull-requests-limit: 5
