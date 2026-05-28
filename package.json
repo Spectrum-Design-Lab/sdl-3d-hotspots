@@ -42,7 +42,7 @@
     "@react-router/node": "^7.12.0",
     "@react-router/serve": "^7.12.0",
     "@sentry/node": "^10.53.1",
-    "@sentry/react": "^10.53.1",
+    "@sentry/react": "^10.54.0",
     "@shopify/app-bridge-react": "^4.2.4",
     "@shopify/polaris": "^13.9.5",
     "@shopify/polaris-icons": "^9.3.1",
