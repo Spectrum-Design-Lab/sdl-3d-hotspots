@@ -7,6 +7,10 @@ This is the unbranded-build path (`APP_BRAND=bfa`). The same Git repo deploys tw
 Audience: SDL operator (Adam). For the merchant-facing version of capture/upload/publish steps, see [merchant-onboarding.md](merchant-onboarding.md).
 
 **Pilot-specific values (already decided):**
+- Merchant: Bar Fridges Australia
+- Shopify admin: <https://admin.shopify.com/store/bar-fridges-au>
+- myshopify domain: `bar-fridges-au.myshopify.com` (use for CORS allowlist + Partner app Distribution)
+- Storefront custom domain: `bar-fridges-australia.com.au`
 - Partner app `client_id`: `36f4ac369f6f2bea02b16d9016dc5bb2` (committed in [shopify.app.bfa.toml](../shopify.app.bfa.toml))
 - DO region (all resources — Spaces, Postgres, App Platform): **SYD**
 - Repo strategy: SDL keeps source ownership; BFA's App Platform builds from `Spectrum-Design-Lab/sdl-3d-hotspots`.
@@ -69,7 +73,10 @@ Notes specific to this pilot:
 
 - **Bucket name**: `bfa-3d-hotspots` (or whatever — globally unique across DO Spaces).
 - **Region**: pick whichever is closest to BFA's primary customer base. Region is permanent.
-- **CORS Origin** entries to add: BFA's `*.myshopify.com` domain AND their custom storefront domain. Both. Without both, frames will fail to load on whichever one is missing.
+- **CORS Origin** entries to add — two separate rules:
+  1. `https://bar-fridges-au.myshopify.com`
+  2. `https://bar-fridges-australia.com.au`
+  Without both, frames will fail to load on whichever origin is missing.
 - **Save the Spaces access key + secret** immediately — DO shows the secret exactly once.
 
 You'll wire these credentials into the app via the in-admin Settings → Storage page in Step 8, not via env vars. The encrypted-at-rest bucket credential goes in Postgres, keyed by `STORAGE_ENC_KEY`.
