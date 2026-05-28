@@ -43,6 +43,7 @@ import {
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { adminGraphql } from "../lib/sdl3d-graphql.server";
+import { BRAND } from "../lib/brand";
 
 /* ───────────────────── loader ───────────────────── */
 
@@ -333,7 +334,7 @@ export default function DashboardPage() {
 const STEPS = [
   {
     id: "welcome",
-    title: "Welcome to SDL 3D Hotspots",
+    title: `Welcome to ${BRAND.appName}`,
     subtitle: "Add interactive 3D viewers with clickable hotspots to your products.",
   },
   {
@@ -441,7 +442,7 @@ function OnboardingModal() {
     <Frame>
       {/* Modal renders as an overlay; the page beneath stays empty during
           onboarding since the merchant has no configs yet. */}
-      <Page title="SDL 3D Hotspots">
+      <Page title={BRAND.appName}>
         <Layout>
           <Layout.Section>
             <Card>
@@ -505,7 +506,7 @@ function OnboardingModal() {
 
             {step === 4 ? (
               <Banner tone="info">
-                Publishing writes your configuration to product metafields. Add the <strong>SDL 3D Viewer</strong> block to your theme to display it on product pages. Works with any Online Store 2.0 theme.
+                Publishing writes your configuration to product metafields. Add the <strong>{BRAND.themeBlockName}</strong> block to your theme to display it on product pages. Works with any Online Store 2.0 theme.
               </Banner>
             ) : null}
           </BlockStack>
@@ -840,7 +841,7 @@ function Dashboard({ data }: { data: DashData }) {
   return (
     <Frame>
       <Page
-        title="SDL 3D Hotspots"
+        title={BRAND.appName}
         subtitle="Manage 3D product viewers and interactive hotspots."
         primaryAction={{
           content: "Open Editor",

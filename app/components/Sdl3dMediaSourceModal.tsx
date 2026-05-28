@@ -32,6 +32,7 @@ import {
 import { Sdl3dRawCaptureUploader } from "./Sdl3dRawCaptureUploader";
 import { Sdl3dBucketFolderPicker } from "./Sdl3dBucketFolderPicker";
 import type { CaptureStatus } from "../lib/captures-shared";
+import { BRAND } from "../lib/brand";
 
 type Props = {
   open: boolean;
@@ -101,7 +102,7 @@ export function Sdl3dMediaSourceModal({
               <Text as="p" tone="subdued" variant="bodySm">
                 Drop a folder of raw turntable photos (or a .zip). The worker
                 samples them to 72 frames, converts to WebP, and writes the
-                resulting sequence to your bucket. Your bucket — never SDL&apos;s.
+                resulting sequence to your bucket. Your bucket — never {BRAND.vendorName}&apos;s.
               </Text>
               <Sdl3dRawCaptureUploader
                 productGid={productGid}

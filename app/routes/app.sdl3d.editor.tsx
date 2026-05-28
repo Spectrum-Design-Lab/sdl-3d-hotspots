@@ -35,6 +35,7 @@ import { resolveImageSequenceUrls } from "../lib/sdl3d-image-sequence.server";
 import { hasSyncableSdl3dMetafields, pullMetafieldsToDraft } from "../lib/sdl3d-sync.server";
 import { listStoragesForShop, type ShopStorageSummary } from "../lib/storage.server";
 import { notify } from "../lib/notify.server";
+import { BRAND } from "../lib/brand";
 
 import {
   parseInitialHotspots,
@@ -1478,7 +1479,7 @@ export default function Sdl3dEditorRoute() {
         try {
           const data = JSON.parse(reader.result as string);
           if (!isValidConfigExport(data)) {
-            setToastMessage("Invalid config file. Expected SDL 3D Hotspots export format.");
+            setToastMessage(`Invalid config file. Expected ${BRAND.appName} export format.`);
             return;
           }
           setViewerType(normalizeViewerTypeToDb(data.viewerType));

@@ -50,6 +50,7 @@ import shopify, { apiVersion } from "../shopify.server";
 import { getSdl3dDefinitions } from "../lib/sdl3d-metafields.server";
 import { ensureShop } from "../lib/sdl3d-graphql.server";
 import prisma from "../db.server";
+import { BRAND } from "../lib/brand";
 
 export async function loader({ request }: { request: Request }) {
   const { admin, session } = await shopify.authenticate.admin(request);
@@ -464,7 +465,7 @@ export default function Sdl3dSettingsRoute() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">Metafield definitions</Text>
                 <Text as="p" tone="subdued">
-                  SDL 3D uses product metafields under the <code>sdl_3d</code> namespace. Run setup to create or verify definitions.
+                  {BRAND.appName} uses product metafields under the <code>sdl_3d</code> namespace. Run setup to create or verify definitions.
                 </Text>
                 <InlineStack>
                   <Button
@@ -546,7 +547,7 @@ export default function Sdl3dSettingsRoute() {
                       image=""
                     >
                       <Text as="p">
-                        SDL 3D metafield definitions haven&apos;t been created in this shop yet. Run setup above to create them.
+                        Metafield definitions haven&apos;t been created in this shop yet. Run setup above to create them.
                       </Text>
                     </EmptyState>
                   )}

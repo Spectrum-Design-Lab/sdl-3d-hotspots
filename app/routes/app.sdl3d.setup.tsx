@@ -29,7 +29,7 @@ export default function Sdl3dSetupRoute() {
 
   return (
     <div style={{ padding: 24, maxWidth: 900 }}>
-      <h1>SDL 3D setup</h1>
+      <h1>Metafield setup</h1>
       <p>Shop: {loaderData.shop}</p>
 
       <Form method="post">
@@ -42,7 +42,7 @@ export default function Sdl3dSetupRoute() {
             cursor: "pointer",
           }}
         >
-          Create / verify SDL 3D metafield definitions
+          Create / verify metafield definitions
         </button>
       </Form>
 
@@ -61,7 +61,7 @@ export default function Sdl3dSetupRoute() {
       ) : null}
 
       <div style={{ marginTop: 24 }}>
-        <h2>Current SDL 3D definitions</h2>
+        <h2>Current definitions</h2>
         <ul>
           {loaderData.definitions.map((d) => (
             <li key={d.id}>

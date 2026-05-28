@@ -40,6 +40,7 @@ import {
   parseFilenamesForFrames,
   validateCaptureFrames,
 } from "../lib/capture-pipeline/validator";
+import { BRAND } from "../lib/brand";
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_DURATION_MS = 1000 * 60 * 15; // 15 minutes hard stop
@@ -667,7 +668,7 @@ export function Sdl3dRawCaptureUploader({
           <Text as="p" tone="subdued" variant="bodySm">
             Upload a folder of raw turntable photos (or a .zip). The worker
             samples them to 72 frames, converts to WebP, and writes the
-            resulting sequence to your bucket. Your bucket — never SDL&apos;s.
+            resulting sequence to your bucket. Your bucket — never {BRAND.vendorName}&apos;s.
           </Text>
         </>
       ) : null}
