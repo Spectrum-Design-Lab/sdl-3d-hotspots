@@ -1,0 +1,39 @@
+# BFA pilot — Shopify app config. Activate with:
+#   npm run shopify -- app config use shopify.app.bfa.toml
+# See docs/bfa-pilot-setup.md for the full setup runbook.
+#
+# Region (all DO resources): SYD
+# application_url + redirect_urls are PLACEHOLDERS — swap to the real
+# App Platform domain once it exists (Step 4c of the runbook). Until
+# then, `npm run deploy` will still push the TAE under this app's
+# client_id, but the embedded admin won't load.
+
+client_id = "36f4ac369f6f2bea02b16d9016dc5bb2"
+name = "bfa-3d-hotspots"
+application_url = "https://bfa-3d-hotspots.placeholder.example.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = false
+
+[webhooks]
+api_version = "2026-04"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+[access_scopes]
+scopes = "write_metaobject_definitions,write_metaobjects,write_products,read_files,write_files,write_app_proxy"
+
+[app_proxy]
+url = "/proxy/sdl3d"
+prefix = "apps"
+subpath = "sdl3d"
+
+[auth]
+redirect_urls = [ "https://bfa-3d-hotspots.placeholder.example.com/api/auth" ]

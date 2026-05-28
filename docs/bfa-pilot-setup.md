@@ -6,6 +6,11 @@ This is the unbranded-build path (`APP_BRAND=bfa`). The same Git repo deploys tw
 
 Audience: SDL operator (Adam). For the merchant-facing version of capture/upload/publish steps, see [merchant-onboarding.md](merchant-onboarding.md).
 
+**Pilot-specific values (already decided):**
+- Partner app `client_id`: `36f4ac369f6f2bea02b16d9016dc5bb2` (committed in [shopify.app.bfa.toml](../shopify.app.bfa.toml))
+- DO region (all resources — Spaces, Postgres, App Platform): **SYD**
+- Repo strategy: SDL keeps source ownership; BFA's App Platform builds from `Spectrum-Design-Lab/sdl-3d-hotspots`.
+
 ---
 
 ## What you're building
