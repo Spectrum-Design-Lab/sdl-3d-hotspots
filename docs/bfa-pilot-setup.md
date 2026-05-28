@@ -65,21 +65,59 @@ Leave this tab open; you'll come back to fill in the URLs after App Platform dep
 
 ## Step 2 — Set up DO Spaces (the CDN bucket)
 
-This is the merchant's bucket — owned by BFA, billed to BFA's DO account. Follow the existing walkthrough verbatim:
+The bucket is owned by BFA, billed to BFA's DO account. SDL's existing `sdl-cdn` bucket is the working template — this BFA setup mirrors its config.
 
-→ **[merchant-onboarding.md — Part 2 / Option A (DigitalOcean Spaces)](merchant-onboarding.md#option-a--digitalocean-spaces-recommended)** (sections A.1 through A.4)
+### 2a. Create the bucket
 
-Notes specific to this pilot:
+1. DO control panel → **Spaces Object Storage** → **Create Bucket** (top-right).
+2. **Choose a datacenter region** → **Sydney · Datacenter 1 · SYD1**.
+3. **Choose a Storage type** → **Standard Storage** (Cold has 30-day minimum retention — bad fit for re-uploads).
+4. **Content Delivery Network (CDN)** → leave **Enable CDN UNCHECKED**. CDN can be enabled later from Settings if BFA wants global edge caching; not needed for v1.
+5. **Choose a unique Spaces Bucket name** → `bfa-3d-hotspots`. Lowercase, hyphens only, 3–63 chars. Globally unique across DO — pick a fallback (`bfa-3d-hotspots-au`?) if taken.
+6. **Project** → `first-project` is fine (or create a `bfa-3d-hotspots` project to group resources).
+7. Click **Create Spaces Bucket**.
 
-- **Bucket name**: `bfa-3d-hotspots` (or whatever — globally unique across DO Spaces).
-- **Region**: pick whichever is closest to BFA's primary customer base. Region is permanent.
-- **CORS Origin** entries to add — two separate rules:
-  1. `https://bar-fridges-au.myshopify.com`
-  2. `https://bar-fridges-australia.com.au`
-  Without both, frames will fail to load on whichever origin is missing.
-- **Save the Spaces access key + secret** immediately — DO shows the secret exactly once.
+The bucket's endpoint is now `https://bfa-3d-hotspots.syd1.digitaloceanspaces.com` — note it down; you'll paste it into the in-admin Settings → Storage form in Step 8.
 
-You'll wire these credentials into the app via the in-admin Settings → Storage page in Step 8, not via env vars. The encrypted-at-rest bucket credential goes in Postgres, keyed by `STORAGE_ENC_KEY`.
+### 2b. Tighten bucket settings
+
+Click into the new bucket → **Settings** tab.
+
+1. **File Listing** → **Edit** → **Disable**. The app never lists bucket contents; disabling is a free security win — without it, anyone with the bucket URL could enumerate every uploaded frame.
+2. **Object Versioning** + **Access Logs** → leave Disabled (both are API-only toggles, neither is needed).
+3. **CDN** → leave whatever you set in 2a.
+
+### 2c. Create a scoped access key
+
+Still on the bucket's Settings page → scroll to **Access Keys** section → **Create Access Key**.
+
+1. **Access Key Name**: `bfa-3d-hotspots-app-key`.
+2. **Scope**: this bucket only.
+3. **Permissions**: **Read/Write/Delete** (the app needs delete to clean up superseded captures).
+4. Click **Create Access Key**.
+5. **Copy the Access Key ID AND Secret Access Key immediately into BFA's password manager.** The Secret is shown exactly once — if lost, generate a new key and delete the old one. There is no recovery flow.
+
+Creating the key from the bucket's own Settings (rather than the global API → Spaces Keys page) auto-scopes it to just this bucket — principle of least privilege.
+
+### 2d. Configure CORS
+
+Still on the bucket's Settings page → **CORS Configurations** → **Add**.
+
+Add **three rules** total. Each row in the CORS table is a separate "Add" click.
+
+| # | Origin | Methods | Headers | Max Age |
+|---|---|---|---|---|
+| 1 | `https://bar-fridges-au.myshopify.com` | GET, HEAD | `*` | 3000 |
+| 2 | `https://bar-fridges-australia.com.au` | GET, HEAD | `*` | 3000 |
+| 3 | (your App Platform URL — **add after Step 4 completes**) | GET, PUT, HEAD, POST | `*` | 3000 |
+
+Rules 1 + 2 are storefront origins (browsers fetching frames during shopping). Rule 3 is the admin upload origin (the embedded admin runs in the merchant's browser inside Shopify, but the actual XHRs that PUT files to the bucket come from the App Platform domain — they need PUT + POST). You can come back and add rule 3 the moment App Platform gives you a live URL in Step 4.
+
+> **Why CORS matters here**: without rule 1 or 2, storefront browsers refuse to load `<img>` tags from the bucket and the viewer renders broken images. Without rule 3, the admin's upload flow fails preflight and merchants can't add captures.
+
+### 2e. Where these credentials end up
+
+You're NOT pasting the bucket key into App Platform env vars. The access key + secret get entered through the embedded admin's **Settings → Storage** form in Step 8 — the app encrypts them with `STORAGE_ENC_KEY` and stores them in Postgres. This is the same flow BFA would use themselves if they ever needed to rotate or add another bucket.
 
 ---
 
@@ -114,39 +152,60 @@ App Platform needs to read the repo. Two options:
 
 Recommend keeping it in your existing repo for now — you control updates and can pull them at your pace.
 
-### 4b. Create the App Platform app
+### 4b. Walk the App Platform "Create App" wizard
 
-1. DO control panel → **Apps** → **Create App**.
-2. **Service Provider**: **GitHub** → authorize the repo `Spectrum-Design-Lab/sdl-3d-hotspots` (or your fork).
-3. **Branch**: `main`. **Source directory**: `/`. **Autodeploy**: leave **on** (every push to main rebuilds).
-4. DO detects the Dockerfile and offers a **Web Service** by default. Accept it.
-5. **Edit** the service spec before continuing:
-   - **Resource type**: Web Service. **Instance size**: Basic — $12/mo (1 GB RAM). Scale up only if the capture worker starts thrashing.
-   - **HTTP port**: `3000` (matches `EXPOSE 3000` in the Dockerfile and `PORT=3000` env var).
-   - **Run command**: leave default — Dockerfile's `CMD` already invokes `npm run docker-start` which spawns both the web tier AND the pg-boss worker in the same container.
-   - **Build command**: leave default. App Platform reads the Dockerfile.
-   - **Dockerfile build args**: add **`APP_BRAND=bfa`**. This is the critical line — without it the container builds with SDL branding. ([Dockerfile:8](sdl-3d-hotspots/Dockerfile#L8) wires the build-arg into `VITE_APP_BRAND`, which Vite inlines at build time.)
-6. **Environment variables** (mark each as Secret unless noted; values from Steps 1–3):
+DO's wizard reveals all settings on one tall page. The order below matches the order to fix them in — quick UI changes first, then the slow blockers (Postgres provisioning), then the bulk env-var paste at the end so you only review the spec once before hitting submit.
 
-   | Key | Value | Notes |
-   |---|---|---|
-   | `SHOPIFY_API_KEY` | `<client_id from Step 1>` | Not secret per se but treat as one |
-   | `SHOPIFY_API_SECRET` | `<client_secret from Step 1>` | **Secret** |
-   | `SHOPIFY_APP_URL` | `https://${APP_DOMAIN}` | Use the App Platform variable so it picks up the right hostname automatically |
-   | `SCOPES` | `write_metaobject_definitions,write_metaobjects,write_products,read_files,write_files,write_app_proxy` | Must match `shopify.app.bfa.toml` exactly when you create it in Step 5 |
-   | `DATABASE_URL` | `<connection string from Step 3>` | **Secret**. Use the private VPC URL once available. |
-   | `STORAGE_ENC_KEY` | `<openssl rand -hex 32>` | **Secret**. Generate fresh — DO NOT reuse SDL's. Losing it bricks every stored bucket credential. Back up to a password manager. |
-   | `PORT` | `3000` | Plain |
-   | `NODE_ENV` | `production` | Plain |
-   | `APP_BRAND` | `bfa` | Plain. Belt-and-braces — already set as a build-arg, but App Platform also surfaces this as a runtime env so [brand.ts](sdl-3d-hotspots/app/lib/brand.ts) picks it up if Vite ever fails to inline. |
-   | `DEPLOYMENT_NAME` | `bfa-pilot` | Plain. Shows up in `/api/health` for ops triage. |
-   | `SENTRY_DSN` | (optional) | Add later if you want BFA errors flowing into Sentry; can be the same DSN as SDL with `SENTRY_ENVIRONMENT=bfa-pilot` to split events. |
+> **Do not hit "Create Resources" until every item below is done.** App Platform starts billing + building immediately on submit; a half-configured spec wastes a build cycle.
 
-7. **App name**: `bfa-3d-hotspots`.
-8. **Region**: same as Postgres + Spaces.
-9. **Create Resources**. First build takes ~5–10 min.
-10. Once green, copy the **Live App URL** (e.g. `https://bfa-3d-hotspots-xxxxx.ondigitalocean.app`). This is your `SHOPIFY_APP_URL`.
-11. (Optional) Add a custom domain via App Platform → Settings → Domains → `app.bfa.example.com`. App Platform handles the TLS cert automatically.
+1. DO control panel → **Apps** → **Create App** → **GitHub** → authorize `Spectrum-Design-Lab/sdl-3d-hotspots` → branch `main` → source directory `/` → **Autodeploy: on**.
+2. DO auto-detects the Dockerfile and creates a default Web Service component. You now land on the spec page.
+
+#### Quick UI fixes (do these first)
+
+3. **Resource name** (top card, says `sdl-3d-hotspots` by default since DO names it after the repo) → click **Edit** → rename to **`bfa-3d-hotspots`**.
+4. **Deployment settings → Run command** (defaults to "No run command defined") → click **Edit** → set to **`npm run docker-start`**. Matches the Dockerfile's CMD; explicit value removes ambiguity in the spec.
+5. **Network** → confirm **Public HTTP port = 3000**, **HTTP request routes = 1** (root). No change needed; these come from the Dockerfile.
+6. **Size**: confirm **Basic Shared CPU → $12/mo (1 GB RAM)**. Containers: 1. Autoscale: off. Scale up to Pro only if the capture worker starts thrashing.
+7. **Datacenter region** → **Sydney (SYD1)**.
+8. **App name** (Finalize section) — replace the auto-generated placeholder (something like `starfish-app`) with **`bfa-3d-hotspots`**.
+
+#### Slow blocker: provision Postgres before continuing
+
+9. **Database** card shows "Add a database". You need a `DATABASE_URL` before env vars can be filled in. Two paths:
+   - If Step 3 (Managed Postgres) is already done → click **Attach DigitalOcean database** → pick `bfa-3d-hotspots-db`.
+   - If not → open Step 3 in a new tab, provision (~5 min), come back here.
+   - **Never click "Create dev database"** — those are ephemeral and lose all merchant data on every redeploy.
+10. **VPC** → check the **Connect app to VPC network** box → pick the same VPC your Postgres lives in. This unlocks the private DB hostname (faster + no public DB egress + no firewall rule needed).
+
+#### Environment variables (bulk paste at the end)
+
+11. **Environment variables** card (component-level — under Network, NOT the "App-level environment variables" card lower down) → click **Edit** → add every row in the table below. App Platform's UI lets you toggle **Scope** (Run / Build / Run+Build) and **Encrypt** per row.
+
+   | Key | Value | Scope | Encrypt |
+   |---|---|---|---|
+   | `APP_BRAND` | `bfa` | **Run and Build Time** | No |
+   | `SHOPIFY_API_KEY` | `36f4ac369f6f2bea02b16d9016dc5bb2` | Run Time | No |
+   | `SHOPIFY_API_SECRET` | (from password manager) | Run Time | **Yes** |
+   | `SHOPIFY_APP_URL` | `${APP_URL}` | Run Time | No |
+   | `SCOPES` | `write_metaobject_definitions,write_metaobjects,write_products,read_files,write_files,write_app_proxy` | Run Time | No |
+   | `DATABASE_URL` | (private VPC connection string from Postgres) | Run Time | **Yes** |
+   | `STORAGE_ENC_KEY` | (from `openssl rand -hex 32`, in password manager) | Run Time | **Yes** |
+   | `NODE_ENV` | `production` | Run Time | No |
+   | `PORT` | `3000` | Run Time | No |
+   | `DEPLOYMENT_NAME` | `bfa-pilot` | Run Time | No |
+   | `SENTRY_DSN` | (optional) | Run Time | **Yes** |
+
+   Critical rows: **`APP_BRAND` scope MUST be "Run and Build Time"** — that's what tells App Platform to pass `--build-arg APP_BRAND=bfa` to `docker build`. Without Build-Time scope, the Dockerfile's `ARG APP_BRAND=sdl` default fires and you ship the SDL build by accident. `SHOPIFY_APP_URL = ${APP_URL}` uses App Platform's auto-substituted variable — it'll resolve to your real domain post-deploy.
+
+   Leave the "App-level environment variables" card empty — single-component apps don't need app-level scope.
+
+#### Submit
+
+12. Triple-check the Summary panel on the right (size, region, env-var count, DB attached). Hit **Create Resources**.
+13. First build takes ~5–10 min. Watch the **Activity** tab for the Docker build log; common failures (missing env vars, build-arg typos) show up here.
+14. Once **Live**, copy the URL from the app's overview page (e.g. `https://bfa-3d-hotspots-xxxxx.ondigitalocean.app`).
+15. (Optional) Add a custom domain via **Settings → Domains** → `app.bfa.example.com`. App Platform handles the TLS cert automatically.
 
 ### 4c. Go back to the Shopify Partner app and fill in URLs
 
